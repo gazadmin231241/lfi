@@ -21,8 +21,8 @@ import { integrateAttempts } from "./integration.js";
 import {
   loadLocalTracker,
   runnableLocalTasks,
-  saveTrackerDocument,
 } from "./local-tracker.js";
+import { recordLocalCompletion } from "./local-run-state.js";
 import { pruneExpiredRunLogs } from "./logs.js";
 import { renderWorkerPrompt } from "./prompts.js";
 import { isShutdownRequested } from "./process.js";
@@ -35,6 +35,7 @@ import {
   writePendingClosures,
 } from "./runner-support.js";
 import { evaluateWorkerResult } from "./worker-result.js";
+import { reconcileTrackerFilenames } from "./tracker-files.js";
 
 const attemptWork = async (options: {
   cwd: string;
@@ -116,28 +117,6 @@ const attemptWork = async (options: {
   }
 };
 
-const recordLocalCompletion = async (
-  cwd: string,
-  attempts: readonly Attempt[],
-): Promise<void> => {
-  const tracker = await loadLocalTracker(join(cwd, ".lfi"));
-  const completed = new Set(attempts.map((attempt) => attempt.issue.id));
-  const completedAt = new Date().toISOString();
-  for (const task of tracker.tasks) {
-    if (completed.has(task.id)) {
-      await saveTrackerDocument({
-        ...task,
-        status: "completed",
-        completedAt,
-      });
-    }
-  }
-  await checkpointTracker(
-    cwd,
-    `chore(lfi): complete ${[...completed].join(", ")}`,
-  );
-};
-
 const saveRunSummary = async (
   stateRoot: string,
   runLogs: string,
@@ -173,6 +152,10 @@ export const runLfi = async (
     );
   }
   if (config.TASK_SOURCE === "local") {
+    await reconcileTrackerFilenames(
+      await loadLocalTracker(lfiRoot),
+      new Set(),
+    );
     await checkpointTracker(cwd, "docs(lfi): update local task tracker");
     if (selectedIds.length > 0) {
       const tracker = await loadLocalTracker(lfiRoot);
@@ -381,6 +364,12 @@ export const runLfi = async (
     };
     await saveRunSummary(stateRoot, runLogs, runId, summary);
     await rm(currentStatePath, { force: true });
+    if (config.TASK_SOURCE === "local") {
+      await reconcileTrackerFilenames(
+        await loadLocalTracker(lfiRoot),
+        new Set(),
+      );
+    }
     return unresolved.length === 0 && pending.length === 0 ? 0 : 1;
   } catch (error) {
     await writeFile(

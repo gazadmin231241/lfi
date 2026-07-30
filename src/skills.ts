@@ -52,7 +52,8 @@ contains \`lfi:tracker-contract\`, these rules take precedence over every later
 tracker, path, and label instruction in this skill:
 
 - In Local Markdown mode, allocate the next shared \`LFI-N\` and publish one
-  \`type: spec\` document in \`.lfi/specs/\`.
+  \`type: spec\` document in \`.lfi/specs/\`, named
+  \`[SPEC] LFI-N — informative-slug.md\`.
 - In GitHub mode, publish an Issue labelled only with the LFI-managed type
   label \`lfi:spec\`, with a \`[SPEC]\` title; never add \`lfi:task\`,
   \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
@@ -70,6 +71,9 @@ tracker, path, label, and execution-model instruction in this skill:
 
 - In Local Markdown mode, publish one \`type: task\` document per ticket in
   \`.lfi/tasks/\`, using the shared \`LFI-N\` sequence and \`spec: LFI-N\`.
+  Prefix each filename with its derived status, for example
+  \`[READY] LFI-N — informative-slug.md\` or
+  \`[BLOCKED] LFI-N — informative-slug.md\`.
 - In GitHub mode, publish Issues with \`lfi:task\`, a \`[READY]\` or
   \`[BLOCKED]\` title, and native parent and dependency relationships. Never
   add \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.

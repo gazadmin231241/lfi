@@ -55,8 +55,8 @@ does not choose a model label.
 Local Markdown:
 
 ```text
-.lfi/tasks/LFI-2-implement-parser.md
-.lfi/specs/LFI-1-local-first-workflow.md
+.lfi/tasks/[READY] LFI-2 — implement-parser.md
+.lfi/specs/[SPEC] LFI-1 — local-first-workflow.md
 ```
 
 These files are versioned; `.lfi/logs`, `.lfi/state`, and `.lfi/worktrees`

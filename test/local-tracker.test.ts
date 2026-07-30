@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,6 +20,7 @@ import {
 } from "../src/local-tracker.js";
 import { formatLocalStatus } from "../src/status.js";
 import { runCommand } from "../src/process.js";
+import { reconcileTrackerFilenames } from "../src/tracker-files.js";
 
 const taskSource = `---
 id: LFI-15
@@ -175,6 +183,72 @@ test("local status derives explicit display prefixes", () => {
     "[RUNNING] LFI-15 — Implement task parser",
     "[DONE] LFI-16 — Implement task parser",
   ]);
+});
+
+test("tracker filenames expose derived status before the stable ID and title", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-status-filenames-"));
+  const tasksRoot = join(root, "tasks");
+  const specsRoot = join(root, "specs");
+  await mkdir(tasksRoot);
+  await mkdir(specsRoot);
+  const specPath = join(specsRoot, "LFI-1-feature.md");
+  const firstPath = join(tasksRoot, "LFI-2-first-task.md");
+  const secondPath = join(tasksRoot, "LFI-3-second-task.md");
+  await writeFile(
+    specPath,
+    serializeTrackerDocument({
+      id: "LFI-1",
+      number: 1,
+      type: "spec",
+      title: "Feature",
+      status: "ready",
+      blockedBy: [],
+      body: "Feature.\n",
+      path: specPath,
+    }),
+  );
+  await writeFile(
+    firstPath,
+    serializeTrackerDocument({
+      id: "LFI-2",
+      number: 2,
+      type: "task",
+      title: "First task",
+      status: "ready",
+      spec: "LFI-1",
+      blockedBy: [],
+      body: "First.\n",
+      path: firstPath,
+    }),
+  );
+  await writeFile(
+    secondPath,
+    serializeTrackerDocument({
+      id: "LFI-3",
+      number: 3,
+      type: "task",
+      title: "Second task",
+      status: "ready",
+      spec: "LFI-1",
+      blockedBy: ["LFI-2"],
+      body: "Second.\n",
+      path: secondPath,
+    }),
+  );
+
+  const tracker = await loadLocalTracker(root);
+  await reconcileTrackerFilenames(tracker, new Set(["LFI-2"]));
+  assert.deepEqual(
+    (await readdir(specsRoot)).sort(),
+    ["[SPEC] LFI-1 — feature.md"],
+  );
+  assert.deepEqual(
+    (await readdir(tasksRoot)).sort(),
+    [
+      "[BLOCKED] LFI-3 — second-task.md",
+      "[RUNNING] LFI-2 — first-task.md",
+    ],
+  );
 });
 
 test("local status orders completions by time and localizes blockers", () => {

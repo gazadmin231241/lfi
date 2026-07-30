@@ -175,16 +175,23 @@ const validateTracker = (documents: readonly TrackerDocument[]): void => {
     const collection =
       document.type === "task" ? "tasks" : "specs";
     const filename = basename(document.path);
-    const prefix = `${document.id}-`;
-    const slug = filename.startsWith(prefix) && filename.endsWith(".md")
-      ? filename.slice(prefix.length, -3)
-      : "";
+    const legacy = new RegExp(
+      `^${document.id}-([\\p{L}\\p{N}]+(?:-[\\p{L}\\p{N}]+)*)\\.md$`,
+      "u",
+    ).exec(filename);
+    const canonical =
+      /^\[(?:SPEC|READY|RUNNING|BLOCKED|DONE|CANCELLED)\] (LFI-\d+) — ([\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.md$/u.exec(
+        filename,
+      );
+    const validFilename =
+      legacy !== null ||
+      (canonical !== null && canonical[1] === document.id);
     if (
       basename(dirname(document.path)) !== collection ||
-      !/^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(slug)
+      !validFilename
     ) {
       throw new Error(
-        `${document.path}: filename must be ${collection}/${document.id}-informative-slug.md / имя файла должно быть ${collection}/${document.id}-информативное-название.md`,
+        `${document.path}: filename must be ${collection}/[STATUS] ${document.id} — informative-slug.md / имя файла должно быть ${collection}/[СТАТУС] ${document.id} — информативное-название.md`,
       );
     }
     if (byId.has(document.id)) {

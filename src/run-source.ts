@@ -19,6 +19,8 @@ import {
   LFI_SPEC_LABEL,
   LFI_TASK_LABEL,
 } from "./tracker-contract.js";
+import { readActiveTaskIds } from "./tracker-state.js";
+import { reconcileTrackerFilenames } from "./tracker-files.js";
 
 export const listWork = async (
   cwd: string,
@@ -27,17 +29,20 @@ export const listWork = async (
 ): Promise<WorkItem[]> => {
   const config = await loadConfig(join(cwd, ".lfi", "config.env"));
   if (config.TASK_SOURCE === "local") {
-    const plan = runnableLocalTasks(
-      await loadLocalTracker(join(cwd, ".lfi")),
-      selectedIds,
+    const lfiRoot = join(cwd, ".lfi");
+    const tracker = await loadLocalTracker(lfiRoot);
+    await reconcileTrackerFilenames(
+      tracker,
+      await readActiveTaskIds(lfiRoot),
     );
+    const plan = runnableLocalTasks(tracker, selectedIds);
     return plan.runnable
       .filter((task) => !completed.has(task.id))
       .map((task) => ({
         id: task.id,
         number: task.number,
         title: task.title,
-        url: task.path,
+        url: task.id,
         body: task.body,
         labels: [LFI_TASK_LABEL],
         localPath: task.path,

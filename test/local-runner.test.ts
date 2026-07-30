@@ -153,8 +153,16 @@ exit 97
   }
 
   assert.equal(await readFile(join(root, "implemented.txt"), "utf8"), "implemented\n");
-  const task = parseTrackerDocument(await readFile(taskPath, "utf8"), taskPath);
+  const completedPath = join(
+    tasks,
+    "[DONE] LFI-1 — implement-local-run.md",
+  );
+  const task = parseTrackerDocument(
+    await readFile(completedPath, "utf8"),
+    completedPath,
+  );
   assert.equal(task.status, "completed");
+  await assert.rejects(readFile(taskPath, "utf8"));
   const log = await runCommand("git", ["log", "--format=%s"], { cwd: root });
   assert.match(log.stdout, /docs\(lfi\): update local task tracker/u);
   assert.match(log.stdout, /feat: implement local task/u);
@@ -190,4 +198,18 @@ exit 97
     }),
   );
   assert.equal(await runLfi(root, "ru", ["LFI-2"]), 1);
+  assert.equal(
+    await readFile(
+      join(tasks, "[BLOCKED] LFI-2 — blocked-task.md"),
+      "utf8",
+    ).then((source) => source.includes("status: ready")),
+    true,
+  );
+  assert.equal(
+    await readFile(
+      join(tasks, "[READY] LFI-3 — blocker.md"),
+      "utf8",
+    ).then((source) => source.includes("status: ready")),
+    true,
+  );
 });

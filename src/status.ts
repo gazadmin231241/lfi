@@ -10,6 +10,7 @@ import {
   trackerDisplayState,
   trackerStatusPrefix,
 } from "./tracker-state.js";
+import { reconcileTrackerFilenames } from "./tracker-files.js";
 
 export type StatusFilter = "ready" | "blocked" | "completed";
 
@@ -98,9 +99,8 @@ export const localStatusLines = async (
   } = {},
 ): Promise<string[]> => {
   const lfiRoot = join(cwd, ".lfi");
-  return formatLocalStatus(
-    await loadLocalTracker(lfiRoot),
-    await readActiveTaskIds(lfiRoot),
-    options,
-  );
+  const tracker = await loadLocalTracker(lfiRoot);
+  const active = await readActiveTaskIds(lfiRoot);
+  await reconcileTrackerFilenames(tracker, active);
+  return formatLocalStatus(tracker, active, options);
 };

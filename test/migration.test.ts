@@ -87,17 +87,28 @@ LFI-20
   assert.deepEqual(result, ["LFI-1", "LFI-2", "LFI-3"]);
   assert.match(
     await readFile(
-      join(root, ".lfi", "specs", "LFI-1-feature-specification.md"),
+      join(
+        root,
+        ".lfi",
+        "specs",
+        "[SPEC] LFI-1 — feature-specification.md",
+      ),
       "utf8",
     ),
     /type: spec[\s\S]*title: "Feature specification"[\s\S]*github_issue: 10/u,
   );
   assert.doesNotMatch(
-    await readFile(join(root, ".lfi", "tasks", "LFI-2-first-task.md"), "utf8"),
+    await readFile(
+      join(root, ".lfi", "tasks", "[READY] LFI-2 — first-task.md"),
+      "utf8",
+    ),
     /\[READY\]|## Родитель|## Заблокировано|Управляется LFI/u,
   );
   assert.match(
-    await readFile(join(root, ".lfi", "tasks", "LFI-3-second-task.md"), "utf8"),
+    await readFile(
+      join(root, ".lfi", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
+      "utf8",
+    ),
     /type: task[\s\S]*spec: LFI-1[\s\S]*blocked_by:\n  - LFI-2[\s\S]*github_issue: 12/u,
   );
   assert.equal(

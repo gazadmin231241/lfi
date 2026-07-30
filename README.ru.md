@@ -54,8 +54,8 @@ lfi run
 по умолчанию используется Local Markdown:
 
 ```text
-.lfi/tasks/LFI-2-implement-parser.md
-.lfi/specs/LFI-1-local-first-workflow.md
+.lfi/tasks/[READY] LFI-2 — implement-parser.md
+.lfi/specs/[SPEC] LFI-1 — local-first-workflow.md
 ```
 
 Эти файлы версионируются, а `.lfi/logs`, `.lfi/state` и `.lfi/worktrees`

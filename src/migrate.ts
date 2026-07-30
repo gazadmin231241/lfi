@@ -25,19 +25,16 @@ import {
   LFI_SPEC_LABEL,
   LFI_TASK_LABEL,
 } from "./tracker-contract.js";
+import {
+  reconcileTrackerFilenames,
+  trackerTitleSlug,
+} from "./tracker-files.js";
 
 export interface MigrationSource {
   listOpenLfiIssues(): Promise<GithubIssue[]>;
   parents(issueNumbers: readonly number[]): Promise<Map<number, number>>;
   blockers(issueNumbers: readonly number[]): Promise<Map<number, number[]>>;
 }
-
-const slug = (title: string): string =>
-  title
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-|-$/gu, "")
-    .slice(0, 80) || "task";
 
 const defaultSource = async (
   cwd: string,
@@ -129,13 +126,14 @@ export const migrateToLocal = async (
       path: join(
         lfiRoot,
         type === "spec" ? "specs" : "tasks",
-        `${id}-${slug(title)}.md`,
+        `${id}-${trackerTitleSlug(title)}.md`,
       ),
     };
     await saveTrackerDocument(document);
     created.push(document);
   }
-  await loadLocalTracker(lfiRoot);
+  const imported = await loadLocalTracker(lfiRoot);
+  await reconcileTrackerFilenames(imported, new Set());
   await checkpointTracker(cwd, "docs(lfi): import GitHub tracker");
   await updateConfig(configPath, { ...config, TASK_SOURCE: "local" });
   return created.map((document) => document.id);
