@@ -21,6 +21,7 @@ import {
 import { checkpointTracker } from "./runner-support.js";
 import { configureLocalTracker } from "./local-setup.js";
 import type { Language } from "./i18n.js";
+import { executionTierFromLabels } from "./execution-tier.js";
 import {
   LFI_SPEC_LABEL,
   LFI_TASK_LABEL,
@@ -108,6 +109,12 @@ export const migrateToLocal = async (
     const id = issueIds.get(issue.number)!;
     const title = withoutManagedGithubTitle(issue.title);
     const type = issue.labels.includes(LFI_SPEC_LABEL) ? "spec" : "task";
+    const tierSelection = executionTierFromLabels(issue.labels);
+    if (type === "task" && tierSelection.status === "conflict") {
+      throw new Error(
+        `${issue.number}: conflicting execution tier labels: ${tierSelection.labels.join(", ")} / конфликтующие метки уровня выполнения`,
+      );
+    }
     const parentNumber = parents.get(issue.number);
     const spec =
       parentNumber === undefined ? undefined : issueIds.get(parentNumber);
@@ -130,6 +137,9 @@ export const migrateToLocal = async (
       type,
       title,
       status: "ready",
+      ...(type === "task" && tierSelection.status === "resolved"
+        ? { executionTier: tierSelection.tier }
+        : {}),
       ...(spec ? { spec } : {}),
       blockedBy:
         type === "task"

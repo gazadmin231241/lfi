@@ -47,7 +47,7 @@ target repository and use `to-spec`/`to-tickets`; local initialization writes
 their tracker contract automatically. LFI conditionally adapts the installed
 `to-spec` and `to-tickets` instructions for LFI projects: specs and tasks go
 to `.lfi` locally or use `lfi:spec`/`lfi:task` on GitHub, and ticket creation
-does not choose a model label.
+assigns an abstract execution tier instead of choosing a concrete model.
 
 ## Task storage
 
@@ -76,7 +76,9 @@ These prefixes are local-only. GitHub Issue titles use the stable
 GitHub mode uses the same fixed type vocabulary as Local Markdown:
 `type: spec` maps to `lfi:spec`, and `type: task` maps to `lfi:task`.
 Specifications are never executable. Tasks support textual and native
-dependencies.
+dependencies. Every executable task may declare `execution_tier: light`,
+`standard`, or `deep`; GitHub uses the corresponding `lfi:tier:*` label.
+Missing tier metadata runs as `standard` with a warning.
 
 ## Commands
 
@@ -101,10 +103,13 @@ lfi config language en|ru
 
 ## Configuration
 
-Normal initialization asks for task storage and log retention. Advanced values
-remain editable in `.lfi/config.env`, including:
+Normal interactive initialization asks for task storage, log retention, and
+whether to use the recommended Luna/Terra/Sol mapping. Advanced values remain
+editable in `.lfi/config.env`, including:
 
-- Codex and merger model/reasoning
+- light, standard, and deep worker models
+- project-wide worker reasoning, kept unchanged across tiers and retries
+- an independent integration model and reasoning setting
 - parallel workers and stage count
 - task source, GitHub mirror repository, and default branch
 - validation and worktree setup commands
@@ -135,7 +140,7 @@ and path for recovery.
 `lfi sync` is a one-way local-to-GitHub mirror. It publishes specs as parents,
 tasks as children, fixed LFI type labels, dependencies where supported,
 explicit status prefixes, and open/closed state. It preserves unrelated labels
-and removes a conflicting LFI type label. Sync is resumable, limits GitHub
+and reconciles conflicting LFI type and tier labels. Sync is resumable, limits GitHub
 concurrency to three, retries transient network and 502/503/504 failures, and
 persists each mapping to avoid duplicate Issues.
 
@@ -148,6 +153,14 @@ In GitHub mode, if GitHub accepts the push but temporarily fails to close an Iss
 the pending closure and retries it at the beginning of the next run. `lfi
 status` shows the active run while work is in progress and falls back to the
 most recent completed run.
+
+At execution time, `LIGHT_MODEL`, `STANDARD_MODEL`, and `DEEP_MODEL` map the
+task tier to a Codex model, falling back to `CODEX_MODEL` when a tier mapping is
+empty. `CODEX_REASONING_EFFORT` is always passed through exactly as configured.
+`MERGER_MODEL` is independent and falls back through `STANDARD_MODEL`, then
+`CODEX_MODEL`. If Codex rejects an explicitly configured worker model, LFI
+logs it, does not silently substitute another model, skips remaining tasks
+using it for that run, and continues other tiers.
 
 Worker prompts pre-approve required local code, migration, dependency, lockfile,
 and configuration work. They explicitly forbid production deploys, SSH,

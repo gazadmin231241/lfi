@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import type { RunOutput } from "./logs.js";
+import type { ExecutionTier } from "./execution-tier.js";
 
 const majorRule = "=".repeat(50);
 const minorRule = "-".repeat(50);
@@ -135,6 +136,26 @@ export const printIntegrationFailed = async (
 
 const taskLogName = (id: string): string =>
   id.startsWith("#") ? `issue-${id.slice(1)}` : id;
+
+export const reportUnavailableModelSkip = (
+  output: RunOutput,
+  language: Language,
+  reportedIds: Set<string>,
+  id: string,
+  tier: ExecutionTier,
+  model: string,
+): string => {
+  const summary = localize(
+    language,
+    `${id} was skipped because the configured ${tier} tier model ${model} is unavailable.`,
+    `${id} пропущена: настроенная модель ${model} уровня ${tier} недоступна.`,
+  );
+  if (!reportedIds.has(id)) {
+    output.error(summary);
+    reportedIds.add(id);
+  }
+  return summary;
+};
 
 export const printRunSummary = async (
   output: RunOutput,

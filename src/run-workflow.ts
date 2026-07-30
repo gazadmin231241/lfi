@@ -1,18 +1,20 @@
 import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { attemptWork } from "./attempt-work.js";
-import { mapConcurrent } from "./concurrency.js";
-import { loadConfig } from "./config.js";
+import {
+  mapConcurrent,
+  mapConcurrentAfterDistinctKeyProbes,
+} from "./concurrency.js";
+import { loadConfig, resolveWorkerModel } from "./config.js";
 import { closeIssue, commentFinalFailure, setIssueStatus } from "./github.js";
 import { git, gitCommonDirectory, localRepoInfo, removeWorktreeAndBranch } from "./git.js";
-import type { Language } from "./i18n.js";
-import { localize } from "./i18n.js";
+import { localize, type Language } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
 import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
-import { printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted } from "./run-display.js";
+import { printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, reportUnavailableModelSkip } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
 import { listWork } from "./run-source.js";
 import type { Attempt } from "./runner-types.js";
@@ -88,6 +90,9 @@ export const runLfi = async (
   const pendingPath = join(stateRoot, "pending-closures.json");
   const completed = new Set<string>();
   const attempted = new Map<string, string>();
+  const warnedMissingTier = new Set<string>();
+  const unavailableModels = new Set<string>();
+  const reportedUnavailableTasks = new Set<string>();
   let iterations = 0;
   let pending = await readPendingClosures(pendingPath);
   if (config.TASK_SOURCE === "local") pending = [];
@@ -122,7 +127,46 @@ export const runLfi = async (
       if (config.TASK_SOURCE === "github") {
         await git(cwd, ["fetch", "origin", config.BASE_BRANCH]);
       }
-      const runnable = await listWork(cwd, completed, selectedIds);
+      const candidates = await listWork(cwd, completed, selectedIds);
+      const runnable = candidates.flatMap((issue) => {
+        if (issue.executionTierConflict) {
+          const reason = localize(
+            language,
+            `${issue.id} has conflicting execution tier labels: ${issue.executionTierConflict.join(", ")}. Keep exactly one lfi:tier:* label.`,
+            `${issue.id}: конфликтующие метки уровня выполнения: ${issue.executionTierConflict.join(", ")}. Оставьте ровно одну метку lfi:tier:*.`,
+          );
+          attempted.set(issue.id, reason);
+          output.error(reason);
+          return [];
+        }
+        if (issue.executionTier === undefined) {
+          if (!warnedMissingTier.has(issue.id)) {
+            output.log(
+              localize(
+                language,
+                `${issue.id} has no execution tier; using standard.`,
+                `${issue.id}: уровень выполнения не указан; используется standard.`,
+              ),
+            );
+            warnedMissingTier.add(issue.id);
+          }
+          issue = { ...issue, executionTier: "standard" as const };
+        }
+        const model = resolveWorkerModel(config, issue.executionTier ?? "standard");
+        if (model && unavailableModels.has(model)) {
+          const reason = reportUnavailableModelSkip(
+            output,
+            language,
+            reportedUnavailableTasks,
+            issue.id,
+            issue.executionTier ?? "standard",
+            model,
+          );
+          attempted.set(issue.id, reason);
+          return [];
+        }
+        return [issue];
+      });
       await writeFile(
         currentStatePath,
         `${JSON.stringify({
@@ -148,12 +192,37 @@ export const runLfi = async (
         );
       }
       printIteration(output, language, stage, runnable.map((item) => item.id));
-      for (const issue of runnable) printWorkStarted(output, language, issue.id);
-      const attempts = await mapConcurrent(
+      const attempts = await mapConcurrentAfterDistinctKeyProbes(
         runnable,
         config.MAX_PARALLEL,
         (issue) =>
-          attemptWork({
+          resolveWorkerModel(config, issue.executionTier ?? "standard"),
+        async (issue) => {
+          const model = resolveWorkerModel(config, issue.executionTier ?? "standard");
+          if (model && unavailableModels.has(model)) {
+            const summary = reportUnavailableModelSkip(
+              output,
+              language,
+              reportedUnavailableTasks,
+              issue.id,
+              issue.executionTier ?? "standard",
+              model,
+            );
+            return {
+              issue,
+              accepted: false,
+              summary,
+              worktreePath: join(worktreesRoot, config.TASK_SOURCE === "local"
+                ? issue.id.toLowerCase()
+                : `issue-${issue.number}`),
+              branch:
+                config.TASK_SOURCE === "local"
+                  ? `lfi/${issue.id.toLowerCase()}`
+                  : `lfi/issue-${issue.number}`,
+            };
+          }
+          printWorkStarted(output, language, issue.id);
+          const attempt = await attemptWork({
             cwd,
             worktreesRoot,
             baseRef,
@@ -163,7 +232,19 @@ export const runLfi = async (
             log,
             taskTemplate,
             language,
-          }),
+          });
+          if (attempt.unavailableModel) {
+            unavailableModels.add(attempt.unavailableModel);
+            output.error(
+              localize(
+                language,
+                `${issue.id}: configured ${issue.executionTier ?? "standard"} tier model ${attempt.unavailableModel} is unavailable; LFI will not fall back and will skip other tasks using it for this run.`,
+                `${issue.id}: настроенная модель ${attempt.unavailableModel} уровня ${issue.executionTier ?? "standard"} недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этой моделью в текущем запуске.`,
+              ),
+            );
+          }
+          return attempt;
+        },
       );
       for (const attempt of attempts) {
         attempted.set(attempt.issue.id, attempt.summary);

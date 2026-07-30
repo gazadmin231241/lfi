@@ -49,6 +49,7 @@ const repairWithFakeCodex = async (
   fixture: Awaited<ReturnType<typeof conflictedRepository>>,
   logName: string,
   allowedPaths?: readonly string[],
+  config: Partial<typeof DEFAULT_CONFIG> = {},
 ) => {
   const originalPath = process.env.PATH;
   process.env.PATH = `${fixture.tools}:${originalPath ?? ""}`;
@@ -56,7 +57,7 @@ const repairWithFakeCodex = async (
     await mergeWithAgent({
       cwd: fixture.root,
       context: "Resolve the test integration.",
-      config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
+      config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true", ...config },
       gitDirectory: join(fixture.root, ".git"),
       log: {
         directory: fixture.logs,
@@ -71,6 +72,23 @@ const repairWithFakeCodex = async (
     process.env.PATH = originalPath;
   }
 };
+
+test("integration repair uses the standard model fallback and independent reasoning", async () => {
+  const fixture = await conflictedRepository(
+    "printf '%s\\n' \"$*\" > merger-args.txt; printf 'resolved\\n' > conflict.txt",
+  );
+  await repairWithFakeCodex(fixture, "merge-routing", undefined, {
+    CODEX_MODEL: "legacy",
+    STANDARD_MODEL: "terra",
+    CODEX_REASONING_EFFORT: "low",
+    MERGER_REASONING_EFFORT: "high",
+  });
+
+  const args = await readFile(join(fixture.root, "merger-args.txt"), "utf8");
+  assert.match(args, /--model terra\b/u);
+  assert.match(args, /model_reasoning_effort="high"/u);
+  assert.doesNotMatch(args, /model_reasoning_effort="low"/u);
+});
 
 test("successful merge repair is committed by the LFI host", async () => {
   const fixture = await conflictedRepository(

@@ -2,6 +2,10 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { gitResult } from "./git.js";
+import {
+  isExecutionTier,
+  type ExecutionTier,
+} from "./execution-tier.js";
 
 export type TrackerDocumentType = "task" | "spec";
 export type TrackerStatus = "ready" | "completed" | "cancelled";
@@ -12,6 +16,7 @@ export interface TrackerDocument {
   type: TrackerDocumentType;
   title: string;
   status: TrackerStatus;
+  executionTier?: ExecutionTier;
   spec?: string;
   blockedBy: string[];
   githubIssue?: number;
@@ -108,6 +113,17 @@ export const parseTrackerDocument = (
     );
   }
   const completedAt = fields.get("completed_at");
+  const executionTier = fields.get("execution_tier");
+  if (executionTier !== undefined && !isExecutionTier(executionTier)) {
+    throw new Error(
+      `${path}: invalid execution_tier / некорректный execution_tier: ${executionTier}`,
+    );
+  }
+  if (type === "spec" && executionTier !== undefined) {
+    throw new Error(
+      `${path}: specifications cannot have execution_tier / у спецификаций не может быть execution_tier`,
+    );
+  }
   if (
     completedAt !== undefined &&
     !Number.isFinite(Date.parse(completedAt))
@@ -127,6 +143,7 @@ export const parseTrackerDocument = (
     type,
     title: required(fields, "title", path),
     status,
+    ...(executionTier === undefined ? {} : { executionTier }),
     ...(fields.get("spec") ? { spec: fields.get("spec")! } : {}),
     blockedBy,
     ...(githubIssue === undefined ? {} : { githubIssue }),
@@ -151,6 +168,14 @@ export const serializeTrackerDocument = (
     `title: ${JSON.stringify(document.title)}`,
     `status: ${document.status}`,
   ];
+  if (document.executionTier !== undefined) {
+    if (document.type !== "task") {
+      throw new Error(
+        `${document.path}: specifications cannot have execution_tier / у спецификаций не может быть execution_tier`,
+      );
+    }
+    lines.push(`execution_tier: ${document.executionTier}`);
+  }
   if (document.spec) lines.push(`spec: ${document.spec}`);
   lines.push("blocked_by:");
   for (const blocker of document.blockedBy) lines.push(`  - ${blocker}`);

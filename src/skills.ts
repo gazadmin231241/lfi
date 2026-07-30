@@ -71,13 +71,22 @@ tracker, path, label, and execution-model instruction in this skill:
 
 - In Local Markdown mode, publish one \`type: task\` document per ticket in
   \`.lfi/tasks/\`, using the shared \`LFI-N\` sequence and \`spec: LFI-N\`.
+  Assign exactly one \`execution_tier: light|standard|deep\` in frontmatter.
   Prefix each filename with its derived status, for example
   \`[READY] LFI-N — informative-slug.md\` or
   \`[BLOCKED] LFI-N — informative-slug.md\`.
 - In GitHub mode, publish Issues with \`lfi:task\`, a stable
-  \`LFI-N — title\`, and native parent and dependency relationships. Never
+  \`LFI-N — title\`, exactly one \`lfi:tier:light\`,
+  \`lfi:tier:standard\`, or \`lfi:tier:deep\` label, and native parent and
+  dependency relationships. Never
   add \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
-- The skill must not ask for an execution model or assign model labels.
+- Assign the execution tier automatically from required judgment and cost of
+  error: bounded low-risk mechanical work is \`light\`; ordinary feature,
+  maintenance, and bug work is \`standard\`; ambiguous, cross-boundary,
+  security-, concurrency-, or data-sensitive work is \`deep\`. File count is
+  not authoritative. Resolve genuine doubt upward. The user may override the
+  tier before execution.
+- The skill must not ask for an execution model or assign concrete model labels.
 - Do not publish LFI tracker documents under \`.scratch/\`.
 
 If the marker is absent, follow the original process below unchanged.

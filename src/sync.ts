@@ -17,6 +17,11 @@ import { withoutLocalRelationships } from "./local-relationships.js";
 import { checkpointTracker } from "./runner-support.js";
 import { localize, type Language } from "./i18n.js";
 import {
+  EXECUTION_TIERS,
+  executionTierFromLabels,
+  executionTierLabel,
+} from "./execution-tier.js";
+import {
   LFI_SPEC_LABEL,
   LFI_TASK_LABEL,
 } from "./tracker-contract.js";
@@ -75,19 +80,32 @@ const desiredIssue = (
       `Управляется LFI из ${document.id}.`,
     )}\n`,
     state: desiredState(document, tracker),
-    labels: [document.type === "spec" ? LFI_SPEC_LABEL : LFI_TASK_LABEL],
+    labels:
+      document.type === "spec"
+        ? [LFI_SPEC_LABEL]
+        : [
+            LFI_TASK_LABEL,
+            executionTierLabel(document.executionTier ?? "standard"),
+          ],
   };
 };
 
-const typeLabels = new Set([LFI_SPEC_LABEL, LFI_TASK_LABEL]);
+const managedLabels = new Set([
+  LFI_SPEC_LABEL,
+  LFI_TASK_LABEL,
+  ...EXECUTION_TIERS.map(executionTierLabel),
+]);
 
 const desiredLabels = (
   existing: readonly string[],
-  type: TrackerDocument["type"],
+  document: TrackerDocument,
 ): string[] =>
   [
-    ...existing.filter((label) => !typeLabels.has(label)),
-    type === "spec" ? LFI_SPEC_LABEL : LFI_TASK_LABEL,
+    ...existing.filter((label) => !managedLabels.has(label)),
+    document.type === "spec" ? LFI_SPEC_LABEL : LFI_TASK_LABEL,
+    ...(document.type === "task"
+      ? [executionTierLabel(document.executionTier ?? "standard")]
+      : []),
   ].sort((left, right) => left.localeCompare(right));
 
 const sameLabels = (left: readonly string[], right: readonly string[]): boolean =>
@@ -156,6 +174,16 @@ export const syncGithubMirror = async (
         document.githubIssue === undefined
           ? await adapter.findByLfiId(document.id)
           : await adapter.getIssue(document.githubIssue);
+      const tierSelection = executionTierFromLabels(issue?.labels ?? []);
+      if (tierSelection.status === "conflict") {
+        throw new Error(
+          localize(
+            language,
+            `${document.id} has conflicting execution tier labels: ${tierSelection.labels.join(", ")}. Keep exactly one lfi:tier:* label before syncing.`,
+            `${document.id}: конфликтующие метки уровня выполнения: ${tierSelection.labels.join(", ")}. Перед синхронизацией оставьте ровно одну метку lfi:tier:*.`,
+          ),
+        );
+      }
       if (
         issue &&
         document.githubIssue === undefined &&
@@ -167,7 +195,7 @@ export const syncGithubMirror = async (
       }
       const desired = {
         ...baseDesired,
-        labels: desiredLabels(issue?.labels ?? [], document.type),
+        labels: desiredLabels(issue?.labels ?? [], document),
       };
       if (!issue) {
         if (options.dryRun) {

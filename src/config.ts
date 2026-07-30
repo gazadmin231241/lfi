@@ -1,5 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
+import type { ExecutionTier } from "./execution-tier.js";
+
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 export type TaskSource = "local" | "github";
 
@@ -7,6 +9,9 @@ export interface LfiConfig {
   TASK_SOURCE: TaskSource;
   GITHUB_REPO: string;
   CODEX_MODEL: string;
+  LIGHT_MODEL: string;
+  STANDARD_MODEL: string;
+  DEEP_MODEL: string;
   CODEX_REASONING_EFFORT: ReasoningEffort;
   MERGER_MODEL: string;
   MERGER_REASONING_EFFORT: ReasoningEffort;
@@ -23,6 +28,9 @@ export const DEFAULT_CONFIG: LfiConfig = {
   TASK_SOURCE: "local",
   GITHUB_REPO: "",
   CODEX_MODEL: "",
+  LIGHT_MODEL: "",
+  STANDARD_MODEL: "",
+  DEEP_MODEL: "",
   CODEX_REASONING_EFFORT: "medium",
   MERGER_MODEL: "",
   MERGER_REASONING_EFFORT: "medium",
@@ -51,6 +59,9 @@ export const parseEnvConfig = (source: string): LfiConfig => {
     const value = line.slice(separator + 1);
     switch (key) {
       case "CODEX_MODEL":
+      case "LIGHT_MODEL":
+      case "STANDARD_MODEL":
+      case "DEEP_MODEL":
       case "MERGER_MODEL":
       case "GITHUB_REPO":
       case "BASE_BRANCH":
@@ -104,6 +115,21 @@ export const isReasoningEffort = (value: string): value is ReasoningEffort =>
   value === "xhigh" ||
   value === "max" ||
   value === "ultra";
+
+export const resolveWorkerModel = (
+  config: LfiConfig,
+  tier: ExecutionTier,
+): string => {
+  const modelByTier: Record<ExecutionTier, string> = {
+    light: config.LIGHT_MODEL,
+    standard: config.STANDARD_MODEL,
+    deep: config.DEEP_MODEL,
+  };
+  return modelByTier[tier] || config.CODEX_MODEL;
+};
+
+export const resolveIntegrationModel = (config: LfiConfig): string =>
+  config.MERGER_MODEL || config.STANDARD_MODEL || config.CODEX_MODEL;
 
 export const validateConfig = (config: LfiConfig): LfiConfig => {
   for (const key of ["MAX_PARALLEL", "MAX_STAGES"] as const) {

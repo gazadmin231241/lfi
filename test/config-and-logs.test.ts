@@ -7,6 +7,8 @@ import test from "node:test";
 import {
   DEFAULT_CONFIG,
   parseEnvConfig,
+  resolveIntegrationModel,
+  resolveWorkerModel,
   serializeEnvConfig,
   validateConfig,
 } from "../src/config.js";
@@ -20,6 +22,9 @@ test("config round-trips defaults without configurable tracker labels", () => {
   const parsed = parseEnvConfig(serialized);
 
   assert.equal(parsed.CODEX_REASONING_EFFORT, "medium");
+  assert.equal(parsed.LIGHT_MODEL, "");
+  assert.equal(parsed.STANDARD_MODEL, "");
+  assert.equal(parsed.DEEP_MODEL, "");
   assert.equal(parsed.MAX_PARALLEL, 3);
   assert.equal(parsed.MAX_STAGES, 10);
   assert.equal(parsed.LOG_RETENTION_DAYS, 3);
@@ -27,6 +32,28 @@ test("config round-trips defaults without configurable tracker labels", () => {
   assert.equal("ISSUE_LABEL" in parsed, false);
   assert.equal("EXCLUDE_LABELS" in parsed, false);
   assert.equal(parsed.TASK_SOURCE, "local");
+});
+
+test("execution tiers resolve worker and integration models without changing reasoning", () => {
+  const config = {
+    ...DEFAULT_CONFIG,
+    CODEX_MODEL: "legacy",
+    LIGHT_MODEL: "luna",
+    STANDARD_MODEL: "terra",
+    DEEP_MODEL: "sol",
+    CODEX_REASONING_EFFORT: "low" as const,
+  };
+
+  assert.equal(resolveWorkerModel(config, "light"), "luna");
+  assert.equal(resolveWorkerModel(config, "standard"), "terra");
+  assert.equal(resolveWorkerModel(config, "deep"), "sol");
+  assert.equal(resolveWorkerModel({ ...config, LIGHT_MODEL: "" }, "light"), "legacy");
+  assert.equal(resolveIntegrationModel(config), "terra");
+  assert.equal(
+    resolveIntegrationModel({ ...config, MERGER_MODEL: "integrator" }),
+    "integrator",
+  );
+  assert.equal(config.CODEX_REASONING_EFFORT, "low");
 });
 
 test("config ignores removed tracker-label settings", () => {
@@ -168,6 +195,9 @@ esac
   );
   assert.equal(config.BASE_BRANCH, "trunk");
   assert.equal(config.CODEX_MODEL, "gpt-test");
+  assert.equal(config.LIGHT_MODEL, "gpt-test");
+  assert.equal(config.STANDARD_MODEL, "gpt-test");
+  assert.equal(config.DEEP_MODEL, "gpt-test");
   assert.equal(config.CODEX_REASONING_EFFORT, "high");
   assert.equal(config.LOG_RETENTION_DAYS, 7);
   assert.equal(config.VALIDATE_COMMAND, "pnpm validate:all");
@@ -183,10 +213,16 @@ esac
   );
   assert.match(githubGuide, /lfi:spec/u);
   assert.match(githubGuide, /lfi:task/u);
+  assert.match(githubGuide, /lfi:tier:light/u);
+  assert.match(githubGuide, /lfi:tier:standard/u);
+  assert.match(githubGuide, /lfi:tier:deep/u);
   assert.doesNotMatch(githubGuide, /ready-for-agent|model:sol|\.scratch/u);
   const calls = await readFile(ghCalls, "utf8");
   assert.match(calls, /label create lfi:spec/u);
   assert.match(calls, /label create lfi:task/u);
+  assert.match(calls, /label create lfi:tier:light/u);
+  assert.match(calls, /label create lfi:tier:standard/u);
+  assert.match(calls, /label create lfi:tier:deep/u);
   const agentInstructions = await readFile(join(root, "AGENTS.md"), "utf8");
   assert.match(agentInstructions, /GitHub Issues/u);
   assert.doesNotMatch(agentInstructions, /use LFI Local Markdown/u);
@@ -263,6 +299,9 @@ exit 1
   );
   assert.equal(config.TASK_SOURCE, "local");
   assert.equal(config.BASE_BRANCH, "main");
+  assert.equal(config.LIGHT_MODEL, "");
+  assert.equal(config.STANDARD_MODEL, "");
+  assert.equal(config.DEEP_MODEL, "");
   assert.equal(await stat(join(root, ".lfi", "tasks")).then((item) => item.isDirectory()), true);
   assert.equal(await stat(join(root, ".lfi", "specs")).then((item) => item.isDirectory()), true);
   const gitignore = await readFile(join(root, ".gitignore"), "utf8");
@@ -279,6 +318,7 @@ exit 1
   assert.match(localGuide, /\.lfi\/tasks/u);
   assert.match(localGuide, /lfi:spec/u);
   assert.match(localGuide, /lfi:task/u);
+  assert.match(localGuide, /execution_tier/u);
   assert.doesNotMatch(localGuide, /ready-for-agent|model:sol|\.scratch/u);
   assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /Трекер задач/u);
   await assert.rejects(stat(ghMarker));

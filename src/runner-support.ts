@@ -1,7 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 import { runCodex } from "./codex.js";
-import type { LfiConfig } from "./config.js";
+import {
+  resolveIntegrationModel,
+  type LfiConfig,
+} from "./config.js";
 import { commitWorktreeChanges, git, gitResult } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
@@ -104,7 +107,7 @@ Do not modify paths outside this list.
 `
   : ""}
 `,
-    model: options.config.MERGER_MODEL || options.config.CODEX_MODEL,
+    model: resolveIntegrationModel(options.config),
     reasoning: options.config.MERGER_REASONING_EFFORT,
     gitDirectory: options.gitDirectory,
     log: options.log,

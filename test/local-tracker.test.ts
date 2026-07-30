@@ -27,6 +27,7 @@ id: LFI-15
 type: task
 title: Implement task parser
 status: ready
+execution_tier: deep
 spec: LFI-14
 blocked_by:
   - LFI-12
@@ -46,6 +47,7 @@ test("local tracker documents round-trip readable Markdown metadata", () => {
     type: "task",
     title: "Implement task parser",
     status: "ready",
+    executionTier: "deep",
     spec: "LFI-14",
     blockedBy: ["LFI-12"],
     githubIssue: 362,
@@ -153,6 +155,7 @@ test("local status derives explicit display prefixes", () => {
   const spec = parseTrackerDocument(
     taskSource
       .replace("type: task", "type: spec")
+      .replace("execution_tier: deep\n", "")
       .replaceAll("LFI-15", "LFI-14")
       .replace("spec: LFI-14\n", "")
       .replace("  - LFI-12\n", "")

@@ -62,14 +62,14 @@ LFI-20
 ---
 Управляется LFI из LFI-21.
 `,
-          labels: ["lfi:task"],
+          labels: ["lfi:task", "lfi:tier:light"],
         },
         {
           number: 12,
           title: "Second task",
           url: "https://github.test/12",
           body: "Build second.\n\n- #11\n",
-          labels: ["lfi:task"],
+          labels: ["lfi:task", "lfi:tier:deep"],
         },
         {
           number: 13,
@@ -110,6 +110,13 @@ LFI-20
       "utf8",
     ),
     /type: task[\s\S]*spec: LFI-1[\s\S]*blocked_by:\n  - LFI-2[\s\S]*github_issue: 12/u,
+  );
+  assert.match(
+    await readFile(
+      join(root, ".lfi", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
+      "utf8",
+    ),
+    /execution_tier: deep/u,
   );
   assert.doesNotMatch(
     await readFile(

@@ -133,7 +133,9 @@ export const configureTrackerContract = async (
 flat files in \`.lfi/tasks/\`. Both collections share one monotonically
 increasing \`LFI-N\` ID sequence, including IDs found in Git history. A task
 links to its specification with \`spec: LFI-N\` and to blockers with
-\`blocked_by\`. LFI also renders clickable \`Specification\` and \`Blocked by\`
+\`blocked_by\`. Executable tasks store exactly one \`execution_tier\` value:
+\`light\`, \`standard\`, or \`deep\`. LFI also renders clickable
+\`Specification\` and \`Blocked by\`
 sections at the end of each task and keeps their file links current. Approved
 tasks use \`status: ready\`.
 
@@ -146,7 +148,9 @@ renames them when status changes.`,
 задачи — в \`.lfi/tasks/\`. Обе коллекции используют одну монотонно
 возрастающую последовательность \`LFI-N\`, включая ID из истории Git. Задача
 ссылается на спецификацию через \`spec: LFI-N\`, а на блокеры — через
-\`blocked_by\`. В конце каждой задачи LFI также отображает кликабельные разделы
+\`blocked_by\`. Исполняемая задача хранит ровно один \`execution_tier\`:
+\`light\`, \`standard\` или \`deep\`. В конце каждой задачи LFI также
+отображает кликабельные разделы
 \`Specification\` и \`Blocked by\` и обновляет ссылки при переименовании файлов.
 Утверждённые задачи используют \`status: ready\`.
 
@@ -160,12 +164,14 @@ renames them when status changes.`,
           language,
           `Specifications are GitHub Issues labelled \`lfi:spec\`; executable tasks
 are GitHub Issues labelled \`lfi:task\`. \`$to-spec\` publishes only
-\`lfi:spec\`. \`$to-tickets\` publishes \`lfi:task\` Issues and uses native
-parent and dependency relationships.`,
+\`lfi:spec\`. \`$to-tickets\` publishes \`lfi:task\` Issues with exactly one
+\`lfi:tier:light\`, \`lfi:tier:standard\`, or \`lfi:tier:deep\` label and uses
+native parent and dependency relationships.`,
           `Спецификации — GitHub Issues с меткой \`lfi:spec\`, исполняемые задачи —
 GitHub Issues с меткой \`lfi:task\`. \`$to-spec\` публикует только
-\`lfi:spec\`. \`$to-tickets\` публикует Issues с \`lfi:task\` и использует
-нативные родительские связи и зависимости.`,
+\`lfi:spec\`. \`$to-tickets\` публикует Issues с \`lfi:task\` и ровно одной
+меткой \`lfi:tier:light\`, \`lfi:tier:standard\` или \`lfi:tier:deep\`, а также
+использует нативные родительские связи и зависимости.`,
         );
   const contract = localize(
       language,
@@ -176,8 +182,9 @@ ${TRACKER_CONTRACT_MARKER}
 ${storage}
 
 Local \`type: spec\` and \`type: task\` map exactly to GitHub \`lfi:spec\` and
-\`lfi:task\`. Skills never choose an execution model or assign model labels;
-LFI configuration chooses models.
+\`lfi:task\`. Task creation assigns an abstract execution tier from required
+judgment and cost of error; it never chooses a concrete model. LFI
+configuration maps tiers to models.
 
 Use \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\`, and \`[DONE]\` only
 for local filenames and local status output. GitHub Issue titles use the stable
@@ -192,8 +199,9 @@ ${TRACKER_CONTRACT_MARKER}
 ${storage}
 
 Локальные \`type: spec\` и \`type: task\` точно соответствуют GitHub
-\`lfi:spec\` и \`lfi:task\`. Навыки не выбирают модель выполнения и не
-назначают модельные метки; модели выбирает конфигурация LFI.
+\`lfi:spec\` и \`lfi:task\`. При создании задачи назначается абстрактный уровень
+выполнения по требуемому качеству суждения и цене ошибки; конкретная модель не
+выбирается. Конфигурация LFI сопоставляет уровни моделям.
 
 Используйте \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\` и \`[DONE]\`
 только в именах локальных файлов и локальном выводе статуса. Заголовки GitHub

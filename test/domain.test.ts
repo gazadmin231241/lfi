@@ -8,6 +8,7 @@ import {
   type GithubIssue,
 } from "../src/issues.js";
 import { evaluateWorkerResult } from "../src/worker-result.js";
+import { executionTierFromLabels } from "../src/execution-tier.js";
 
 const issue = (
   number: number,
@@ -66,6 +67,20 @@ test("derives GitHub task readiness from textual and native blockers", () => {
   assert.equal(
     githubTaskState(issue(3, ["lfi:task"]), new Set([1]), new Map([[3, [1]]])),
     "blocked",
+  );
+});
+
+test("conflicting GitHub execution tier labels remain an explicit conflict", () => {
+  assert.deepEqual(
+    executionTierFromLabels([
+      "lfi:task",
+      "lfi:tier:light",
+      "lfi:tier:deep",
+    ]),
+    {
+      status: "conflict",
+      labels: ["lfi:tier:light", "lfi:tier:deep"],
+    },
   );
 });
 

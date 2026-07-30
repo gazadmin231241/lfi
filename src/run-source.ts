@@ -3,6 +3,9 @@ import { join } from "node:path";
 import { mapConcurrent } from "./concurrency.js";
 import { loadConfig } from "./config.js";
 import {
+  executionTierFromLabels,
+} from "./execution-tier.js";
+import {
   listAllOpenIssueNumbers,
   listOpenIssues,
   nativeBlockers,
@@ -45,6 +48,9 @@ export const listWork = async (
         url: task.id,
         body: task.body,
         labels: [LFI_TASK_LABEL],
+        ...(task.executionTier === undefined
+          ? {}
+          : { executionTier: task.executionTier }),
         localPath: task.path,
       }));
   }
@@ -77,7 +83,19 @@ export const listWork = async (
   return selectRunnableIssues(issues, allOpen, {
     nativeBlockers: blockers,
   })
-    .map((issue): WorkItem => ({ ...issue, id: `#${issue.number}` }))
+    .map((issue): WorkItem => {
+      const selection = executionTierFromLabels(issue.labels);
+      return {
+        ...issue,
+        id: `#${issue.number}`,
+        ...(selection.status === "resolved"
+          ? { executionTier: selection.tier }
+          : {}),
+        ...(selection.status === "conflict"
+          ? { executionTierConflict: selection.labels }
+          : {}),
+      };
+    })
     .filter(
       (issue) =>
         !completed.has(issue.id) &&

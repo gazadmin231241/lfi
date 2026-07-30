@@ -53,7 +53,11 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
     id: string,
     type: "task" | "spec",
     status: "ready" | "completed",
-    extra: { spec?: string; blockedBy?: string[] } = {},
+    extra: {
+      spec?: string;
+      blockedBy?: string[];
+      executionTier?: "light" | "standard" | "deep";
+    } = {},
   ) => ({
     id,
     number: Number(id.slice(4)),
@@ -64,6 +68,9 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
       ? { completedAt: "2026-01-01T00:00:00.000Z" }
       : {}),
     ...(extra.spec ? { spec: extra.spec } : {}),
+    ...(extra.executionTier
+      ? { executionTier: extra.executionTier }
+      : {}),
     blockedBy: extra.blockedBy ?? [],
     body: `Body for ${id}.\n`,
     path: join(
@@ -75,10 +82,12 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   const spec = document("LFI-1", "spec", "ready");
   const completed = document("LFI-2", "task", "completed", {
     spec: "LFI-1",
+    executionTier: "light",
   });
   const ready = document("LFI-3", "task", "ready", {
       spec: "LFI-1",
       blockedBy: ["LFI-2"],
+      executionTier: "deep",
     });
   for (const item of [spec, completed, ready]) {
     await writeFile(item.path, serializeTrackerDocument(item));
@@ -136,8 +145,8 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   assert.equal(issues.get(101)?.title, "LFI-2 — task LFI-2");
   assert.equal(issues.get(102)?.title, "LFI-3 — task LFI-3");
   assert.deepEqual(issues.get(100)?.labels, ["lfi:spec"]);
-  assert.deepEqual(issues.get(101)?.labels, ["lfi:task"]);
-  assert.deepEqual(issues.get(102)?.labels, ["lfi:task"]);
+  assert.deepEqual(issues.get(101)?.labels, ["lfi:task", "lfi:tier:light"]);
+  assert.deepEqual(issues.get(102)?.labels, ["lfi:task", "lfi:tier:deep"]);
   assert.deepEqual(parents, [[101, 100], [102, 100]]);
   assert.deepEqual(dependencies, [[102, [101]]]);
   assert.match(
@@ -149,14 +158,33 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
     [...issues.values()].find((issue) => issue.title.includes(id));
   issues.set(102, {
     ...issues.get(102)!,
-    labels: ["lfi:spec", "documentation"],
+    labels: [
+      "lfi:spec",
+      "lfi:tier:light",
+      "lfi:tier:standard",
+      "documentation",
+    ],
+  });
+  const conflict = await syncGithubMirror(root, { adapter });
+  assert.deepEqual(conflict.failed.map((item) => item.id), ["LFI-3"]);
+  assert.deepEqual(
+    issues.get(102)?.labels,
+    ["lfi:spec", "lfi:tier:light", "lfi:tier:standard", "documentation"],
+  );
+
+  issues.set(102, {
+    ...issues.get(102)!,
+    labels: ["lfi:spec", "lfi:tier:light", "documentation"],
   });
   const second = await syncGithubMirror(root, { adapter });
   assert.deepEqual(second.created, []);
   assert.deepEqual(second.failed, []);
   assert.deepEqual(second.skipped, ["LFI-1", "LFI-2"]);
   assert.deepEqual(second.updated, ["LFI-3"]);
-  assert.deepEqual(issues.get(102)?.labels, ["documentation", "lfi:task"]);
+  assert.deepEqual(
+    issues.get(102)?.labels,
+    ["documentation", "lfi:task", "lfi:tier:deep"],
+  );
   assert.deepEqual(parents, [[101, 100], [102, 100]]);
   assert.deepEqual(dependencies, [[102, [101]]]);
 

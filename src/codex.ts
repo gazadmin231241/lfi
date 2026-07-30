@@ -33,6 +33,11 @@ export interface CodexRunResult {
   summary: string;
 }
 
+export const isUnavailableModelError = (message: string): boolean =>
+  /model_not_found|unsupported model|model\b[^\n]*(?:not (?:available|found|supported)|does not exist|do not have access)/iu.test(
+    message,
+  );
+
 const parseFinal = (
   source: string,
 ): {

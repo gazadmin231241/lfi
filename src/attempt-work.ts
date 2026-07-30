@@ -1,7 +1,13 @@
 import { join } from "node:path";
 
-import { runCodex } from "./codex.js";
-import type { LfiConfig } from "./config.js";
+import {
+  isUnavailableModelError,
+  runCodex,
+} from "./codex.js";
+import {
+  resolveWorkerModel,
+  type LfiConfig,
+} from "./config.js";
 import {
   commitWorktreeChanges,
   commitsAhead,
@@ -32,6 +38,10 @@ export const attemptWork = async (options: {
       ? options.issue.id.toLowerCase()
       : `issue-${options.issue.number}`;
   const logName = options.config.TASK_SOURCE === "local" ? options.issue.id : key;
+  const model = resolveWorkerModel(
+    options.config,
+    options.issue.executionTier ?? "standard",
+  );
   try {
     const worktree = await ensureIssueWorktree({
       repoRoot: options.cwd,
@@ -66,7 +76,7 @@ export const attemptWork = async (options: {
         options.issue,
         options.language,
       ),
-      model: options.config.CODEX_MODEL,
+      model,
       reasoning: options.config.CODEX_REASONING_EFFORT,
       gitDirectory: options.gitDirectory,
       log: options.log,
@@ -95,6 +105,11 @@ export const attemptWork = async (options: {
       worktreePath: worktree.path,
       branch: worktree.branch,
       logName,
+      ...(codex.exitCode !== 0 &&
+      model &&
+      isUnavailableModelError(codex.summary)
+        ? { unavailableModel: model }
+        : {}),
     };
   } catch (error) {
     return {

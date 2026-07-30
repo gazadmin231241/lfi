@@ -59,6 +59,10 @@ name: example
   assert.match(tickets, /lfi:task/u);
   assert.match(tickets, /\[READY\].*\[BLOCKED\]/su);
   assert.match(tickets, /must not ask for an execution model/u);
+  assert.match(tickets, /execution_tier/u);
+  assert.match(tickets, /lfi:tier:light/u);
+  assert.match(tickets, /judgment and cost of\s+error/u);
+  assert.match(tickets, /Resolve genuine doubt upward/u);
   assert.match(tickets, /Never[\s\S]*ready-for-agent/u);
   assert.equal(adaptLfiSkill("to-tickets", tickets), tickets);
 });

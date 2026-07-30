@@ -38,6 +38,12 @@ export interface InitOptions {
   taskSource?: TaskSource;
 }
 
+const OPENAI_56_PRESET = {
+  LIGHT_MODEL: "gpt-5.6-luna",
+  STANDARD_MODEL: "gpt-5.6-terra",
+  DEEP_MODEL: "gpt-5.6-sol",
+} as const;
+
 const exists = async (path: string) =>
   access(path).then(
     () => true,
@@ -65,6 +71,19 @@ const askTaskSource = async (language: Language): Promise<TaskSource> => {
   );
   input.close();
   return answer.trim() === "2" ? "github" : "local";
+};
+
+const askRecommendedModelPreset = async (
+  language: Language,
+): Promise<boolean> => {
+  const input = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await input.question(
+    language === "ru"
+      ? "Использовать рекомендуемый набор моделей Luna/Terra/Sol? [Y/n] "
+      : "Use the recommended Luna/Terra/Sol model preset? [Y/n] ",
+  );
+  input.close();
+  return !/^n/iu.test(answer.trim());
 };
 
 const askAdvanced = async (
@@ -96,11 +115,26 @@ const askAdvanced = async (
   }
   const result: LfiConfig = {
     ...config,
-    CODEX_MODEL: await ask(label("Codex model", "Модель Codex"), config.CODEX_MODEL),
+    CODEX_MODEL: await ask(
+      label("Fallback Codex model", "Резервная модель Codex"),
+      config.CODEX_MODEL,
+    ),
+    LIGHT_MODEL: await ask(
+      label("Light tier model", "Модель уровня light"),
+      config.LIGHT_MODEL,
+    ),
+    STANDARD_MODEL: await ask(
+      label("Standard tier model", "Модель уровня standard"),
+      config.STANDARD_MODEL,
+    ),
+    DEEP_MODEL: await ask(
+      label("Deep tier model", "Модель уровня deep"),
+      config.DEEP_MODEL,
+    ),
     CODEX_REASONING_EFFORT: codexReasoning,
     MERGER_MODEL: await ask(
       label("Merger model", "Модель для слияния"),
-      config.MERGER_MODEL || config.CODEX_MODEL,
+      config.MERGER_MODEL,
     ),
     MERGER_REASONING_EFFORT: mergerReasoning,
     MAX_PARALLEL: Number(
@@ -152,10 +186,30 @@ export const initializeProject = async (
     (process.stdin.isTTY && !options.yes
       ? await askRetention(options.language)
       : DEFAULT_CONFIG.LOG_RETENTION_DAYS);
+  const useRecommendedPreset =
+    options.model === undefined &&
+    process.stdin.isTTY &&
+    !options.yes &&
+    (await askRecommendedModelPreset(options.language));
   let config: LfiConfig = {
     ...DEFAULT_CONFIG,
     TASK_SOURCE: taskSource,
     CODEX_MODEL: options.model ?? DEFAULT_CONFIG.CODEX_MODEL,
+    LIGHT_MODEL:
+      options.model ??
+      (useRecommendedPreset
+        ? OPENAI_56_PRESET.LIGHT_MODEL
+        : DEFAULT_CONFIG.LIGHT_MODEL),
+    STANDARD_MODEL:
+      options.model ??
+      (useRecommendedPreset
+        ? OPENAI_56_PRESET.STANDARD_MODEL
+        : DEFAULT_CONFIG.STANDARD_MODEL),
+    DEEP_MODEL:
+      options.model ??
+      (useRecommendedPreset
+        ? OPENAI_56_PRESET.DEEP_MODEL
+        : DEFAULT_CONFIG.DEEP_MODEL),
     CODEX_REASONING_EFFORT:
       options.reasoning ?? DEFAULT_CONFIG.CODEX_REASONING_EFFORT,
     MERGER_REASONING_EFFORT:
@@ -175,6 +229,7 @@ export const initializeProject = async (
           `Репозиторий: ${repo.nameWithOwner}`,
           `Ветка: ${config.BASE_BRANCH}`,
           `Модель: ${config.CODEX_MODEL || "модель Codex по умолчанию"}`,
+          `Маршрутизация: light=${config.LIGHT_MODEL || "fallback"}, standard=${config.STANDARD_MODEL || "fallback"}, deep=${config.DEEP_MODEL || "fallback"}`,
           `Уровень рассуждений: ${config.CODEX_REASONING_EFFORT}`,
           `Параллельно: ${config.MAX_PARALLEL}`,
           `Этапов: ${config.MAX_STAGES}`,
@@ -185,6 +240,7 @@ export const initializeProject = async (
           `Repository: ${repo.nameWithOwner}`,
           `Branch: ${config.BASE_BRANCH}`,
           `Model: ${config.CODEX_MODEL || "default Codex model"}`,
+          `Routing: light=${config.LIGHT_MODEL || "fallback"}, standard=${config.STANDARD_MODEL || "fallback"}, deep=${config.DEEP_MODEL || "fallback"}`,
           `Reasoning: ${config.CODEX_REASONING_EFFORT}`,
           `Parallel workers: ${config.MAX_PARALLEL}`,
           `Stages: ${config.MAX_STAGES}`,
