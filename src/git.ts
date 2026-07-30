@@ -109,6 +109,16 @@ export const createIntegrationWorktree = async (options: {
 export const worktreeClean = async (cwd: string): Promise<boolean> =>
   (await git(cwd, ["status", "--porcelain"])).stdout.trim() === "";
 
+export const commitWorktreeChanges = async (
+  cwd: string,
+  message: string,
+): Promise<boolean> => {
+  if (await worktreeClean(cwd)) return false;
+  await git(cwd, ["add", "--all"]);
+  await git(cwd, ["commit", "-m", message]);
+  return true;
+};
+
 export const commitsAhead = async (
   cwd: string,
   baseRef: string,

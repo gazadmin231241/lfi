@@ -27,9 +27,9 @@ ${issue.body}
 - Schema changes, non-destructive migrations, dependencies, lockfile edits, root configuration, and file moves required by this issue are pre-approved.
 - Never deploy, use production SSH, modify production data, delete database volumes, expose secrets, or force-push.
 - Run focused checks regularly and the repository's full validation before finishing.
-- Use $implement. It includes TDD where appropriate, $code-review, and a commit.
-- Leave the worktree clean.
-- Your final response must conform to the output schema. Use status "completed" only when the entire issue is implemented, reviewed, tested, and committed. Otherwise use "incomplete" and explain the remaining work.
+- Use $implement. It includes TDD where appropriate and $code-review.
+- Do not run git add or git commit. The Codex sandbox intentionally protects Git metadata; after a successful response, the LFI host stages and commits the worktree.
+- Your final response must conform to the output schema. Use status "completed" only when the entire issue is implemented, reviewed, and tested. Otherwise use "incomplete" and explain the remaining work.
 `;
 };
 
@@ -38,7 +38,8 @@ export const mergerPrompt = (
 ): string => `Resolve the current integration problem in this worktree.
 
 Use $resolving-merge-conflicts when a merge is in progress.
-Read the relevant issue bodies and commit history, preserve both intents, run the configured validation, and commit the resolution.
+Read the relevant issue bodies and commit history, preserve both intents, and run the configured validation.
+Do not run git add or git commit; the LFI host commits a successful resolution because the Codex sandbox protects Git metadata.
 Never abort the merge, deploy, use SSH, force-push, or touch production.
 
 Context:

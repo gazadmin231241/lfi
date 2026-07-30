@@ -118,12 +118,14 @@ Use `lfi init --advanced` to edit those values interactively during setup.
 ## Safety and completion
 
 Each task gets a persistent worktree. A branch is eligible for integration
-only after Codex reports structured completion, creates commits, and leaves the
-worktree clean. The combined integration branch must pass the configured
-validation command. Local mode merges the validated integration branch back
-into the current host branch using ordinary Git semantics and never pushes. If
-host changes prevent the merge, LFI preserves the integration worktree and
-prints a recovery command.
+only after Codex reports structured completion. Codex edits and validates files
+inside its `workspace-write` sandbox; because that sandbox intentionally keeps
+Git metadata read-only, the LFI host stages and commits a successful worker's
+changes. The combined integration branch must pass the configured validation
+command. Local mode merges the validated integration branch back into the
+current host branch using ordinary Git semantics and never pushes. If host
+changes prevent the merge, LFI preserves the integration worktree and prints a
+recovery command.
 
 `lfi sync` is a one-way local-to-GitHub mirror. It publishes specs as parents,
 tasks as children, fixed LFI type labels, dependencies where supported,

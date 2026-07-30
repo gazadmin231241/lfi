@@ -63,7 +63,7 @@ test("local dry-run selects the dependency frontier without GitHub", async () =>
   assert.deepEqual(selected.blocked.map((task) => task.id), ["LFI-3"]);
 });
 
-test("local run checkpoints, integrates, and completes a task without GitHub", async () => {
+test("local run commits worker changes, integrates, and completes a task without GitHub", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-run-"));
   const lfiRoot = join(root, ".lfi");
   const tasks = join(lfiRoot, "tasks");
@@ -113,8 +113,6 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 printf 'implemented\\n' > implemented.txt
-git add implemented.txt
-git commit -m "feat: implement local task" >/dev/null
 printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
 `,
   );
@@ -165,7 +163,7 @@ exit 97
   await assert.rejects(readFile(taskPath, "utf8"));
   const log = await runCommand("git", ["log", "--format=%s"], { cwd: root });
   assert.match(log.stdout, /docs\(lfi\): update local task tracker/u);
-  assert.match(log.stdout, /feat: implement local task/u);
+  assert.match(log.stdout, /feat\(lfi\): implement LFI-1/u);
   assert.match(log.stdout, /chore\(lfi\): complete LFI-1/u);
   await assert.rejects(readFile(ghCalls, "utf8"));
 

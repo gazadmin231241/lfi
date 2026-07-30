@@ -6,6 +6,7 @@ import { mapConcurrent } from "./concurrency.js";
 import { loadConfig } from "./config.js";
 import { closeIssue, commentFinalFailure, setIssueStatus } from "./github.js";
 import {
+  commitWorktreeChanges,
   commitsAhead,
   ensureIssueWorktree,
   git,
@@ -91,6 +92,12 @@ const attemptWork = async (options: {
       idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
       prefix: key,
     });
+    if (codex.exitCode === 0 && codex.status === "completed") {
+      await commitWorktreeChanges(
+        worktree.path,
+        `feat(lfi): implement ${options.issue.id}`,
+      );
+    }
     const evaluation = evaluateWorkerResult({
       processExitCode: codex.exitCode,
       status: codex.status,

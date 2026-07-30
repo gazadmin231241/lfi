@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 
 import { runCodex } from "./codex.js";
 import type { LfiConfig } from "./config.js";
-import { git, gitResult } from "./git.js";
+import { commitWorktreeChanges, git, gitResult } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import { runShell } from "./process.js";
@@ -60,8 +60,9 @@ export const mergeWithAgent = async (options: {
     prompt: `Resolve the current integration problem in this worktree.
 
 Use $resolving-merge-conflicts when a merge is in progress. Preserve both
-intents, run validation, commit the resolution, and never abort the merge,
-deploy, use SSH, force-push, or touch production.
+intents, run validation, and never abort the merge, deploy, use SSH, force-push,
+or touch production. Do not run git add or git commit; the LFI host commits a
+successful resolution because the Codex sandbox protects Git metadata.
 
 Context:
 ${options.context}
@@ -75,6 +76,12 @@ ${options.context}
     structured: false,
     prefix: "merge",
   });
+  if (result.exitCode === 0) {
+    await commitWorktreeChanges(
+      options.cwd,
+      "chore(lfi): resolve integration",
+    );
+  }
   const clean =
     (await git(options.cwd, ["status", "--porcelain"])).stdout.trim() === "";
   if (result.exitCode !== 0 || !clean) {
