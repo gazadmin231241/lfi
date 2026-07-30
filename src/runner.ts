@@ -15,13 +15,17 @@ import {
 } from "./local-tracker.js";
 import { runLfi } from "./run-workflow.js";
 
-const localIssue = (task: TrackerDocument): GithubIssue => ({
+const localIssue = (
+  task: TrackerDocument,
+  blockedBy: readonly string[] = [],
+): GithubIssue => ({
   id: task.id,
   number: task.number,
   title: task.title,
   url: task.path,
   body: task.body,
   labels: ["ready-for-agent"],
+  ...(blockedBy.length > 0 ? { blockedBy: [...blockedBy] } : {}),
 });
 
 export const dryRun = async (
@@ -30,13 +34,20 @@ export const dryRun = async (
 ): Promise<{ runnable: GithubIssue[]; blocked: GithubIssue[] }> => {
   const config = await loadConfig(join(cwd, ".lfi", "config.env"));
   if (config.TASK_SOURCE === "local") {
-    const plan = runnableLocalTasks(
-      await loadLocalTracker(join(cwd, ".lfi")),
-      selectedIds,
-    );
+    const tracker = await loadLocalTracker(join(cwd, ".lfi"));
+    const plan = runnableLocalTasks(tracker, selectedIds);
     return {
-      runnable: plan.runnable.map(localIssue),
-      blocked: plan.blocked.map(localIssue),
+      runnable: plan.runnable.map((task) => localIssue(task)),
+      blocked: plan.blocked.map((task) =>
+        localIssue(
+          task,
+          task.blockedBy.filter(
+            (id) =>
+              tracker.tasks.find((candidate) => candidate.id === id)?.status !==
+              "completed",
+          ),
+        ),
+      ),
     };
   }
   const repository = await repoInfo(cwd);

@@ -81,8 +81,8 @@ export const integrateAttempts = async (options: {
         throw new Error(
           localize(
             options.language,
-            `Could not merge validated work into the current branch. Preserved ${integration.branch} at ${integration.path}. Resolve local changes and run: git merge ${integration.branch}`,
-            `Не удалось слить проверенную работу в текущую ветку. ${integration.branch} сохранена в ${integration.path}. Разберите локальные изменения и выполните: git merge ${integration.branch}`,
+            `Could not merge validated work into the current branch. Preserved ${integration.branch} at ${integration.path}. Resolve and commit the current merge, or abort it and retry: git merge ${integration.branch}`,
+            `Не удалось слить проверенную работу в текущую ветку. ${integration.branch} сохранена в ${integration.path}. Разрешите текущий конфликт и создайте коммит либо отмените слияние и повторите: git merge ${integration.branch}`,
           ),
         );
       }

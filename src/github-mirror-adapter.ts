@@ -31,6 +31,26 @@ const parseIssue = (source: string): MirrorIssue => {
 const command = (cwd: string, args: readonly string[]) =>
   withGithubRetry(() => requireCommand("gh", args, { cwd }));
 
+const allowTextualRelationshipFallback = async (
+  operation: () => Promise<unknown>,
+): Promise<void> => {
+  try {
+    await operation();
+  } catch (error) {
+    const message = (
+      error instanceof Error ? error.message : String(error)
+    ).toLowerCase();
+    if (
+      /already exists|not supported|not enabled|sub-issues? (?:are|is) disabled|dependencies? (?:are|is) disabled/u.test(
+        message,
+      )
+    ) {
+      return;
+    }
+    throw error;
+  }
+};
+
 export const createGhMirrorAdapter = (
   cwd: string,
   repo: string,
@@ -54,6 +74,15 @@ export const createGhMirrorAdapter = (
     return match ? parseIssue(JSON.stringify(match)) : undefined;
   };
   return {
+    verifyDestination: async () => {
+      await command(cwd, [
+        "repo",
+        "view",
+        repo,
+        "--json",
+        "nameWithOwner",
+      ]);
+    },
     findByLfiId,
     getIssue: async (number) => {
       const result = await command(cwd, [
@@ -109,21 +138,25 @@ export const createGhMirrorAdapter = (
       const info = await command(cwd, [
         "api", `repos/${repo}/issues/${child}`, "--jq", ".id",
       ]);
-      await command(cwd, [
-        "api", "--method", "POST", `repos/${repo}/issues/${parent}/sub_issues`,
-        "-F", `sub_issue_id=${info.stdout.trim()}`,
-      ]).catch(() => undefined);
+      await allowTextualRelationshipFallback(() =>
+        command(cwd, [
+          "api", "--method", "POST", `repos/${repo}/issues/${parent}/sub_issues`,
+          "-F", `sub_issue_id=${info.stdout.trim()}`,
+        ]),
+      );
     },
     setBlockers: async (child, blockers) => {
       for (const blocker of blockers) {
         const info = await command(cwd, [
           "api", `repos/${repo}/issues/${blocker}`, "--jq", ".id",
         ]);
-        await command(cwd, [
-          "api", "--method", "POST",
-          `repos/${repo}/issues/${child}/dependencies/blocked_by`,
-          "-F", `issue_id=${info.stdout.trim()}`,
-        ]).catch(() => undefined);
+        await allowTextualRelationshipFallback(() =>
+          command(cwd, [
+            "api", "--method", "POST",
+            `repos/${repo}/issues/${child}/dependencies/blocked_by`,
+            "-F", `issue_id=${info.stdout.trim()}`,
+          ]),
+        );
       }
     },
   };

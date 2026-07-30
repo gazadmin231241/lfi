@@ -237,7 +237,7 @@ export const initializeProject = async (
       ? LOCAL_IGNORE_BLOCK
       : ".lfi/\n";
   if (config.TASK_SOURCE === "local") {
-    await configureLocalTracker(options.cwd);
+    await configureLocalTracker(options.cwd, options.language);
   } else if (!gitignore.includes(ignoreBlock.trim())) {
     await appendFile(
       gitignorePath,

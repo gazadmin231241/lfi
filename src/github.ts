@@ -2,6 +2,7 @@ import { requireCommand } from "./process.js";
 import { withGithubRetry } from "./github-resilience.js";
 import type { GithubIssue } from "./issues.js";
 import { localize, type Language } from "./i18n.js";
+import { mapConcurrent } from "./concurrency.js";
 
 interface GhIssue {
   number: number;
@@ -15,24 +16,6 @@ const gh = (
   cwd: string,
   args: readonly string[],
 ) => withGithubRetry(() => requireCommand("gh", args, { cwd }));
-
-const mapConcurrent = async <T, R>(
-  values: readonly T[],
-  limit: number,
-  worker: (value: T) => Promise<R>,
-): Promise<R[]> => {
-  const results = new Array<R>(values.length);
-  let cursor = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, values.length) }, async () => {
-      while (cursor < values.length) {
-        const index = cursor++;
-        results[index] = await worker(values[index]!);
-      }
-    }),
-  );
-  return results;
-};
 
 export const repoInfo = async (
   cwd: string,

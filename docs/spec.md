@@ -10,6 +10,8 @@ implementation of local Markdown tasks or ready GitHub Issues with Codex.
    to local.
 2. Local tasks and specs are versioned flat Markdown collections under `.lfi`,
    with one shared stable `LFI-N` namespace. Transient state remains ignored.
+   Completed tasks record an ISO-8601 `completed_at` timestamp for recent
+   completion ordering.
 3. `lfi run --dry-run` reports eligible and blocked work without mutations.
 4. `lfi run` performs at most ten stages, with at most three workers in
    parallel. Each issue runs in `.lfi/worktrees/issue-N`.

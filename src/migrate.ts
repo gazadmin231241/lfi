@@ -9,12 +9,13 @@ import {
 import type { GithubIssue } from "./issues.js";
 import {
   loadLocalTracker,
-  nextLfiId,
+  nextRepositoryLfiId,
   saveTrackerDocument,
   type TrackerDocument,
 } from "./local-tracker.js";
 import { checkpointTracker } from "./runner-support.js";
 import { configureLocalTracker } from "./local-setup.js";
+import type { Language } from "./i18n.js";
 
 export interface MigrationSource {
   listOpenAgentIssues(): Promise<GithubIssue[]>;
@@ -47,7 +48,7 @@ const defaultSource = async (
 
 export const migrateToLocal = async (
   cwd: string,
-  options: { source?: MigrationSource } = {},
+  options: { source?: MigrationSource; language?: Language } = {},
 ): Promise<string[]> => {
   const lfiRoot = join(cwd, ".lfi");
   const configPath = join(lfiRoot, "config.env");
@@ -61,10 +62,12 @@ export const migrateToLocal = async (
     options.source ?? (await defaultSource(cwd, config.ISSUE_LABEL));
   const issues = await source.listOpenAgentIssues();
   const blockers = await source.blockers(issues.map((issue) => issue.number));
-  await configureLocalTracker(cwd);
+  await configureLocalTracker(cwd, options.language ?? "en");
   const tracker = await loadLocalTracker(lfiRoot);
   const issueIds = new Map<number, string>();
-  let next = Number(nextLfiId(tracker.documents).slice(4));
+  let next = Number(
+    (await nextRepositoryLfiId(cwd, tracker.documents)).slice(4),
+  );
   for (const issue of issues.sort((a, b) => a.number - b.number)) {
     issueIds.set(issue.number, `LFI-${next++}`);
   }

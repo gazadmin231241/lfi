@@ -1,24 +1,26 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import test from "node:test";
 
 import { DEFAULT_CONFIG, parseEnvConfig, serializeEnvConfig } from "../src/config.js";
 import { migrateToLocal } from "../src/migrate.js";
+import { runCommand } from "../src/process.js";
 
-const exec = promisify(execFile);
+const git = async (cwd: string, ...args: string[]): Promise<void> => {
+  const result = await runCommand("git", args, { cwd });
+  assert.equal(result.exitCode, 0, result.stderr);
+};
 
 test("migration imports open GitHub work and switches source after checkpoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-migrate-"));
-  await exec("git", ["init", "-b", "main"], { cwd: root });
-  await exec("git", ["config", "user.email", "test@example.com"], { cwd: root });
-  await exec("git", ["config", "user.name", "Test"], { cwd: root });
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.email", "test@example.com");
+  await git(root, "config", "user.name", "Test");
   await writeFile(join(root, "README.md"), "test\n");
-  await exec("git", ["add", "README.md"], { cwd: root });
-  await exec("git", ["commit", "-m", "initial"], { cwd: root });
+  await git(root, "add", "README.md");
+  await git(root, "commit", "-m", "initial");
   await mkdir(join(root, ".lfi"), { recursive: true });
   await writeFile(
     join(root, ".lfi", "config.env"),

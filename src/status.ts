@@ -6,6 +6,7 @@ import {
   type LocalTracker,
   type TrackerDocument,
 } from "./local-tracker.js";
+import { localize, type Language } from "./i18n.js";
 
 export type StatusFilter = "ready" | "blocked" | "completed";
 
@@ -45,7 +46,11 @@ const taskState = (
 export const formatLocalStatus = (
   tracker: LocalTracker,
   active: ReadonlySet<string>,
-  options: { all?: boolean; filter?: StatusFilter } = {},
+  options: {
+    all?: boolean;
+    filter?: StatusFilter;
+    language?: Language;
+  } = {},
 ): string[] => {
   const states = new Map(
     tracker.tasks.map((task) => [task.id, taskState(task, tracker, active)]),
@@ -56,9 +61,16 @@ export const formatLocalStatus = (
   });
   const completed = tracker.tasks
     .filter((task) => states.get(task.id) === "completed")
-    .sort((a, b) => b.number - a.number);
+    .sort(
+      (a, b) =>
+        Date.parse(b.completedAt ?? "") - Date.parse(a.completedAt ?? "") ||
+        b.number - a.number,
+    );
+  const cancelled = tracker.tasks.filter(
+    (task) => states.get(task.id) === "cancelled",
+  );
   const visible = options.all
-    ? [...activeTasks, ...completed]
+    ? [...activeTasks, ...completed, ...cancelled]
     : [...activeTasks, ...completed.slice(0, 10)];
   const marker = {
     ready: "🟢",
@@ -80,7 +92,11 @@ export const formatLocalStatus = (
       const state = states.get(task.id)!;
       const blockers =
         state === "blocked"
-          ? ` · blocked by ${task.blockedBy
+          ? ` · ${localize(
+              options.language ?? "en",
+              "blocked by",
+              "заблокирована задачами",
+            )} ${task.blockedBy
               .filter(
                 (id) =>
                   tracker.tasks.find((item) => item.id === id)?.status !==
@@ -88,13 +104,26 @@ export const formatLocalStatus = (
               )
               .join(", ")}`
           : "";
-      return `${marker[state]} ${task.id} — ${task.title}${blockers}`;
+      const cancelledSuffix =
+        state === "cancelled"
+          ? localize(
+              options.language ?? "en",
+              " · cancelled",
+              " · отменена",
+            )
+          : "";
+      const prefix = marker[state] ? `${marker[state]} ` : "";
+      return `${prefix}${task.id} — ${task.title}${blockers}${cancelledSuffix}`;
     });
 };
 
 export const localStatusLines = async (
   cwd: string,
-  options: { all?: boolean; filter?: StatusFilter } = {},
+  options: {
+    all?: boolean;
+    filter?: StatusFilter;
+    language?: Language;
+  } = {},
 ): Promise<string[]> => {
   const lfiRoot = join(cwd, ".lfi");
   return formatLocalStatus(

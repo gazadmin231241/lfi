@@ -130,6 +130,12 @@ exit 1
   );
   await chmod(join(bin, "gh"), 0o755);
   await runCommand("git", ["init", "-b", "main"], { cwd: root });
+  await mkdir(join(root, "docs", "agents"), { recursive: true });
+  await writeFile(join(root, ".gitignore"), "# custom\n\nbuild/\n");
+  await writeFile(
+    join(root, "docs", "agents", "issue-tracker.md"),
+    "custom tracker guide\n",
+  );
   const previousPath = process.env.PATH;
   process.env.PATH = `${bin}:${previousPath}`;
   try {
@@ -153,12 +159,14 @@ exit 1
   assert.equal(await stat(join(root, ".lfi", "tasks")).then((item) => item.isDirectory()), true);
   assert.equal(await stat(join(root, ".lfi", "specs")).then((item) => item.isDirectory()), true);
   const gitignore = await readFile(join(root, ".gitignore"), "utf8");
+  assert.match(gitignore, /^# custom\n\nbuild\//u);
   assert.match(gitignore, /\.lfi\/\*/u);
   assert.match(gitignore, /!\.lfi\/tasks\//u);
   assert.match(gitignore, /!\.lfi\/specs\//u);
-  assert.match(
+  assert.equal(
     await readFile(join(root, "docs", "agents", "issue-tracker.md"), "utf8"),
-    /\.lfi\/tasks/u,
+    "custom tracker guide\n",
   );
+  assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /Трекер задач/u);
   await assert.rejects(stat(ghMarker));
 });

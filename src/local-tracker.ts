@@ -1,6 +1,8 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { gitResult } from "./git.js";
+
 export type TrackerDocumentType = "task" | "spec";
 export type TrackerStatus = "ready" | "completed" | "cancelled";
 
@@ -13,6 +15,7 @@ export interface TrackerDocument {
   spec?: string;
   blockedBy: string[];
   githubIssue?: number;
+  completedAt?: string;
   body: string;
   path: string;
 }
@@ -86,6 +89,13 @@ export const parseTrackerDocument = (
   ) {
     throw new Error(`${path}: invalid github_issue ${github}`);
   }
+  const completedAt = fields.get("completed_at");
+  if (
+    completedAt !== undefined &&
+    !Number.isFinite(Date.parse(completedAt))
+  ) {
+    throw new Error(`${path}: invalid completed_at ${completedAt}`);
+  }
   return {
     id,
     number: Number(idMatch[1]),
@@ -95,6 +105,7 @@ export const parseTrackerDocument = (
     ...(fields.get("spec") ? { spec: fields.get("spec")! } : {}),
     blockedBy,
     ...(githubIssue === undefined ? {} : { githubIssue }),
+    ...(completedAt === undefined ? {} : { completedAt }),
     body: match[2]!.replace(/^\r?\n/u, ""),
     path,
   };
@@ -115,6 +126,9 @@ export const serializeTrackerDocument = (
   for (const blocker of document.blockedBy) lines.push(`  - ${blocker}`);
   if (document.githubIssue !== undefined) {
     lines.push(`github_issue: ${document.githubIssue}`);
+  }
+  if (document.completedAt !== undefined) {
+    lines.push(`completed_at: ${document.completedAt}`);
   }
   return `${lines.join("\n")}\n---\n\n${document.body}`;
 };
@@ -182,6 +196,34 @@ export const loadLocalTracker = async (lfiRoot: string): Promise<LocalTracker> =
 
 export const nextLfiId = (documents: readonly TrackerDocument[]): string =>
   `LFI-${Math.max(0, ...documents.map((document) => document.number)) + 1}`;
+
+export const nextRepositoryLfiId = async (
+  cwd: string,
+  documents: readonly TrackerDocument[],
+): Promise<string> => {
+  const history = await gitResult(cwd, [
+    "log",
+    "--all",
+    "-p",
+    "--format=",
+    "--",
+    ".lfi/tasks",
+    ".lfi/specs",
+  ]);
+  const historicalNumbers =
+    history.exitCode === 0
+      ? [...history.stdout.matchAll(/^[ +\-]?id:\s*LFI-(\d+)\s*$/gmu)].map(
+          (match) => Number(match[1]),
+        )
+      : [];
+  return `LFI-${
+    Math.max(
+      0,
+      ...historicalNumbers,
+      ...documents.map((document) => document.number),
+    ) + 1
+  }`;
+};
 
 export const saveTrackerDocument = async (
   document: TrackerDocument,

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { mapConcurrent } from "./concurrency.js";
 import { loadConfig, updateConfig } from "./config.js";
 import {
   createGhMirrorAdapter,
@@ -12,7 +13,7 @@ import {
   type TrackerDocument,
 } from "./local-tracker.js";
 import type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
-import { checkpointTracker, mapConcurrent } from "./runner-support.js";
+import { checkpointTracker } from "./runner-support.js";
 
 export type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
 
@@ -97,6 +98,7 @@ export const syncGithubMirror = async (
   }
   const adapter =
     options.adapter ?? createGhMirrorAdapter(cwd, repo!);
+  await adapter.verifyDestination?.();
   let tracker = await loadLocalTracker(join(cwd, ".lfi"));
   if (!options.dryRun) {
     await checkpointTracker(cwd, "docs(lfi): update local task tracker");

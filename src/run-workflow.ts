@@ -2,6 +2,7 @@ import { mkdir, open, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path";
 
 import { runCodex } from "./codex.js";
+import { mapConcurrent } from "./concurrency.js";
 import { loadConfig } from "./config.js";
 import { closeIssue, commentFinalFailure } from "./github.js";
 import {
@@ -17,7 +18,11 @@ import {
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
-import { loadLocalTracker, saveTrackerDocument } from "./local-tracker.js";
+import {
+  loadLocalTracker,
+  runnableLocalTasks,
+  saveTrackerDocument,
+} from "./local-tracker.js";
 import { pruneExpiredRunLogs } from "./logs.js";
 import { renderWorkerPrompt } from "./prompts.js";
 import { isShutdownRequested } from "./process.js";
@@ -25,7 +30,6 @@ import { listWork } from "./run-source.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
 import {
   checkpointTracker,
-  mapConcurrent,
   mergeWithAgent,
   readPendingClosures,
   writePendingClosures,
@@ -118,9 +122,14 @@ const recordLocalCompletion = async (
 ): Promise<void> => {
   const tracker = await loadLocalTracker(join(cwd, ".lfi"));
   const completed = new Set(attempts.map((attempt) => attempt.issue.id));
+  const completedAt = new Date().toISOString();
   for (const task of tracker.tasks) {
     if (completed.has(task.id)) {
-      await saveTrackerDocument({ ...task, status: "completed" });
+      await saveTrackerDocument({
+        ...task,
+        status: "completed",
+        completedAt,
+      });
     }
   }
   await checkpointTracker(
@@ -165,6 +174,24 @@ export const runLfi = async (
   }
   if (config.TASK_SOURCE === "local") {
     await checkpointTracker(cwd, "docs(lfi): update local task tracker");
+    if (selectedIds.length > 0) {
+      const tracker = await loadLocalTracker(lfiRoot);
+      const blocked = runnableLocalTasks(tracker, selectedIds).blocked;
+      for (const task of blocked) {
+        const unfinished = task.blockedBy.filter(
+          (id) =>
+            tracker.tasks.find((candidate) => candidate.id === id)?.status !==
+            "completed",
+        );
+        console.error(
+          localize(
+            language,
+            `${task.id} is blocked by ${unfinished.join(", ")}.`,
+            `${task.id} заблокирована задачами ${unfinished.join(", ")}.`,
+          ),
+        );
+      }
+    }
   }
   const stateRoot = join(lfiRoot, "state");
   const logsRoot = join(lfiRoot, "logs");
@@ -311,6 +338,24 @@ export const runLfi = async (
       }
       if (isShutdownRequested()) {
         throw new Error(localize(language, "Interrupted", "Выполнение прервано"));
+      }
+    }
+    if (config.TASK_SOURCE === "local" && selectedIds.length > 0) {
+      const tracker = await loadLocalTracker(lfiRoot);
+      for (const task of runnableLocalTasks(tracker, selectedIds).blocked) {
+        const unfinished = task.blockedBy.filter(
+          (id) =>
+            tracker.tasks.find((candidate) => candidate.id === id)?.status !==
+            "completed",
+        );
+        attempted.set(
+          task.id,
+          localize(
+            language,
+            `blocked by ${unfinished.join(", ")}`,
+            `заблокирована задачами ${unfinished.join(", ")}`,
+          ),
+        );
       }
     }
     const unresolved = [...attempted].filter(([id]) => !completed.has(id));

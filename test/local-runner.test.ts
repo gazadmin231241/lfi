@@ -53,6 +53,7 @@ test("local dry-run selects the dependency frontier without GitHub", async () =>
   const plan = await dryRun(root);
   assert.deepEqual(plan.runnable.map((task) => task.id), ["LFI-2"]);
   assert.deepEqual(plan.blocked.map((task) => task.id), ["LFI-3"]);
+  assert.deepEqual(plan.blocked[0]?.blockedBy, ["LFI-2"]);
 
   const selected = await dryRun(root, ["LFI-3"]);
   assert.deepEqual(selected.runnable, []);
@@ -156,4 +157,34 @@ exit 97
   assert.match(log.stdout, /feat: implement local task/u);
   assert.match(log.stdout, /chore\(lfi\): complete LFI-1/u);
   await assert.rejects(readFile(ghCalls, "utf8"));
+
+  const blockedPath = join(tasks, "LFI-2-blocked.md");
+  const blockerPath = join(tasks, "LFI-3-blocker.md");
+  await writeFile(
+    blockedPath,
+    serializeTrackerDocument({
+      id: "LFI-2",
+      number: 2,
+      type: "task",
+      title: "Blocked task",
+      status: "ready",
+      blockedBy: ["LFI-3"],
+      body: "Wait for LFI-3.\n",
+      path: blockedPath,
+    }),
+  );
+  await writeFile(
+    blockerPath,
+    serializeTrackerDocument({
+      id: "LFI-3",
+      number: 3,
+      type: "task",
+      title: "Blocker",
+      status: "ready",
+      blockedBy: [],
+      body: "Implement the blocker.\n",
+      path: blockerPath,
+    }),
+  );
+  assert.equal(await runLfi(root, "ru", ["LFI-2"]), 1);
 });

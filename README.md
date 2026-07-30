@@ -59,7 +59,9 @@ Local Markdown:
 These files are versioned; `.lfi/logs`, `.lfi/state`, and `.lfi/worktrees`
 remain local. Tasks use Markdown with YAML frontmatter and one shared `LFI-N`
 ID sequence. Persisted statuses are `ready`, `completed`, and `cancelled`;
-in-progress and blocked display states are derived.
+in-progress and blocked display states are derived. LFI records `completed_at`
+after integration so the ten recent completions are ordered by completion
+time, not by ID.
 
 GitHub mode retains the existing `ready-for-agent` Issue contract and supports
 both textual and native dependencies.

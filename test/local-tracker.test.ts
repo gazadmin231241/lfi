@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,10 +7,12 @@ import test from "node:test";
 import {
   loadLocalTracker,
   nextLfiId,
+  nextRepositoryLfiId,
   parseTrackerDocument,
   serializeTrackerDocument,
 } from "../src/local-tracker.js";
 import { formatLocalStatus } from "../src/status.js";
+import { runCommand } from "../src/process.js";
 
 const taskSource = `---
 id: LFI-15
@@ -88,6 +90,35 @@ test("local tracker validates references, cycles, and one shared ID sequence", a
   await assert.rejects(loadLocalTracker(root), /cycle/u);
 });
 
+test("repository ID allocation does not reuse an ID after its file is deleted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-id-history-"));
+  const taskDirectory = join(root, ".lfi", "tasks");
+  await mkdir(taskDirectory, { recursive: true });
+  const taskPath = join(taskDirectory, "LFI-9-deleted.md");
+  await writeFile(
+    taskPath,
+    taskSource
+      .replaceAll("LFI-15", "LFI-9")
+      .replace("spec: LFI-14\n", "")
+      .replace("  - LFI-12\n", "")
+      .replace("github_issue: 362\n", ""),
+  );
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await git("add", ".");
+  await git("commit", "-m", "docs: add task");
+  await rm(taskPath);
+  await git("add", "-u");
+  await git("commit", "-m", "docs: remove task");
+
+  assert.equal(await nextRepositoryLfiId(root, []), "LFI-10");
+});
+
 test("local status derives the four compact display markers", () => {
   const tasks = [
     parseTrackerDocument(
@@ -108,4 +139,47 @@ test("local status derives the four compact display markers", () => {
     "🔵 LFI-15 — Implement task parser",
     "✅ LFI-16 — Implement task parser",
   ]);
+});
+
+test("local status orders completions by time and localizes blockers", () => {
+  const blocked = parseTrackerDocument(
+    taskSource.replace("github_issue: 362\n", ""),
+    "blocked.md",
+  );
+  const older = parseTrackerDocument(
+    taskSource
+      .replaceAll("LFI-15", "LFI-20")
+      .replace("status: ready", "status: completed")
+      .replace("spec: LFI-14\n", "")
+      .replace("  - LFI-12\n", "")
+      .replace("github_issue: 362\n", "")
+      .replace("blocked_by:", "completed_at: 2026-01-01T00:00:00.000Z\nblocked_by:"),
+    "older.md",
+  );
+  const newer = parseTrackerDocument(
+    serializeTrackerDocument({
+      ...older,
+      id: "LFI-2",
+      number: 2,
+      completedAt: "2026-02-01T00:00:00.000Z",
+      path: "newer.md",
+    }),
+    "newer.md",
+  );
+  const { completedAt: _completedAt, ...blockerBase } = older;
+  const blocker = {
+    ...blockerBase,
+    id: "LFI-12",
+    number: 12,
+    status: "ready" as const,
+    path: "blocker.md",
+  };
+  const tasks = [blocked, older, newer, blocker];
+  const tracker = { documents: tasks, tasks, specs: [] };
+  const lines = formatLocalStatus(tracker, new Set(), {
+    language: "ru",
+  });
+  assert.match(lines[0]!, /заблокирована задачами LFI-12/u);
+  assert.ok(lines.indexOf("✅ LFI-2 — Implement task parser") <
+    lines.indexOf("✅ LFI-20 — Implement task parser"));
 });

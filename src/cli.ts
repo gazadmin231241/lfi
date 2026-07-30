@@ -287,7 +287,16 @@ const main = async (): Promise<number> => {
         `${localize(language, "Runnable", "Доступны")}: ${plan.runnable.map((issue) => `${issue.id ?? `#${issue.number}`} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
       );
       console.log(
-        `${localize(language, "Blocked/excluded", "Заблокированы/исключены")}: ${plan.blocked.map((issue) => `${issue.id ?? `#${issue.number}`} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
+        `${localize(language, "Blocked/excluded", "Заблокированы/исключены")}: ${plan.blocked
+          .map(
+            (issue) =>
+              `${issue.id ?? `#${issue.number}`} ${issue.title}${
+                issue.blockedBy?.length
+                  ? ` · ${localize(language, "blocked by", "заблокирована задачами")} ${issue.blockedBy.join(", ")}`
+                  : ""
+              }`,
+          )
+          .join("\n") || localize(language, "none", "нет")}`,
       );
       return 0;
     }
@@ -308,6 +317,7 @@ const main = async (): Promise<number> => {
           await localStatusLines(cwd, {
             ...(has("--all") ? { all: true } : {}),
             ...(filter ? { filter } : {}),
+            language,
           })
         ).join("\n") || localize(language, "No local tasks.", "Локальных задач нет."),
       );
@@ -346,7 +356,7 @@ const main = async (): Promise<number> => {
     return result.failed.length === 0 ? 0 : 1;
   }
   if (command === "migrate" && positional[1] === "local") {
-    const ids = await migrateToLocal(cwd);
+    const ids = await migrateToLocal(cwd, { language });
     console.log(
       localize(
         language,

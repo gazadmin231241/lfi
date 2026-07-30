@@ -6,6 +6,7 @@ export interface MirrorIssue {
 }
 
 export interface GithubMirrorAdapter {
+  verifyDestination?(): Promise<void>;
   findByLfiId(id: string): Promise<MirrorIssue | undefined>;
   getIssue(number: number): Promise<MirrorIssue | undefined>;
   createIssue(

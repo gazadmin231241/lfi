@@ -5,6 +5,7 @@ export interface GithubIssue {
   url: string;
   body: string;
   labels: string[];
+  blockedBy?: string[];
 }
 
 export const parseBlockedBy = (body: string): number[] => {
