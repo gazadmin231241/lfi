@@ -22,9 +22,11 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
    `task-prompt.md`, and `$implement`. Local implementation changes are
    pre-approved; deploy, SSH, production changes, force-push, destructive
    database resets, and secrets remain forbidden.
-7. A worker result is accepted only when Codex exits successfully, emits the
-   required structured `completed` status, has commits ahead of the base, and
-   leaves a clean worktree.
+7. A worker result is accepted only when Codex exits successfully and emits the
+   required structured `completed` status. The Codex `workspace-write` sandbox
+   keeps Git metadata read-only, so the LFI host stages and commits successful
+   worker changes. Acceptance then requires commits ahead of the base and a
+   clean worktree.
 8. Successful branches merge into a temporary integration worktree. Conflicts
    and combined validation failures invoke the merger model with
    `$resolving-merge-conflicts`.

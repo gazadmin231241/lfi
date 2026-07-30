@@ -112,11 +112,18 @@ export const worktreeClean = async (cwd: string): Promise<boolean> =>
 export const commitWorktreeChanges = async (
   cwd: string,
   message: string,
-): Promise<boolean> => {
-  if (await worktreeClean(cwd)) return false;
+): Promise<void> => {
+  if (await worktreeClean(cwd)) return;
+  const unmerged = (
+    await git(cwd, ["diff", "--name-only", "--diff-filter=U"])
+  ).stdout.trim();
+  if (unmerged) {
+    throw new Error(
+      `Unresolved merge conflicts remain / Остались неразрешённые конфликты слияния:\n${unmerged}`,
+    );
+  }
   await git(cwd, ["add", "--all"]);
   await git(cwd, ["commit", "-m", message]);
-  return true;
 };
 
 export const commitsAhead = async (

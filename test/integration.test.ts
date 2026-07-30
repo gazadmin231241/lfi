@@ -1,0 +1,114 @@
+import assert from "node:assert/strict";
+import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { DEFAULT_CONFIG } from "../src/config.js";
+import { runCommand } from "../src/process.js";
+import { mergeWithAgent } from "../src/runner-support.js";
+
+test("successful merge repair is committed by the LFI host", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-merge-repair-"));
+  const tools = join(root, "tools");
+  const logs = join(root, "logs");
+  await mkdir(tools);
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+printf 'resolved\\n' > resolved.txt
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "base.txt"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    await mergeWithAgent({
+      cwd: root,
+      context: "Resolve the test integration.",
+      config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
+      gitDirectory: join(root, ".git"),
+      logsDirectory: logs,
+      logName: "merge-test",
+      language: "en",
+    });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  assert.equal(await readFile(join(root, "resolved.txt"), "utf8"), "resolved\n");
+  const status = await runCommand("git", ["status", "--porcelain"], { cwd: root });
+  assert.equal(status.stdout, "");
+  const subject = await runCommand("git", ["log", "-1", "--format=%s"], {
+    cwd: root,
+  });
+  assert.equal(subject.stdout.trim(), "chore(lfi): resolve integration");
+});
+
+test("merge repair cannot commit unresolved conflicts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-unresolved-merge-"));
+  const tools = join(root, "tools");
+  const logs = join(root, "logs");
+  await mkdir(tools);
+  await writeFile(join(tools, "codex"), "#!/bin/sh\nexit 0\n");
+  await chmod(join(tools, "codex"), 0o755);
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "conflict.txt"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  await git("switch", "-c", "feature");
+  await writeFile(join(root, "conflict.txt"), "feature\n");
+  await git("commit", "-am", "feat: change conflict file");
+  await git("switch", "main");
+  await writeFile(join(root, "conflict.txt"), "main\n");
+  await git("commit", "-am", "fix: change conflict file");
+  const merge = await runCommand("git", ["merge", "feature"], { cwd: root });
+  assert.notEqual(merge.exitCode, 0);
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    await assert.rejects(
+      mergeWithAgent({
+        cwd: root,
+        context: "Resolve the test conflict.",
+        config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
+        gitDirectory: join(root, ".git"),
+        logsDirectory: logs,
+        logName: "merge-unresolved",
+        language: "en",
+      }),
+      /Unresolved merge conflicts remain/u,
+    );
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  const unmerged = await runCommand(
+    "git",
+    ["diff", "--name-only", "--diff-filter=U"],
+    { cwd: root },
+  );
+  assert.equal(unmerged.stdout.trim(), "conflict.txt");
+  const subject = await runCommand("git", ["log", "-1", "--format=%s"], {
+    cwd: root,
+  });
+  assert.equal(subject.stdout.trim(), "fix: change conflict file");
+});
