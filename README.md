@@ -66,8 +66,12 @@ in-progress and blocked display states are derived. LFI records `completed_at`
 after integration so the ten recent completions are ordered by completion
 time, not by ID.
 
+Each local task ends with clickable `Specification` and `Blocked by` sections.
+LFI updates their exact relative file links whenever a status rename occurs.
+
 Task status output uses `[READY]`, `[RUNNING]`, `[BLOCKED]`, and `[DONE]`.
-GitHub mirror titles additionally use `[SPEC]` for an active specification.
+These prefixes are local-only. GitHub Issue titles use the stable
+`LFI-N — title` form; native issue state and dependencies show their status.
 
 GitHub mode uses the same fixed type vocabulary as Local Markdown:
 `type: spec` maps to `lfi:spec`, and `type: task` maps to `lfi:task`.

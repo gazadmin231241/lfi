@@ -55,6 +55,22 @@ const defaultSource = async (
   };
 };
 
+const withoutImportedBlockerBullets = (
+  body: string,
+  blockerNumbers: readonly number[],
+): string => {
+  const blockers = new Set(blockerNumbers);
+  const cleaned = body
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const match = /^\s*-\s+#(\d+)\s*$/u.exec(line);
+      return match === null || !blockers.has(Number(match[1]));
+    })
+    .join("\n")
+    .trimEnd();
+  return cleaned ? `${cleaned}\n` : "";
+};
+
 export const migrateToLocal = async (
   cwd: string,
   options: { source?: MigrationSource; language?: Language } = {},
@@ -107,6 +123,7 @@ export const migrateToLocal = async (
         );
       }
     }
+    const blockerNumbers = blockers.get(issue.number) ?? [];
     const document: TrackerDocument = {
       id,
       number: Number(id.slice(4)),
@@ -116,13 +133,16 @@ export const migrateToLocal = async (
       ...(spec ? { spec } : {}),
       blockedBy:
         type === "task"
-          ? (blockers.get(issue.number) ?? []).flatMap((number) => {
+          ? blockerNumbers.flatMap((number) => {
               const blocker = issueIds.get(number);
               return blocker === undefined ? [] : [blocker];
             })
           : [],
       githubIssue: issue.number,
-      body: withoutManagedGithubSections(issue.body),
+      body: withoutImportedBlockerBullets(
+        withoutManagedGithubSections(issue.body),
+        blockerNumbers,
+      ),
       path: join(
         lfiRoot,
         type === "spec" ? "specs" : "tasks",

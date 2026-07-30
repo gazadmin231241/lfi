@@ -55,7 +55,7 @@ tracker, path, and label instruction in this skill:
   \`type: spec\` document in \`.lfi/specs/\`, named
   \`[SPEC] LFI-N — informative-slug.md\`.
 - In GitHub mode, publish an Issue labelled only with the LFI-managed type
-  label \`lfi:spec\`, with a \`[SPEC]\` title; never add \`lfi:task\`,
+  label \`lfi:spec\`, with a stable \`LFI-N — title\`; never add \`lfi:task\`,
   \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
 - A specification is not executable.
 
@@ -74,8 +74,8 @@ tracker, path, label, and execution-model instruction in this skill:
   Prefix each filename with its derived status, for example
   \`[READY] LFI-N — informative-slug.md\` or
   \`[BLOCKED] LFI-N — informative-slug.md\`.
-- In GitHub mode, publish Issues with \`lfi:task\`, a \`[READY]\` or
-  \`[BLOCKED]\` title, and native parent and dependency relationships. Never
+- In GitHub mode, publish Issues with \`lfi:task\`, a stable
+  \`LFI-N — title\`, and native parent and dependency relationships. Never
   add \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
 - The skill must not ask for an execution model or assign model labels.
 - Do not publish LFI tracker documents under \`.scratch/\`.

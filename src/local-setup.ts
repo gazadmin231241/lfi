@@ -133,7 +133,9 @@ export const configureTrackerContract = async (
 flat files in \`.lfi/tasks/\`. Both collections share one monotonically
 increasing \`LFI-N\` ID sequence, including IDs found in Git history. A task
 links to its specification with \`spec: LFI-N\` and to blockers with
-\`blocked_by\`. Approved tasks use \`status: ready\`.
+\`blocked_by\`. LFI also renders clickable \`Specification\` and \`Blocked by\`
+sections at the end of each task and keeps their file links current. Approved
+tasks use \`status: ready\`.
 
 \`$to-spec\` publishes one \`type: spec\` document in \`.lfi/specs/\`.
 \`$to-tickets\` publishes one \`type: task\` document per ticket in
@@ -144,7 +146,9 @@ renames them when status changes.`,
 задачи — в \`.lfi/tasks/\`. Обе коллекции используют одну монотонно
 возрастающую последовательность \`LFI-N\`, включая ID из истории Git. Задача
 ссылается на спецификацию через \`spec: LFI-N\`, а на блокеры — через
-\`blocked_by\`. Утверждённые задачи используют \`status: ready\`.
+\`blocked_by\`. В конце каждой задачи LFI также отображает кликабельные разделы
+\`Specification\` и \`Blocked by\` и обновляет ссылки при переименовании файлов.
+Утверждённые задачи используют \`status: ready\`.
 
 \`$to-spec\` публикует один документ \`type: spec\` в \`.lfi/specs/\`.
 \`$to-tickets\` публикует по одному документу \`type: task\` на задачу в
@@ -175,8 +179,10 @@ Local \`type: spec\` and \`type: task\` map exactly to GitHub \`lfi:spec\` and
 \`lfi:task\`. Skills never choose an execution model or assign model labels;
 LFI configuration chooses models.
 
-Use \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\`, and \`[DONE]\` as
-the title/status prefixes. Specifications are never executable.
+Use \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\`, and \`[DONE]\` only
+for local filenames and local status output. GitHub Issue titles use the stable
+\`LFI-N — title\` form without status prefixes. Specifications are never
+executable.
 ${TRACKER_CONTRACT_END}
 `,
       `${TRACKER_CONTRACT_BEGIN}
@@ -190,7 +196,9 @@ ${storage}
 назначают модельные метки; модели выбирает конфигурация LFI.
 
 Используйте \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\` и \`[DONE]\`
-как префиксы названия и статуса. Спецификации никогда не исполняются.
+только в именах локальных файлов и локальном выводе статуса. Заголовки GitHub
+Issues используют стабильный формат \`LFI-N — название\` без статусных
+префиксов. Спецификации никогда не исполняются.
 ${TRACKER_CONTRACT_END}
 `,
     );

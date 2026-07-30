@@ -13,17 +13,13 @@ import {
   type TrackerDocument,
 } from "./local-tracker.js";
 import type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
+import { withoutLocalRelationships } from "./local-relationships.js";
 import { checkpointTracker } from "./runner-support.js";
 import { localize, type Language } from "./i18n.js";
 import {
   LFI_SPEC_LABEL,
   LFI_TASK_LABEL,
 } from "./tracker-contract.js";
-import {
-  readActiveTaskIds,
-  trackerDisplayState,
-  trackerStatusPrefix,
-} from "./tracker-state.js";
 
 export type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
 
@@ -51,19 +47,10 @@ const desiredState = (
   return "open";
 };
 
-const statusMarker = (
-  document: TrackerDocument,
-  tracker: LocalTracker,
-  active: ReadonlySet<string>,
-): string => {
-  return trackerStatusPrefix(trackerDisplayState(document, tracker, active));
-};
-
 const desiredIssue = (
   document: TrackerDocument,
   tracker: LocalTracker,
   language: Language,
-  active: ReadonlySet<string>,
 ): Omit<MirrorIssue, "number"> => {
   const blocked =
     document.blockedBy.length === 0
@@ -76,10 +63,9 @@ const desiredIssue = (
   const parent = document.spec
     ? `\n## ${localize(language, "Parent", "Родитель")}\n\n${document.spec}\n`
     : "";
-  const marker = statusMarker(document, tracker, active);
   return {
-    title: `${marker ? `${marker} ` : ""}${document.id} — ${document.title}`,
-    body: `${document.body.trimEnd()}${parent}\n## ${localize(
+    title: `${document.id} — ${document.title}`,
+    body: `${withoutLocalRelationships(document.body)}${parent}\n## ${localize(
       language,
       "Blocked by",
       "Заблокировано задачами",
@@ -140,7 +126,6 @@ export const syncGithubMirror = async (
   await adapter.verifyDestination?.();
   if (!options.dryRun) await adapter.ensureTypeLabels?.();
   let tracker = await loadLocalTracker(join(cwd, ".lfi"));
-  const active = await readActiveTaskIds(join(cwd, ".lfi"));
   if (!options.dryRun) {
     await checkpointTracker(cwd, "docs(lfi): update local task tracker");
     tracker = await loadLocalTracker(join(cwd, ".lfi"));
@@ -161,7 +146,7 @@ export const syncGithubMirror = async (
     ...tracker.tasks.sort((a, b) => a.number - b.number),
   ]) {
     try {
-      const baseDesired = desiredIssue(document, tracker, language, active);
+      const baseDesired = desiredIssue(document, tracker, language);
       const cancellation = localize(
         language,
         "Cancelled in the local LFI tracker.",

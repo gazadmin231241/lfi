@@ -5,6 +5,8 @@ import type {
   LocalTracker,
   TrackerDocument,
 } from "./local-tracker.js";
+import { saveTrackerDocument } from "./local-tracker.js";
+import { withLocalRelationships } from "./local-relationships.js";
 import {
   trackerDisplayState,
   trackerStatusPrefix,
@@ -51,5 +53,11 @@ export const reconcileTrackerFilenames = async (
     }
     await rename(document.path, destination);
     document.path = destination;
+  }
+  for (const document of tracker.documents) {
+    const body = withLocalRelationships(document, tracker);
+    if (body === document.body) continue;
+    document.body = body;
+    await saveTrackerDocument(document);
   }
 };

@@ -5,7 +5,6 @@ import { localize, type Language } from "./i18n.js";
 import { mapConcurrent } from "./concurrency.js";
 import {
   GITHUB_TYPE_LABELS,
-  STATUS_PREFIX,
   withoutStatusPrefix,
 } from "./tracker-contract.js";
 
@@ -174,7 +173,7 @@ type ExecutableIssueState = "ready" | "running" | "blocked" | "done";
 export const setIssueStatus = async (
   cwd: string,
   number: number,
-  state: ExecutableIssueState,
+  _state: ExecutableIssueState,
   knownTitle?: string,
 ): Promise<void> => {
   const title =
@@ -190,7 +189,7 @@ export const setIssueStatus = async (
         ".title",
       ])
     ).stdout.trim();
-  const desired = `${STATUS_PREFIX[state]} ${withoutStatusPrefix(title)}`;
+  const desired = withoutStatusPrefix(title);
   if (desired === title) return;
   await gh(cwd, [
     "issue",

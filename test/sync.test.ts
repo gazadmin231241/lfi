@@ -132,9 +132,9 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   const first = await syncGithubMirror(root, { adapter });
   assert.equal(labelPreparations, 1);
   assert.deepEqual(first.created, ["LFI-1", "LFI-2", "LFI-3"]);
-  assert.equal(issues.get(100)?.title, "[SPEC] LFI-1 — spec LFI-1");
-  assert.equal(issues.get(101)?.title, "[DONE] LFI-2 — task LFI-2");
-  assert.equal(issues.get(102)?.title, "[RUNNING] LFI-3 — task LFI-3");
+  assert.equal(issues.get(100)?.title, "LFI-1 — spec LFI-1");
+  assert.equal(issues.get(101)?.title, "LFI-2 — task LFI-2");
+  assert.equal(issues.get(102)?.title, "LFI-3 — task LFI-3");
   assert.deepEqual(issues.get(100)?.labels, ["lfi:spec"]);
   assert.deepEqual(issues.get(101)?.labels, ["lfi:task"]);
   assert.deepEqual(issues.get(102)?.labels, ["lfi:task"]);
@@ -178,8 +178,8 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
     serializeTrackerDocument({ ...ready, status: "cancelled" }),
   );
   const cancelled = await syncGithubMirror(root, { adapter });
-  assert.deepEqual(cancelled.updated, ["LFI-3"]);
-  assert.deepEqual(closingComments, ["Cancelled in the local LFI tracker."]);
+  assert.deepEqual(cancelled.skipped, ["LFI-1", "LFI-2", "LFI-3"]);
+  assert.deepEqual(closingComments, []);
 
   await writeFile(ready.path, serializeTrackerDocument(ready));
   const reopened = await syncGithubMirror(root, { adapter });
@@ -256,7 +256,7 @@ test("sync persists partial progress, resumes, and reports relationship failures
 
   const partial = await syncGithubMirror(root, { adapter });
   assert.deepEqual(partial.created, ["LFI-1"]);
-  assert.equal(issues.get(50)?.title, "[READY] LFI-1 — Task LFI-1");
+  assert.equal(issues.get(50)?.title, "LFI-1 — Task LFI-1");
   assert.deepEqual(partial.failed.map((item) => item.id), ["LFI-2"]);
   assert.match(await readFile(firstTask.path, "utf8"), /github_issue: 50/u);
   assert.doesNotMatch(await readFile(secondTask.path, "utf8"), /github_issue/u);
@@ -265,7 +265,7 @@ test("sync persists partial progress, resumes, and reports relationship failures
   const resumed = await syncGithubMirror(root, { adapter });
   assert.deepEqual(resumed.created, ["LFI-2"]);
   assert.deepEqual(resumed.failed, []);
-  assert.equal(issues.get(51)?.title, "[BLOCKED] LFI-2 — Task LFI-2");
+  assert.equal(issues.get(51)?.title, "LFI-2 — Task LFI-2");
   assert.equal(next, 52);
 
   failRelationship = true;

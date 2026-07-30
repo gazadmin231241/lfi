@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { closeIssue, setIssueStatus } from "../src/github.js";
 
-test("GitHub task status transitions use explicit title prefixes", async () => {
+test("GitHub task status transitions remove legacy title prefixes", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-github-status-"));
   const bin = join(root, "bin");
   const calls = join(root, "calls");
@@ -32,8 +32,10 @@ esac
   }
 
   const output = await readFile(calls, "utf8");
-  assert.match(output, /issue edit 2 --title \[RUNNING\] LFI-2 — Build parser/u);
-  assert.match(output, /issue edit 2 --title \[BLOCKED\] LFI-2 — Build parser/u);
-  assert.match(output, /issue edit 2 --title \[DONE\] LFI-2 — Build parser/u);
+  assert.equal(
+    output.match(/issue edit 2 --title LFI-2 — Build parser/gu)?.length,
+    3,
+  );
+  assert.doesNotMatch(output, /--title \[(?:READY|RUNNING|BLOCKED|DONE)\]/u);
   assert.match(output, /issue close 2 --comment Completed by LFI/u);
 });

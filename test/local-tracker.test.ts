@@ -249,6 +249,18 @@ test("tracker filenames expose derived status before the stable ID and title", a
       "[RUNNING] LFI-2 — first-task.md",
     ],
   );
+  const second = await readFile(
+    join(tasksRoot, "[BLOCKED] LFI-3 — second-task.md"),
+    "utf8",
+  );
+  assert.match(
+    second,
+    /## Specification[\s\S]*\[LFI-1 — Feature\]\(<\.\.\/specs\/\[SPEC\] LFI-1 — feature\.md>\)/u,
+  );
+  assert.match(
+    second,
+    /## Blocked by[\s\S]*- \[LFI-2 — First task\]\(<\[RUNNING\] LFI-2 — first-task\.md>\)/u,
+  );
 });
 
 test("local status orders completions by time and localizes blockers", () => {

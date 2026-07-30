@@ -68,7 +68,7 @@ LFI-20
           number: 12,
           title: "Second task",
           url: "https://github.test/12",
-          body: "Build second.\n",
+          body: "Build second.\n\n- #11\n",
           labels: ["lfi:task"],
         },
         {
@@ -110,6 +110,13 @@ LFI-20
       "utf8",
     ),
     /type: task[\s\S]*spec: LFI-1[\s\S]*blocked_by:\n  - LFI-2[\s\S]*github_issue: 12/u,
+  );
+  assert.doesNotMatch(
+    await readFile(
+      join(root, ".lfi", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
+      "utf8",
+    ),
+    /- #11/u,
   );
   assert.equal(
     parseEnvConfig(await readFile(join(root, ".lfi", "config.env"), "utf8"))
