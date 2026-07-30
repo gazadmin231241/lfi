@@ -22,22 +22,29 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
    `task-prompt.md`, and `$implement`. Local implementation changes are
    pre-approved; deploy, SSH, production changes, force-push, destructive
    database resets, and secrets remain forbidden.
-7. A worker result is accepted only when Codex exits successfully and emits the
+7. Each worker performs one complete `$code-review`, consisting of parallel
+   Standards and Spec axes. It batches remediation and, for substantive
+   review-driven changes, requests targeted confirmation only from axes that
+   produced the relevant findings. A second complete review is forbidden, but
+   a known blocker may not be ignored: unresolved blockers produce
+   `incomplete`. The planned repository-wide validation runs once on the final
+   review-adjusted code.
+8. A worker result is accepted only when Codex exits successfully and emits the
    required structured `completed` status. The Codex `workspace-write` sandbox
    keeps Git metadata read-only, so the LFI host stages and commits successful
    worker changes. Acceptance then requires commits ahead of the base and a
    clean worktree.
-8. Successful branches merge into a temporary integration worktree. Conflicts
+9. Successful branches merge into a temporary integration worktree. Conflicts
    invoke the merger model with `$resolving-merge-conflicts`. After a combined
    validation failure, LFI first runs the same command in a separately prepared
    base worktree. Base failures skip model repair. Otherwise the merger receives
    redacted command output and may modify only paths in the integrated diff.
    One failed integration repair stops the run and preserves the worktree
    instead of re-running accepted implementation work.
-9. In local mode the validated integration branch merges to the host checkout
+10. In local mode the validated integration branch merges to the host checkout
    without network access. In GitHub mode the base is pushed and Issues close
    only after validation.
-10. Successful worktrees/branches are removed; unfinished ones persist and are
+11. Successful worktrees/branches are removed; unfinished ones persist and are
     updated from the latest base before another attempt.
 
 ## Operations

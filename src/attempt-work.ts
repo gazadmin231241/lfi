@@ -61,7 +61,11 @@ export const attemptWork = async (options: {
     }
     const codex = await runCodex({
       cwd: worktree.path,
-      prompt: renderWorkerPrompt(options.taskTemplate, options.issue),
+      prompt: renderWorkerPrompt(
+        options.taskTemplate,
+        options.issue,
+        options.language,
+      ),
       model: options.config.CODEX_MODEL,
       reasoning: options.config.CODEX_REASONING_EFFORT,
       gitDirectory: options.gitDirectory,

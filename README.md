@@ -154,6 +154,15 @@ and configuration work. They explicitly forbid production deploys, SSH,
 production-data changes, destructive database resets, secret exposure, and
 force-push.
 
+Worker review is bounded without removing the independent quality gate. After
+focused implementation checks, a worker invokes `$code-review` once; its
+Standards and Spec reviewers run in parallel as one complete review. Findings
+are remediated as a batch. Substantive fixes receive targeted confirmation only
+from the affected review axes, and the complete diff is not reviewed again. A
+known unresolved blocker produces `incomplete`. The repository-wide validation
+runs on the final review-adjusted code, while combined integration validation
+remains a separate required gate.
+
 ## Logs
 
 The terminal emphasizes iterations, worker completion, integration, validation,
