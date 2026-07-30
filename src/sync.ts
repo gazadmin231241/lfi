@@ -139,7 +139,6 @@ export const syncGithubMirror = async (
       .filter((document) => document.githubIssue !== undefined)
       .map((document) => [document.id, document.githubIssue!]),
   );
-  const changed = new Set<string>();
   for (const document of [
     ...tracker.specs.sort((a, b) => a.number - b.number),
     ...tracker.tasks.sort((a, b) => a.number - b.number),
@@ -181,7 +180,6 @@ export const syncGithubMirror = async (
         mappings.set(document.id, issue.number);
         await saveTrackerDocument(document);
         result.created.push(document.id);
-        changed.add(document.id);
       } else if (
         options.force ||
         issue.title !== desired.title ||
@@ -197,7 +195,6 @@ export const syncGithubMirror = async (
           );
         }
         result.updated.push(document.id);
-        changed.add(document.id);
       } else {
         result.skipped.push(document.id);
       }
@@ -211,20 +208,15 @@ export const syncGithubMirror = async (
   if (!options.dryRun) {
     await mapConcurrent(tracker.tasks, 3, async (task) => {
       try {
-        const relationshipChanged =
-          changed.has(task.id) ||
-          (task.spec !== undefined && changed.has(task.spec)) ||
-          task.blockedBy.some((id) => changed.has(id));
-        if (!relationshipChanged) return;
         const issue = mappings.get(task.id);
         if (!issue) return;
         const parent = task.spec ? mappings.get(task.spec) : undefined;
-        if (parent) await adapter.setParent(issue, parent);
+        await adapter.reconcileParent(issue, parent);
         const blockers = task.blockedBy.flatMap((id) => {
           const number = mappings.get(id);
           return number === undefined ? [] : [number];
         });
-        if (blockers.length > 0) await adapter.setBlockers(issue, blockers);
+        await adapter.reconcileBlockers(issue, blockers);
       } catch (error) {
         result.failed.push({
           id: task.id,

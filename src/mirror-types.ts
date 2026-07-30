@@ -16,6 +16,9 @@ export interface GithubMirrorAdapter {
     closingComment?: string,
   ): Promise<MirrorIssue>;
   updateIssue(issue: MirrorIssue, closingComment?: string): Promise<void>;
-  setParent(child: number, parent: number): Promise<void>;
-  setBlockers(child: number, blockers: readonly number[]): Promise<void>;
+  reconcileParent(child: number, parent?: number): Promise<void>;
+  reconcileBlockers(
+    child: number,
+    blockers: readonly number[],
+  ): Promise<void>;
 }

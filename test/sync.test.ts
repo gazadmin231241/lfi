@@ -80,9 +80,11 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   }
 
   const issues = new Map<number, MirrorIssue>();
-  const parents: Array<[number, number]> = [];
+  const parents: Array<[number, number | undefined]> = [];
   const dependencies: Array<[number, number[]]> = [];
   const closingComments: string[] = [];
+  const parentState = new Map<number, number>();
+  const blockerState = new Map<number, number[]>();
   let next = 100;
   const adapter: GithubMirrorAdapter = {
     findByLfiId: async () => undefined,
@@ -96,11 +98,21 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
       issues.set(issue.number, issue);
       if (closingComment) closingComments.push(closingComment);
     },
-    setParent: async (child, parent) => {
+    reconcileParent: async (child, parent) => {
+      if (parentState.get(child) === parent) return;
       parents.push([child, parent]);
+      if (parent === undefined) parentState.delete(child);
+      else parentState.set(child, parent);
     },
-    setBlockers: async (child, blockers) => {
+    reconcileBlockers: async (child, blockers) => {
+      if (
+        JSON.stringify(blockerState.get(child) ?? []) ===
+        JSON.stringify(blockers)
+      ) {
+        return;
+      }
       dependencies.push([child, [...blockers]]);
+      blockerState.set(child, [...blockers]);
     },
   };
 
@@ -148,6 +160,13 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   assert.deepEqual(reopened.updated, ["LFI-1", "LFI-3"]);
   assert.equal(issues.get(100)?.state, "open");
   assert.equal(issues.get(102)?.state, "open");
+
+  await writeFile(
+    ready.path,
+    serializeTrackerDocument({ ...ready, blockedBy: [] }),
+  );
+  await syncGithubMirror(root, { adapter });
+  assert.deepEqual(dependencies.at(-1), [102, []]);
 });
 
 test("sync persists partial progress, resumes, and reports relationship failures", async () => {
@@ -201,9 +220,11 @@ test("sync persists partial progress, resumes, and reports relationship failures
     updateIssue: async (issue) => {
       issues.set(issue.number, issue);
     },
-    setParent: async () => undefined,
-    setBlockers: async () => {
-      if (failRelationship) throw new Error("HTTP 403 forbidden");
+    reconcileParent: async () => undefined,
+    reconcileBlockers: async (_child, blockers) => {
+      if (failRelationship && blockers.length > 0) {
+        throw new Error("HTTP 403 forbidden");
+      }
     },
   };
 
@@ -220,7 +241,7 @@ test("sync persists partial progress, resumes, and reports relationship failures
   assert.equal(next, 52);
 
   failRelationship = true;
-  const failedEdge = await syncGithubMirror(root, { adapter, force: true });
+  const failedEdge = await syncGithubMirror(root, { adapter });
   assert.deepEqual(failedEdge.failed.map((item) => item.id), ["LFI-2"]);
 });
 
@@ -294,10 +315,53 @@ esac
   process.env.PATH = `${tools}:${originalPath ?? ""}`;
   try {
     const adapter = createGhMirrorAdapter(root, "acme/widgets");
-    await assert.rejects(adapter.setParent(7, 6), /403/u);
+    await assert.rejects(adapter.reconcileParent(7, 6), /403/u);
     await writeFile(behavior, "unsupported");
-    await adapter.setParent(7, 6);
+    await adapter.reconcileParent(7, 6);
   } finally {
     process.env.PATH = originalPath;
   }
+});
+
+test("GitHub adapter reconciles changed and removed native relationships", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-sync-reconcile-"));
+  const tools = join(root, "tools");
+  const calls = join(root, "calls");
+  await mkdir(tools);
+  await writeFile(
+    join(tools, "gh"),
+    `#!/bin/sh
+printf '%s\\n' "$*" >> "${calls}"
+case "$*" in
+  *"issues/7/parent"*) printf '5\\n' ;;
+  *"issues/7/dependencies/blocked_by"*"--jq .[].number"*)
+    printf '8\\n9\\n'
+    ;;
+  *"issues/7 --jq .id"*) printf '700\\n' ;;
+  *"issues/8 --jq .id"*) printf '800\\n' ;;
+  *"issues/10 --jq .id"*) printf '1000\\n' ;;
+esac
+`,
+  );
+  await chmod(join(tools, "gh"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    const adapter = createGhMirrorAdapter(root, "acme/widgets");
+    await adapter.reconcileParent(7, 6);
+    await adapter.reconcileBlockers(7, [9, 10]);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+  const log = await readFile(calls, "utf8");
+  assert.match(log, /--method DELETE repos\/acme\/widgets\/issues\/5\/sub_issue/u);
+  assert.match(log, /--method POST repos\/acme\/widgets\/issues\/6\/sub_issues/u);
+  assert.match(
+    log,
+    /--method DELETE repos\/acme\/widgets\/issues\/7\/dependencies\/blocked_by\/800/u,
+  );
+  assert.match(
+    log,
+    /--method POST repos\/acme\/widgets\/issues\/7\/dependencies\/blocked_by -F issue_id=1000/u,
+  );
 });

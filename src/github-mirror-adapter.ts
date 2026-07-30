@@ -41,11 +41,31 @@ const allowTextualRelationshipFallback = async (
       error instanceof Error ? error.message : String(error)
     ).toLowerCase();
     if (
-      /already exists|not supported|not enabled|sub-issues? (?:are|is) disabled|dependencies? (?:are|is) disabled/u.test(
+      /http 404|already exists|not supported|not enabled|sub-issues? (?:are|is) disabled|dependencies? (?:are|is) disabled/u.test(
         message,
       )
     ) {
       return;
+    }
+    throw error;
+  }
+};
+
+const relationshipQuery = async (
+  operation: () => Promise<string>,
+): Promise<string | undefined> => {
+  try {
+    return await operation();
+  } catch (error) {
+    const message = (
+      error instanceof Error ? error.message : String(error)
+    ).toLowerCase();
+    if (
+      /http 404|not supported|not enabled|sub-issues? (?:are|is) disabled|dependencies? (?:are|is) disabled/u.test(
+        message,
+      )
+    ) {
+      return undefined;
     }
     throw error;
   }
@@ -134,27 +154,81 @@ export const createGhMirrorAdapter = (
           : []),
       ]);
     },
-    setParent: async (child, parent) => {
-      const info = await command(cwd, [
+    reconcileParent: async (child, parent) => {
+      const currentSource = await relationshipQuery(async () =>
+        (
+          await command(cwd, [
+            "api",
+            `repos/${repo}/issues/${child}/parent`,
+            "--jq",
+            ".number",
+          ])
+        ).stdout,
+      );
+      const current = currentSource ? Number(currentSource.trim()) : undefined;
+      if (current === parent) return;
+      const childInfo = await command(cwd, [
         "api", `repos/${repo}/issues/${child}`, "--jq", ".id",
       ]);
-      await allowTextualRelationshipFallback(() =>
-        command(cwd, [
-          "api", "--method", "POST", `repos/${repo}/issues/${parent}/sub_issues`,
-          "-F", `sub_issue_id=${info.stdout.trim()}`,
-        ]),
-      );
+      if (current !== undefined) {
+        await allowTextualRelationshipFallback(() =>
+          command(cwd, [
+            "api",
+            "--method",
+            "DELETE",
+            `repos/${repo}/issues/${current}/sub_issue`,
+            "-F",
+            `sub_issue_id=${childInfo.stdout.trim()}`,
+          ]),
+        );
+      }
+      if (parent !== undefined) {
+        await allowTextualRelationshipFallback(() =>
+          command(cwd, [
+            "api",
+            "--method",
+            "POST",
+            `repos/${repo}/issues/${parent}/sub_issues`,
+            "-F",
+            `sub_issue_id=${childInfo.stdout.trim()}`,
+          ]),
+        );
+      }
     },
-    setBlockers: async (child, blockers) => {
-      for (const blocker of blockers) {
+    reconcileBlockers: async (child, blockers) => {
+      const currentSource = await relationshipQuery(async () =>
+        (
+          await command(cwd, [
+            "api",
+            `repos/${repo}/issues/${child}/dependencies/blocked_by`,
+            "--jq",
+            ".[].number",
+          ])
+        ).stdout,
+      );
+      if (currentSource === undefined) return;
+      const current = new Set(
+        currentSource
+          .split(/\s+/u)
+          .filter(Boolean)
+          .map(Number),
+      );
+      const desired = new Set(blockers);
+      for (const blocker of new Set([...current, ...desired])) {
+        if (current.has(blocker) === desired.has(blocker)) continue;
         const info = await command(cwd, [
           "api", `repos/${repo}/issues/${blocker}`, "--jq", ".id",
         ]);
+        const add = desired.has(blocker);
         await allowTextualRelationshipFallback(() =>
           command(cwd, [
-            "api", "--method", "POST",
-            `repos/${repo}/issues/${child}/dependencies/blocked_by`,
-            "-F", `issue_id=${info.stdout.trim()}`,
+            "api",
+            "--method",
+            add ? "POST" : "DELETE",
+            `repos/${repo}/issues/${child}/dependencies/blocked_by${
+              add ? "" : `/${info.stdout.trim()}`
+            }`,
+            ...(add ? ["-F", `issue_id=${info.stdout.trim()}`] : []),
           ]),
         );
       }
