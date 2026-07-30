@@ -119,6 +119,28 @@ test("repository ID allocation does not reuse an ID after its file is deleted", 
   assert.equal(await nextRepositoryLfiId(root, []), "LFI-10");
 });
 
+test("tracker enforces informative filenames and completion timestamps", async () => {
+  assert.throws(
+    () =>
+      parseTrackerDocument(
+        taskSource.replace("status: ready", "status: completed"),
+        "task.md",
+      ),
+    /completed_at/u,
+  );
+  const root = await mkdtemp(join(tmpdir(), "lfi-filename-"));
+  await mkdir(join(root, "tasks"));
+  await mkdir(join(root, "specs"));
+  await writeFile(
+    join(root, "tasks", "task.md"),
+    taskSource
+      .replace("spec: LFI-14\n", "")
+      .replace("  - LFI-12\n", "")
+      .replace("github_issue: 362\n", ""),
+  );
+  await assert.rejects(loadLocalTracker(root), /informative-slug/u);
+});
+
 test("local status derives the four compact display markers", () => {
   const tasks = [
     parseTrackerDocument(
@@ -129,6 +151,10 @@ test("local status derives the four compact display markers", () => {
       taskSource
         .replaceAll("LFI-15", "LFI-16")
         .replace("status: ready", "status: completed")
+        .replace(
+          "blocked_by:",
+          "completed_at: 2026-01-01T00:00:00.000Z\nblocked_by:",
+        )
         .replace("github_issue: 362\n", "")
         .replace("  - LFI-12\n", ""),
       "completed.md",

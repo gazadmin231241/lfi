@@ -25,7 +25,7 @@ export interface MigrationSource {
 const slug = (title: string): string =>
   title
     .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-|-$/gu, "")
     .slice(0, 80) || "task";
 

@@ -41,6 +41,9 @@ test("local dry-run selects the dependency frontier without GitHub", async () =>
         type: "task",
         title: `Task ${number}`,
         status,
+        ...(status === "completed"
+          ? { completedAt: "2026-01-01T00:00:00.000Z" }
+          : {}),
         blockedBy,
         body: `Build task ${number}.\n`,
         path: join(tasks, `LFI-${number}-task.md`),

@@ -345,6 +345,7 @@ const main = async (): Promise<number> => {
       ...(option("--repo") ? { repo: option("--repo")! } : {}),
       ...(has("--dry-run") ? { dryRun: true } : {}),
       ...(has("--force") ? { force: true } : {}),
+      language,
     });
     console.log(
       localize(

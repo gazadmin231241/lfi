@@ -14,6 +14,7 @@ import {
 } from "./local-tracker.js";
 import type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
 import { checkpointTracker } from "./runner-support.js";
+import { localize, type Language } from "./i18n.js";
 
 export type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
 
@@ -62,16 +63,31 @@ const statusMarker = (
 const desiredIssue = (
   document: TrackerDocument,
   tracker: LocalTracker,
+  language: Language,
 ): Omit<MirrorIssue, "number"> => {
   const blocked =
     document.blockedBy.length === 0
-      ? "None — can start immediately."
+      ? localize(
+          language,
+          "None — can start immediately.",
+          "Нет — можно начинать сразу.",
+        )
       : document.blockedBy.map((id) => `- ${id}`).join("\n");
-  const parent = document.spec ? `\n## Parent\n\n${document.spec}\n` : "";
+  const parent = document.spec
+    ? `\n## ${localize(language, "Parent", "Родитель")}\n\n${document.spec}\n`
+    : "";
   const marker = statusMarker(document, tracker);
   return {
     title: `${marker ? `${marker} ` : ""}${document.id} — ${document.title}`,
-    body: `${document.body.trimEnd()}${parent}\n## Blocked by\n\n${blocked}\n\n---\nManaged by LFI from ${document.id}.\n`,
+    body: `${document.body.trimEnd()}${parent}\n## ${localize(
+      language,
+      "Blocked by",
+      "Заблокировано задачами",
+    )}\n\n${blocked}\n\n---\n${localize(
+      language,
+      `Managed by LFI from ${document.id}.`,
+      `Управляется LFI из ${document.id}.`,
+    )}\n`,
     state: desiredState(document, tracker),
   };
 };
@@ -83,8 +99,10 @@ export const syncGithubMirror = async (
     repo?: string;
     dryRun?: boolean;
     force?: boolean;
+    language?: Language;
   } = {},
 ): Promise<SyncResult> => {
+  const language = options.language ?? "en";
   const config = await loadConfig(join(cwd, ".lfi", "config.env"));
   if (config.TASK_SOURCE !== "local") {
     throw new Error(
@@ -94,7 +112,13 @@ export const syncGithubMirror = async (
   const repo =
     options.repo ?? (config.GITHUB_REPO || (await inferGithubRepo(cwd)));
   if (!repo && !options.adapter) {
-    throw new Error("GitHub repository is required. Use --repo owner/name.");
+    throw new Error(
+      localize(
+        language,
+        "GitHub repository is required. Use --repo owner/name.",
+        "Требуется GitHub-репозиторий. Используйте --repo owner/name.",
+      ),
+    );
   }
   const adapter =
     options.adapter ?? createGhMirrorAdapter(cwd, repo!);
@@ -115,12 +139,18 @@ export const syncGithubMirror = async (
       .filter((document) => document.githubIssue !== undefined)
       .map((document) => [document.id, document.githubIssue!]),
   );
+  const changed = new Set<string>();
   for (const document of [
     ...tracker.specs.sort((a, b) => a.number - b.number),
     ...tracker.tasks.sort((a, b) => a.number - b.number),
   ]) {
     try {
-      const desired = desiredIssue(document, tracker);
+      const desired = desiredIssue(document, tracker, language);
+      const cancellation = localize(
+        language,
+        "Cancelled in the local LFI tracker.",
+        "Отменено в локальном трекере LFI.",
+      );
       let issue =
         document.githubIssue === undefined
           ? await adapter.findByLfiId(document.id)
@@ -144,13 +174,14 @@ export const syncGithubMirror = async (
           desired.body,
           desired.state,
           document.status === "cancelled"
-            ? "Cancelled in the local LFI tracker."
+            ? cancellation
             : undefined,
         );
         document.githubIssue = issue.number;
         mappings.set(document.id, issue.number);
         await saveTrackerDocument(document);
         result.created.push(document.id);
+        changed.add(document.id);
       } else if (
         options.force ||
         issue.title !== desired.title ||
@@ -161,11 +192,12 @@ export const syncGithubMirror = async (
           await adapter.updateIssue(
             { ...desired, number: issue.number },
             document.status === "cancelled"
-              ? "Cancelled in the local LFI tracker."
+              ? cancellation
               : undefined,
           );
         }
         result.updated.push(document.id);
+        changed.add(document.id);
       } else {
         result.skipped.push(document.id);
       }
@@ -179,6 +211,11 @@ export const syncGithubMirror = async (
   if (!options.dryRun) {
     await mapConcurrent(tracker.tasks, 3, async (task) => {
       try {
+        const relationshipChanged =
+          changed.has(task.id) ||
+          (task.spec !== undefined && changed.has(task.spec)) ||
+          task.blockedBy.some((id) => changed.has(id));
+        if (!relationshipChanged) return;
         const issue = mappings.get(task.id);
         if (!issue) return;
         const parent = task.spec ? mappings.get(task.spec) : undefined;

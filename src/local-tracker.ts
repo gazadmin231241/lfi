@@ -1,5 +1,5 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { gitResult } from "./git.js";
 
@@ -43,7 +43,9 @@ const required = (
   path: string,
 ): string => {
   const value = fields.get(name);
-  if (!value) throw new Error(`${path}: missing ${name}`);
+  if (!value) {
+    throw new Error(`${path}: missing ${name} / отсутствует поле ${name}`);
+  }
   return value;
 };
 
@@ -52,7 +54,11 @@ export const parseTrackerDocument = (
   path: string,
 ): TrackerDocument => {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/u.exec(source);
-  if (!match) throw new Error(`${path}: missing YAML frontmatter`);
+  if (!match) {
+    throw new Error(
+      `${path}: missing YAML frontmatter / отсутствует YAML frontmatter`,
+    );
+  }
   const fields = new Map<string, string>();
   const blockedBy: string[] = [];
   let list: "blocked_by" | undefined;
@@ -64,7 +70,11 @@ export const parseTrackerDocument = (
     }
     const entry = /^([a-z_]+):(?:\s*(.*))?$/u.exec(rawLine);
     if (!entry) {
-      if (rawLine.trim()) throw new Error(`${path}: invalid frontmatter line`);
+      if (rawLine.trim()) {
+        throw new Error(
+          `${path}: invalid frontmatter line / некорректная строка frontmatter`,
+        );
+      }
       continue;
     }
     list = entry[1] === "blocked_by" ? "blocked_by" : undefined;
@@ -72,14 +82,20 @@ export const parseTrackerDocument = (
   }
   const id = required(fields, "id", path);
   const idMatch = idPattern.exec(id);
-  if (!idMatch) throw new Error(`${path}: invalid LFI id ${id}`);
+  if (!idMatch) {
+    throw new Error(`${path}: invalid LFI id / некорректный LFI ID: ${id}`);
+  }
   const type = required(fields, "type", path);
   if (type !== "task" && type !== "spec") {
-    throw new Error(`${path}: invalid document type ${type}`);
+    throw new Error(
+      `${path}: invalid document type / некорректный тип документа: ${type}`,
+    );
   }
   const status = required(fields, "status", path);
   if (status !== "ready" && status !== "completed" && status !== "cancelled") {
-    throw new Error(`${path}: invalid status ${status}`);
+    throw new Error(
+      `${path}: invalid status / некорректный статус: ${status}`,
+    );
   }
   const github = fields.get("github_issue");
   const githubIssue = github === undefined ? undefined : Number(github);
@@ -87,14 +103,23 @@ export const parseTrackerDocument = (
     githubIssue !== undefined &&
     (!Number.isSafeInteger(githubIssue) || githubIssue < 1)
   ) {
-    throw new Error(`${path}: invalid github_issue ${github}`);
+    throw new Error(
+      `${path}: invalid github_issue / некорректный github_issue: ${github}`,
+    );
   }
   const completedAt = fields.get("completed_at");
   if (
     completedAt !== undefined &&
     !Number.isFinite(Date.parse(completedAt))
   ) {
-    throw new Error(`${path}: invalid completed_at ${completedAt}`);
+    throw new Error(
+      `${path}: invalid completed_at / некорректный completed_at: ${completedAt}`,
+    );
+  }
+  if (status === "completed" && completedAt === undefined) {
+    throw new Error(
+      `${path}: completed documents require completed_at / для завершённых документов требуется completed_at`,
+    );
   }
   return {
     id,
@@ -114,6 +139,11 @@ export const parseTrackerDocument = (
 export const serializeTrackerDocument = (
   document: TrackerDocument,
 ): string => {
+  if (document.status === "completed" && document.completedAt === undefined) {
+    throw new Error(
+      `${document.path}: completed documents require completed_at / для завершённых документов требуется completed_at`,
+    );
+  }
   const lines = [
     "---",
     `id: ${document.id}`,
@@ -142,8 +172,25 @@ const markdownFiles = async (directory: string): Promise<string[]> =>
 const validateTracker = (documents: readonly TrackerDocument[]): void => {
   const byId = new Map<string, TrackerDocument>();
   for (const document of documents) {
+    const collection =
+      document.type === "task" ? "tasks" : "specs";
+    const filename = basename(document.path);
+    const prefix = `${document.id}-`;
+    const slug = filename.startsWith(prefix) && filename.endsWith(".md")
+      ? filename.slice(prefix.length, -3)
+      : "";
+    if (
+      basename(dirname(document.path)) !== collection ||
+      !/^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(slug)
+    ) {
+      throw new Error(
+        `${document.path}: filename must be ${collection}/${document.id}-informative-slug.md / имя файла должно быть ${collection}/${document.id}-информативное-название.md`,
+      );
+    }
     if (byId.has(document.id)) {
-      throw new Error(`Duplicate tracker id: ${document.id}`);
+      throw new Error(
+        `Duplicate tracker id / повторяющийся ID трекера: ${document.id}`,
+      );
     }
     byId.set(document.id, document);
   }
@@ -151,20 +198,28 @@ const validateTracker = (documents: readonly TrackerDocument[]): void => {
     if (document.spec) {
       const spec = byId.get(document.spec);
       if (!spec || spec.type !== "spec") {
-        throw new Error(`${document.id}: missing spec ${document.spec}`);
+        throw new Error(
+          `${document.id}: missing spec / отсутствует спецификация ${document.spec}`,
+        );
       }
     }
     for (const blocker of document.blockedBy) {
       const target = byId.get(blocker);
       if (!target || target.type !== "task") {
-        throw new Error(`${document.id}: missing blocker ${blocker}`);
+        throw new Error(
+          `${document.id}: missing blocker / отсутствует блокирующая задача ${blocker}`,
+        );
       }
     }
   }
   const visiting = new Set<string>();
   const visited = new Set<string>();
   const visit = (id: string): void => {
-    if (visiting.has(id)) throw new Error(`Dependency cycle at ${id}`);
+    if (visiting.has(id)) {
+      throw new Error(
+        `Dependency cycle / цикл зависимостей обнаружен у ${id}`,
+      );
+    }
     if (visited.has(id)) return;
     visiting.add(id);
     for (const blocker of byId.get(id)?.blockedBy ?? []) visit(blocker);

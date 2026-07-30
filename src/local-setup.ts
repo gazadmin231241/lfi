@@ -106,7 +106,8 @@ export const configureLocalTracker = async (
         `# Issue tracker: LFI Local Markdown
 
 Specifications live as flat Markdown files in \`.lfi/specs/\`. Runnable tasks
-live as one Markdown file per task in \`.lfi/tasks/\`. Use one shared,
+live as \`.lfi/tasks/LFI-N-informative-slug.md\`; specs use the same filename
+pattern in \`.lfi/specs/\`. Use one shared,
 monotonically increasing \`LFI-N\` identifier sequence across both directories.
 Tasks created from an approved breakdown use \`status: ready\`.
 Before allocating an ID, include IDs from Git history; never reuse an ID from
@@ -121,7 +122,8 @@ than GitHub or \`.scratch/\`. GitHub is only an explicit mirror managed by
         `# Трекер задач: LFI Local Markdown
 
 Спецификации хранятся плоским списком Markdown-файлов в \`.lfi/specs/\`, а
-исполняемые задачи — по одному файлу в \`.lfi/tasks/\`. Используйте общую,
+исполняемые задачи — как \`.lfi/tasks/LFI-N-информативное-название.md\`;
+спецификации используют тот же шаблон в \`.lfi/specs/\`. Используйте общую,
 монотонно возрастающую последовательность идентификаторов \`LFI-N\` для обеих
 папок. Задачи из утверждённой декомпозиции создаются со \`status: ready\`.
 Перед выделением ID учитывайте ID из истории Git и не переиспользуйте номер

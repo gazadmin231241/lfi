@@ -55,6 +55,9 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
     type,
     title: `${type} ${id}`,
     status,
+    ...(status === "completed"
+      ? { completedAt: "2026-01-01T00:00:00.000Z" }
+      : {}),
     ...(extra.spec ? { spec: extra.spec } : {}),
     blockedBy: extra.blockedBy ?? [],
     body: `Body for ${id}.\n`,
@@ -116,10 +119,16 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   assert.deepEqual(second.created, []);
   assert.deepEqual(second.failed, []);
   assert.deepEqual(second.skipped, ["LFI-1", "LFI-2", "LFI-3"]);
+  assert.deepEqual(parents, [[101, 100], [102, 100]]);
+  assert.deepEqual(dependencies, [[102, [101]]]);
 
   await writeFile(
     ready.path,
-    serializeTrackerDocument({ ...ready, status: "completed" }),
+    serializeTrackerDocument({
+      ...ready,
+      status: "completed",
+      completedAt: "2026-02-01T00:00:00.000Z",
+    }),
   );
   const closed = await syncGithubMirror(root, { adapter });
   assert.deepEqual(closed.updated, ["LFI-1", "LFI-3"]);
@@ -211,7 +220,7 @@ test("sync persists partial progress, resumes, and reports relationship failures
   assert.equal(next, 52);
 
   failRelationship = true;
-  const failedEdge = await syncGithubMirror(root, { adapter });
+  const failedEdge = await syncGithubMirror(root, { adapter, force: true });
   assert.deepEqual(failedEdge.failed.map((item) => item.id), ["LFI-2"]);
 });
 
