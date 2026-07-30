@@ -8,7 +8,10 @@ import { DEFAULT_CONFIG } from "../src/config.js";
 import { runCommand } from "../src/process.js";
 import { mergeWithAgent } from "../src/runner-support.js";
 
-const conflictedRepository = async (codexBody: string) => {
+const conflictedRepository = async (
+  codexBody: string,
+  kind: "text" | "modify-delete" = "text",
+) => {
   const root = await mkdtemp(join(tmpdir(), "lfi-merge-repair-"));
   const tools = join(root, "tools");
   const logs = join(root, "logs");
@@ -29,8 +32,13 @@ const conflictedRepository = async (codexBody: string) => {
   await writeFile(join(root, "conflict.txt"), "feature\n");
   await git("commit", "-am", "feat: change conflict file");
   await git("switch", "main");
-  await writeFile(join(root, "conflict.txt"), "main\n");
-  await git("commit", "-am", "fix: change conflict file");
+  if (kind === "text") {
+    await writeFile(join(root, "conflict.txt"), "main\n");
+    await git("commit", "-am", "fix: change conflict file");
+  } else {
+    await git("rm", "conflict.txt");
+    await git("commit", "-m", "fix: remove conflict file");
+  }
   const merge = await runCommand("git", ["merge", "feature"], { cwd: root });
   assert.notEqual(merge.exitCode, 0);
   return { root, tools, logs };
@@ -81,7 +89,7 @@ test("merge repair cannot commit unresolved conflicts", async () => {
   const fixture = await conflictedRepository("exit 0");
   await assert.rejects(
     repairWithFakeCodex(fixture, "merge-unresolved"),
-    /Unresolved merge conflict markers remain/u,
+    /Merger did not resolve conflict\.txt/u,
   );
 
   const unmerged = await runCommand(
@@ -94,4 +102,20 @@ test("merge repair cannot commit unresolved conflicts", async () => {
     cwd: fixture.root,
   });
   assert.equal(subject.stdout.trim(), "fix: change conflict file");
+});
+
+test("merge repair cannot commit an unchanged markerless conflict", async () => {
+  const fixture = await conflictedRepository("exit 0", "modify-delete");
+
+  await assert.rejects(
+    repairWithFakeCodex(fixture, "merge-markerless"),
+    /Merger did not resolve conflict\.txt/u,
+  );
+
+  const unmerged = await runCommand(
+    "git",
+    ["diff", "--name-only", "--diff-filter=U"],
+    { cwd: fixture.root },
+  );
+  assert.equal(unmerged.stdout.trim(), "conflict.txt");
 });

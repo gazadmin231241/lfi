@@ -114,11 +114,12 @@ export const commitWorktreeChanges = async (
   message: string,
 ): Promise<void> => {
   if (await worktreeClean(cwd)) return;
-  const worktreeCheck = await gitResult(cwd, ["diff", "--check"]);
-  const worktreeDiagnostics = `${worktreeCheck.stdout}${worktreeCheck.stderr}`;
-  if (worktreeDiagnostics.includes("leftover conflict marker")) {
+  const unmerged = (
+    await git(cwd, ["diff", "--name-only", "--diff-filter=U"])
+  ).stdout.trim();
+  if (unmerged) {
     throw new Error(
-      `Unresolved merge conflict markers remain / Остались маркеры неразрешённых конфликтов слияния:\n${worktreeDiagnostics.trim()}`,
+      `Unresolved merge conflicts remain / Остались неразрешённые конфликты слияния:\n${unmerged}`,
     );
   }
   await git(cwd, ["add", "--all"]);

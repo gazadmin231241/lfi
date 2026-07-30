@@ -55,6 +55,29 @@ export const mergeWithAgent = async (options: {
   logName: string;
   language: Language;
 }): Promise<void> => {
+  const unmerged = (
+    await git(options.cwd, [
+      "diff",
+      "--name-only",
+      "-z",
+      "--diff-filter=U",
+    ])
+  ).stdout
+    .split("\0")
+    .filter(Boolean);
+  const fingerprints = new Map(
+    await Promise.all(
+      unmerged.map(async (path) => {
+        const result = await gitResult(options.cwd, [
+          "hash-object",
+          "--no-filters",
+          "--",
+          path,
+        ]);
+        return [path, result.exitCode === 0 ? result.stdout.trim() : undefined] as const;
+      }),
+    ),
+  );
   const result = await runCodex({
     cwd: options.cwd,
     prompt: `Resolve the current integration problem in this worktree.
@@ -77,6 +100,26 @@ ${options.context}
     prefix: "merge",
   });
   if (result.exitCode === 0) {
+    for (const path of unmerged) {
+      const current = await gitResult(options.cwd, [
+        "hash-object",
+        "--no-filters",
+        "--",
+        path,
+      ]);
+      const fingerprint =
+        current.exitCode === 0 ? current.stdout.trim() : undefined;
+      if (fingerprint === fingerprints.get(path)) {
+        throw new Error(
+          localize(
+            options.language,
+            `Merger did not resolve ${path}: the conflicted path was unchanged.`,
+            `Агент слияния не разрешил ${path}: конфликтующий путь не изменился.`,
+          ),
+        );
+      }
+    }
+    if (unmerged.length > 0) await git(options.cwd, ["add", "--all"]);
     await commitWorktreeChanges(
       options.cwd,
       "chore(lfi): resolve integration",
