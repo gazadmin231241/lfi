@@ -3,16 +3,16 @@ export interface MirrorIssue {
   title: string;
   body: string;
   state: "open" | "closed";
+  labels: string[];
 }
 
 export interface GithubMirrorAdapter {
   verifyDestination?(): Promise<void>;
+  ensureTypeLabels?(): Promise<void>;
   findByLfiId(id: string): Promise<MirrorIssue | undefined>;
   getIssue(number: number): Promise<MirrorIssue | undefined>;
   createIssue(
-    title: string,
-    body: string,
-    state: "open" | "closed",
+    issue: Omit<MirrorIssue, "number">,
     closingComment?: string,
   ): Promise<MirrorIssue>;
   updateIssue(issue: MirrorIssue, closingComment?: string): Promise<void>;

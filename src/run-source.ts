@@ -10,6 +10,7 @@ import {
 import { selectRunnableIssues } from "./issues.js";
 import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import type { WorkItem } from "./runner-types.js";
+import { LFI_TASK_LABEL } from "./tracker-contract.js";
 
 export const listWork = async (
   cwd: string,
@@ -30,13 +31,13 @@ export const listWork = async (
         title: task.title,
         url: task.path,
         body: task.body,
-        labels: ["ready-for-agent"],
+        labels: [LFI_TASK_LABEL],
         localPath: task.path,
       }));
   }
   const repository = await repoInfo(cwd);
   const [issues, allOpen] = await Promise.all([
-    listOpenIssues(cwd, config.ISSUE_LABEL),
+    listOpenIssues(cwd, LFI_TASK_LABEL),
     listAllOpenIssueNumbers(cwd),
   ]);
   const blockers = await nativeBlockers(
@@ -46,8 +47,6 @@ export const listWork = async (
   );
   const selected = new Set(selectedIds);
   return selectRunnableIssues(issues, allOpen, {
-    includeLabel: config.ISSUE_LABEL,
-    excludeLabels: config.EXCLUDE_LABELS.split(",").map((label) => label.trim()),
     nativeBlockers: blockers,
   })
     .map((issue): WorkItem => ({ ...issue, id: `#${issue.number}` }))

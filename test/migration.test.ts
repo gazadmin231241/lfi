@@ -13,7 +13,7 @@ const git = async (cwd: string, ...args: string[]): Promise<void> => {
   assert.equal(result.exitCode, 0, result.stderr);
 };
 
-test("migration imports open GitHub work and switches source after checkpoint", async () => {
+test("migration preserves LFI document types and native relationships", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-migrate-"));
   await git(root, "init", "-b", "main");
   await git(root, "config", "user.email", "test@example.com");
@@ -29,34 +29,60 @@ test("migration imports open GitHub work and switches source after checkpoint", 
 
   const result = await migrateToLocal(root, {
     source: {
-      listOpenAgentIssues: async () => [
+      listOpenLfiIssues: async () => [
         {
           number: 10,
-          title: "First task",
+          title: "Feature specification",
           url: "https://github.test/10",
-          body: "Build first.\n",
-          labels: ["ready-for-agent"],
+          body: "Specify the feature.\n",
+          labels: ["lfi:spec"],
         },
         {
           number: 11,
-          title: "Second task",
+          title: "First task",
           url: "https://github.test/11",
+          body: "Build first.\n",
+          labels: ["lfi:task"],
+        },
+        {
+          number: 12,
+          title: "Second task",
+          url: "https://github.test/12",
           body: "Build second.\n",
+          labels: ["lfi:task"],
+        },
+        {
+          number: 13,
+          title: "Legacy task",
+          url: "https://github.test/13",
+          body: "Do not import.\n",
           labels: ["ready-for-agent"],
         },
       ],
-      blockers: async () => new Map([[11, [10]]]),
+      parents: async () => new Map([[11, 10], [12, 10]]),
+      blockers: async () => new Map([[12, [11]]]),
     },
   });
 
-  assert.deepEqual(result, ["LFI-1", "LFI-2"]);
+  assert.deepEqual(result, ["LFI-1", "LFI-2", "LFI-3"]);
   assert.match(
-    await readFile(join(root, ".lfi", "tasks", "LFI-2-second-task.md"), "utf8"),
-    /blocked_by:\n  - LFI-1[\s\S]*github_issue: 11/u,
+    await readFile(
+      join(root, ".lfi", "specs", "LFI-1-feature-specification.md"),
+      "utf8",
+    ),
+    /type: spec[\s\S]*github_issue: 10/u,
+  );
+  assert.match(
+    await readFile(join(root, ".lfi", "tasks", "LFI-3-second-task.md"), "utf8"),
+    /type: task[\s\S]*spec: LFI-1[\s\S]*blocked_by:\n  - LFI-2[\s\S]*github_issue: 12/u,
   );
   assert.equal(
     parseEnvConfig(await readFile(join(root, ".lfi", "config.env"), "utf8"))
       .TASK_SOURCE,
     "local",
+  );
+  assert.match(
+    await readFile(join(root, "docs", "agents", "issue-tracker.md"), "utf8"),
+    /\.lfi\/specs[\s\S]*lfi:spec/u,
   );
 });

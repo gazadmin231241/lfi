@@ -1,3 +1,8 @@
+import {
+  LFI_SPEC_LABEL,
+  LFI_TASK_LABEL,
+} from "./tracker-contract.js";
+
 export interface GithubIssue {
   id?: string;
   number: number;
@@ -25,22 +30,12 @@ export const selectRunnableIssues = (
   issues: GithubIssue[],
   openIssueNumbers: ReadonlySet<number>,
   options: {
-    includeLabel?: string;
-    excludeLabels?: readonly string[];
     nativeBlockers?: ReadonlyMap<number, readonly number[]>;
   } = {},
 ): GithubIssue[] => {
-  const includeLabel = options.includeLabel ?? "ready-for-agent";
-  const excluded = new Set(
-    (options.excludeLabels ?? ["blocked", "needs-info", "ready-for-human"]).map(
-      (label) => label.toLowerCase(),
-    ),
-  );
-
   return issues.filter((issue) => {
     const labels = new Set(issue.labels.map((label) => label.toLowerCase()));
-    if (!labels.has(includeLabel.toLowerCase())) return false;
-    if ([...excluded].some((label) => labels.has(label))) return false;
+    if (!labels.has(LFI_TASK_LABEL) || labels.has(LFI_SPEC_LABEL)) return false;
     const blockers = [
       ...parseBlockedBy(issue.body),
       ...(options.nativeBlockers?.get(issue.number) ?? []),

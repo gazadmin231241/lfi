@@ -36,6 +36,11 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   const lfiRoot = join(root, ".lfi");
   await mkdir(join(lfiRoot, "tasks"), { recursive: true });
   await mkdir(join(lfiRoot, "specs"));
+  await mkdir(join(lfiRoot, "state"));
+  await writeFile(
+    join(lfiRoot, "state", "current-run.json"),
+    JSON.stringify({ activeIssues: ["LFI-3"] }),
+  );
   await writeFile(
     join(lfiRoot, "config.env"),
     serializeEnvConfig({
@@ -85,12 +90,16 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   const closingComments: string[] = [];
   const parentState = new Map<number, number>();
   const blockerState = new Map<number, number[]>();
+  let labelPreparations = 0;
   let next = 100;
   const adapter: GithubMirrorAdapter = {
+    ensureTypeLabels: async () => {
+      labelPreparations++;
+    },
     findByLfiId: async () => undefined,
     getIssue: async (number) => issues.get(number),
-    createIssue: async (title, body, state) => {
-      const issue = { number: next++, title, body, state };
+    createIssue: async (desired) => {
+      const issue = { number: next++, ...desired };
       issues.set(issue.number, issue);
       return issue;
     },
@@ -116,8 +125,19 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
     },
   };
 
+  const preview = await syncGithubMirror(root, { adapter, dryRun: true });
+  assert.deepEqual(preview.created, ["LFI-1", "LFI-2", "LFI-3"]);
+  assert.equal(labelPreparations, 0);
+
   const first = await syncGithubMirror(root, { adapter });
+  assert.equal(labelPreparations, 1);
   assert.deepEqual(first.created, ["LFI-1", "LFI-2", "LFI-3"]);
+  assert.equal(issues.get(100)?.title, "[SPEC] LFI-1 — spec LFI-1");
+  assert.equal(issues.get(101)?.title, "[DONE] LFI-2 — task LFI-2");
+  assert.equal(issues.get(102)?.title, "[RUNNING] LFI-3 — task LFI-3");
+  assert.deepEqual(issues.get(100)?.labels, ["lfi:spec"]);
+  assert.deepEqual(issues.get(101)?.labels, ["lfi:task"]);
+  assert.deepEqual(issues.get(102)?.labels, ["lfi:task"]);
   assert.deepEqual(parents, [[101, 100], [102, 100]]);
   assert.deepEqual(dependencies, [[102, [101]]]);
   assert.match(
@@ -127,10 +147,16 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
 
   adapter.findByLfiId = async (id) =>
     [...issues.values()].find((issue) => issue.title.includes(id));
+  issues.set(102, {
+    ...issues.get(102)!,
+    labels: ["lfi:spec", "documentation"],
+  });
   const second = await syncGithubMirror(root, { adapter });
   assert.deepEqual(second.created, []);
   assert.deepEqual(second.failed, []);
-  assert.deepEqual(second.skipped, ["LFI-1", "LFI-2", "LFI-3"]);
+  assert.deepEqual(second.skipped, ["LFI-1", "LFI-2"]);
+  assert.deepEqual(second.updated, ["LFI-3"]);
+  assert.deepEqual(issues.get(102)?.labels, ["documentation", "lfi:task"]);
   assert.deepEqual(parents, [[101, 100], [102, 100]]);
   assert.deepEqual(dependencies, [[102, [101]]]);
 
@@ -209,11 +235,11 @@ test("sync persists partial progress, resumes, and reports relationship failures
   const adapter: GithubMirrorAdapter = {
     findByLfiId: async () => undefined,
     getIssue: async (number) => issues.get(number),
-    createIssue: async (title, body, state) => {
-      if (title.includes("LFI-2") && failCreate) {
+    createIssue: async (desired) => {
+      if (desired.title.includes("LFI-2") && failCreate) {
         throw new Error("i/o timeout");
       }
-      const issue = { number: next++, title, body, state };
+      const issue = { number: next++, ...desired };
       issues.set(issue.number, issue);
       return issue;
     },
@@ -230,6 +256,7 @@ test("sync persists partial progress, resumes, and reports relationship failures
 
   const partial = await syncGithubMirror(root, { adapter });
   assert.deepEqual(partial.created, ["LFI-1"]);
+  assert.equal(issues.get(50)?.title, "[READY] LFI-1 — Task LFI-1");
   assert.deepEqual(partial.failed.map((item) => item.id), ["LFI-2"]);
   assert.match(await readFile(firstTask.path, "utf8"), /github_issue: 50/u);
   assert.doesNotMatch(await readFile(secondTask.path, "utf8"), /github_issue/u);
@@ -238,6 +265,7 @@ test("sync persists partial progress, resumes, and reports relationship failures
   const resumed = await syncGithubMirror(root, { adapter });
   assert.deepEqual(resumed.created, ["LFI-2"]);
   assert.deepEqual(resumed.failed, []);
+  assert.equal(issues.get(51)?.title, "[BLOCKED] LFI-2 — Task LFI-2");
   assert.equal(next, 52);
 
   failRelationship = true;
@@ -263,7 +291,7 @@ case "$*" in
     ;;
   *"issue list"*)
     if [ -f "${created}" ]; then
-      printf '%s\\n' '[{"number":77,"title":"🟢 LFI-7 — Task","body":"Body","state":"OPEN"}]'
+      printf '%s\\n' '[{"number":77,"title":"[READY] LFI-7 — Task","body":"Body","state":"OPEN","labels":[{"name":"lfi:task"}]}]'
     else
       printf '%s\\n' '[]'
     fi
@@ -278,7 +306,12 @@ esac
     const issue = await createGhMirrorAdapter(
       root,
       "acme/widgets",
-    ).createIssue("🟢 LFI-7 — Task", "Body", "open");
+    ).createIssue({
+      title: "[READY] LFI-7 — Task",
+      body: "Body",
+      state: "open",
+      labels: ["lfi:task"],
+    });
     assert.equal(issue.number, 77);
   } finally {
     process.env.PATH = originalPath;

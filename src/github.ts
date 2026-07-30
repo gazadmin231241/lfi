@@ -3,6 +3,7 @@ import { withGithubRetry } from "./github-resilience.js";
 import type { GithubIssue } from "./issues.js";
 import { localize, type Language } from "./i18n.js";
 import { mapConcurrent } from "./concurrency.js";
+import { GITHUB_TYPE_LABELS } from "./tracker-contract.js";
 
 interface GhIssue {
   number: number;
@@ -32,6 +33,18 @@ export const repoInfo = async (
     nameWithOwner: parsed.nameWithOwner,
     defaultBranch: parsed.defaultBranchRef.name,
   };
+};
+
+export const ensureGithubTypeLabels = async (
+  cwd: string,
+  repo: string,
+): Promise<void> => {
+  for (const [label, color, description] of GITHUB_TYPE_LABELS) {
+    await gh(cwd, [
+      "label", "create", label, "--repo", repo, "--color", color,
+      "--description", description, "--force",
+    ]);
+  }
 };
 
 export const listOpenIssues = async (
@@ -101,6 +114,37 @@ export const nativeBlockers = async (
       );
     },
   );
+  return result;
+};
+
+export const nativeParents = async (
+  cwd: string,
+  repo: string,
+  issueNumbers: readonly number[],
+): Promise<Map<number, number>> => {
+  const result = new Map<number, number>();
+  await mapConcurrent(issueNumbers, 3, async (number) => {
+    try {
+      const response = await gh(
+        cwd,
+        [
+          "api",
+          `repos/${repo}/issues/${number}/parent`,
+          "--jq",
+          ".number",
+        ],
+      );
+      const parent = Number(response.stdout.trim());
+      if (Number.isSafeInteger(parent) && parent > 0) {
+        result.set(number, parent);
+      }
+    } catch (error) {
+      const message = (
+        error instanceof Error ? error.message : String(error)
+      ).toLowerCase();
+      if (!/http 404|no parent issue found/u.test(message)) throw error;
+    }
+  });
   return result;
 };
 

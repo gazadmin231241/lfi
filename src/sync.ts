@@ -15,6 +15,15 @@ import {
 import type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
 import { checkpointTracker } from "./runner-support.js";
 import { localize, type Language } from "./i18n.js";
+import {
+  LFI_SPEC_LABEL,
+  LFI_TASK_LABEL,
+} from "./tracker-contract.js";
+import {
+  readActiveTaskIds,
+  trackerDisplayState,
+  trackerStatusPrefix,
+} from "./tracker-state.js";
 
 export type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
 
@@ -45,25 +54,16 @@ const desiredState = (
 const statusMarker = (
   document: TrackerDocument,
   tracker: LocalTracker,
+  active: ReadonlySet<string>,
 ): string => {
-  if (document.status === "completed") return "✅";
-  if (document.status === "cancelled") return "";
-  if (
-    document.type === "task" &&
-    document.blockedBy.some(
-      (id) =>
-        tracker.tasks.find((task) => task.id === id)?.status !== "completed",
-    )
-  ) {
-    return "⛔";
-  }
-  return document.type === "task" ? "🟢" : "📘";
+  return trackerStatusPrefix(trackerDisplayState(document, tracker, active));
 };
 
 const desiredIssue = (
   document: TrackerDocument,
   tracker: LocalTracker,
   language: Language,
+  active: ReadonlySet<string>,
 ): Omit<MirrorIssue, "number"> => {
   const blocked =
     document.blockedBy.length === 0
@@ -76,7 +76,7 @@ const desiredIssue = (
   const parent = document.spec
     ? `\n## ${localize(language, "Parent", "Родитель")}\n\n${document.spec}\n`
     : "";
-  const marker = statusMarker(document, tracker);
+  const marker = statusMarker(document, tracker, active);
   return {
     title: `${marker ? `${marker} ` : ""}${document.id} — ${document.title}`,
     body: `${document.body.trimEnd()}${parent}\n## ${localize(
@@ -89,8 +89,23 @@ const desiredIssue = (
       `Управляется LFI из ${document.id}.`,
     )}\n`,
     state: desiredState(document, tracker),
+    labels: [document.type === "spec" ? LFI_SPEC_LABEL : LFI_TASK_LABEL],
   };
 };
+
+const typeLabels = new Set([LFI_SPEC_LABEL, LFI_TASK_LABEL]);
+
+const desiredLabels = (
+  existing: readonly string[],
+  type: TrackerDocument["type"],
+): string[] =>
+  [
+    ...existing.filter((label) => !typeLabels.has(label)),
+    type === "spec" ? LFI_SPEC_LABEL : LFI_TASK_LABEL,
+  ].sort((left, right) => left.localeCompare(right));
+
+const sameLabels = (left: readonly string[], right: readonly string[]): boolean =>
+  JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 
 export const syncGithubMirror = async (
   cwd: string,
@@ -123,7 +138,9 @@ export const syncGithubMirror = async (
   const adapter =
     options.adapter ?? createGhMirrorAdapter(cwd, repo!);
   await adapter.verifyDestination?.();
+  if (!options.dryRun) await adapter.ensureTypeLabels?.();
   let tracker = await loadLocalTracker(join(cwd, ".lfi"));
+  const active = await readActiveTaskIds(join(cwd, ".lfi"));
   if (!options.dryRun) {
     await checkpointTracker(cwd, "docs(lfi): update local task tracker");
     tracker = await loadLocalTracker(join(cwd, ".lfi"));
@@ -144,7 +161,7 @@ export const syncGithubMirror = async (
     ...tracker.tasks.sort((a, b) => a.number - b.number),
   ]) {
     try {
-      const desired = desiredIssue(document, tracker, language);
+      const baseDesired = desiredIssue(document, tracker, language, active);
       const cancellation = localize(
         language,
         "Cancelled in the local LFI tracker.",
@@ -163,15 +180,17 @@ export const syncGithubMirror = async (
         mappings.set(document.id, issue.number);
         await saveTrackerDocument(document);
       }
+      const desired = {
+        ...baseDesired,
+        labels: desiredLabels(issue?.labels ?? [], document.type),
+      };
       if (!issue) {
         if (options.dryRun) {
           result.created.push(document.id);
           continue;
         }
         issue = await adapter.createIssue(
-          desired.title,
-          desired.body,
-          desired.state,
+          desired,
           document.status === "cancelled"
             ? cancellation
             : undefined,
@@ -184,7 +203,8 @@ export const syncGithubMirror = async (
         options.force ||
         issue.title !== desired.title ||
         issue.body !== desired.body ||
-        issue.state !== desired.state
+        issue.state !== desired.state ||
+        !sameLabels(issue.labels, desired.labels)
       ) {
         if (!options.dryRun) {
           await adapter.updateIssue(

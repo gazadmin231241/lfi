@@ -17,12 +17,13 @@ import {
   type TaskSource,
 } from "./config.js";
 import { detectCommands } from "./detect.js";
-import { repoInfo } from "./github.js";
+import { ensureGithubTypeLabels, repoInfo } from "./github.js";
 import { localRepoInfo } from "./git.js";
 import type { Language } from "./i18n.js";
 import { defaultTaskPrompt } from "./prompts.js";
 import {
   configureLocalTracker,
+  configureTrackerContract,
   LOCAL_IGNORE_BLOCK,
 } from "./local-setup.js";
 
@@ -115,14 +116,6 @@ const askAdvanced = async (
       ),
     ),
     BASE_BRANCH: await ask(label("Base branch", "Основная ветка"), config.BASE_BRANCH),
-    ISSUE_LABEL: await ask(
-      label("Ready issue label", "Метка готовой задачи"),
-      config.ISSUE_LABEL,
-    ),
-    EXCLUDE_LABELS: await ask(
-      label("Excluded labels", "Исключаемые метки"),
-      config.EXCLUDE_LABELS,
-    ),
     VALIDATE_COMMAND: await ask(
       label("Validation command", "Команда проверки"),
       config.VALIDATE_COMMAND,
@@ -217,6 +210,10 @@ export const initializeProject = async (
     }
   }
 
+  if (taskSource === "github") {
+    await ensureGithubTypeLabels(options.cwd, repo.nameWithOwner);
+  }
+
   await Promise.all([
     mkdir(join(lfiRoot, "logs"), { recursive: true }),
     mkdir(join(lfiRoot, "state"), { recursive: true }),
@@ -238,11 +235,14 @@ export const initializeProject = async (
       : ".lfi/\n";
   if (config.TASK_SOURCE === "local") {
     await configureLocalTracker(options.cwd, options.language);
-  } else if (!gitignore.includes(ignoreBlock.trim())) {
-    await appendFile(
-      gitignorePath,
-      `${gitignore && !gitignore.endsWith("\n") ? "\n" : ""}${ignoreBlock}`,
-    );
+  } else {
+    await configureTrackerContract(options.cwd, options.language, "github");
+    if (!gitignore.includes(ignoreBlock.trim())) {
+      await appendFile(
+        gitignorePath,
+        `${gitignore && !gitignore.endsWith("\n") ? "\n" : ""}${ignoreBlock}`,
+      );
+    }
   }
   return "created";
 };

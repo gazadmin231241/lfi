@@ -2,7 +2,7 @@
 
 [Русский](README.ru.md)
 
-LFI turns local Markdown tasks or ready GitHub Issues into reviewed, validated
+LFI turns local Markdown tasks or `lfi:task` GitHub Issues into reviewed, validated
 commits using Codex and isolated Git worktrees. Local mode works without a
 remote; GitHub can be updated later as an explicit reporting mirror.
 
@@ -44,7 +44,10 @@ lfi run
 `lfi skills install` installs a pinned minimal bundle from
 [`mattpocock/skills`](https://github.com/mattpocock/skills). Open Codex in the
 target repository and use `to-spec`/`to-tickets`; local initialization writes
-their tracker contract automatically.
+their tracker contract automatically. LFI conditionally adapts the installed
+`to-spec` and `to-tickets` instructions for LFI projects: specs and tasks go
+to `.lfi` locally or use `lfi:spec`/`lfi:task` on GitHub, and ticket creation
+does not choose a model label.
 
 ## Task storage
 
@@ -63,8 +66,13 @@ in-progress and blocked display states are derived. LFI records `completed_at`
 after integration so the ten recent completions are ordered by completion
 time, not by ID.
 
-GitHub mode retains the existing `ready-for-agent` Issue contract and supports
-both textual and native dependencies.
+Task status output uses `[READY]`, `[RUNNING]`, `[BLOCKED]`, and `[DONE]`.
+GitHub mirror titles additionally use `[SPEC]` for an active specification.
+
+GitHub mode uses the same fixed type vocabulary as Local Markdown:
+`type: spec` maps to `lfi:spec`, and `type: task` maps to `lfi:task`.
+Specifications are never executable. Tasks support textual and native
+dependencies.
 
 ## Commands
 
@@ -94,7 +102,7 @@ remain editable in `.lfi/config.env`, including:
 
 - Codex and merger model/reasoning
 - parallel workers and stage count
-- task source, GitHub mirror repository, labels, and default branch
+- task source, GitHub mirror repository, and default branch
 - validation and worktree setup commands
 - inactivity timeout
 
@@ -114,9 +122,16 @@ host changes prevent the merge, LFI preserves the integration worktree and
 prints a recovery command.
 
 `lfi sync` is a one-way local-to-GitHub mirror. It publishes specs as parents,
-tasks as children, dependencies where supported, and open/closed state. Sync is
-resumable, limits GitHub concurrency to three, retries transient network and
-502/503/504 failures, and persists each mapping to avoid duplicate Issues.
+tasks as children, fixed LFI type labels, dependencies where supported,
+explicit status prefixes, and open/closed state. It preserves unrelated labels
+and removes a conflicting LFI type label. Sync is resumable, limits GitHub
+concurrency to three, retries transient network and 502/503/504 failures, and
+persists each mapping to avoid duplicate Issues.
+
+`lfi migrate local` reads only `lfi:spec` and `lfi:task` Issues, preserves
+native parent and blocker relationships, writes the correct local document
+types, and then switches the source to Local Markdown. Previous tracker labels
+are intentionally not recognized.
 
 In GitHub mode, if GitHub accepts the push but temporarily fails to close an Issue, LFI records
 the pending closure and retries it at the beginning of the next run. `lfi

@@ -14,7 +14,7 @@ import { initializeProject } from "../src/init.js";
 import { pruneExpiredRunLogs } from "../src/logs.js";
 import { runCommand } from "../src/process.js";
 
-test("config round-trips defaults and keeps advanced values editable", () => {
+test("config round-trips defaults without configurable tracker labels", () => {
   const serialized = serializeEnvConfig(DEFAULT_CONFIG);
   const parsed = parseEnvConfig(serialized);
 
@@ -22,8 +22,18 @@ test("config round-trips defaults and keeps advanced values editable", () => {
   assert.equal(parsed.MAX_PARALLEL, 3);
   assert.equal(parsed.MAX_STAGES, 10);
   assert.equal(parsed.LOG_RETENTION_DAYS, 3);
-  assert.equal(parsed.ISSUE_LABEL, "ready-for-agent");
+  assert.doesNotMatch(serialized, /ISSUE_LABEL|EXCLUDE_LABELS/u);
+  assert.equal("ISSUE_LABEL" in parsed, false);
+  assert.equal("EXCLUDE_LABELS" in parsed, false);
   assert.equal(parsed.TASK_SOURCE, "local");
+});
+
+test("config ignores removed tracker-label settings", () => {
+  const parsed = parseEnvConfig(
+    "TASK_SOURCE=github\nISSUE_LABEL=ready-for-agent\nEXCLUDE_LABELS=blocked\n",
+  );
+  assert.equal("ISSUE_LABEL" in parsed, false);
+  assert.equal("EXCLUDE_LABELS" in parsed, false);
 });
 
 test("config treats missing task source as the legacy GitHub mode", () => {
@@ -70,11 +80,17 @@ test("log pruning removes expired runs but preserves active run", async () => {
 test("init creates an ignored, runnable project configuration from detected defaults", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-init-"));
   const bin = join(root, "bin");
+  const ghCalls = join(root, "gh-calls");
   await mkdir(bin);
   await writeFile(
     join(bin, "gh"),
     `#!/bin/sh
-printf '%s\\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk"}}'
+printf '%s\\n' "$*" >> "${ghCalls}"
+case "$*" in
+  *"repo view"*)
+    printf '%s\\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk"}}'
+    ;;
+esac
 `,
   );
   await chmod(join(bin, "gh"), 0o755);
@@ -114,6 +130,16 @@ printf '%s\\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trun
     await readFile(join(root, ".lfi", "task-prompt.md"), "utf8"),
     /Use \$implement/u,
   );
+  const githubGuide = await readFile(
+    join(root, "docs", "agents", "issue-tracker.md"),
+    "utf8",
+  );
+  assert.match(githubGuide, /lfi:spec/u);
+  assert.match(githubGuide, /lfi:task/u);
+  assert.doesNotMatch(githubGuide, /ready-for-agent|model:sol|\.scratch/u);
+  const calls = await readFile(ghCalls, "utf8");
+  assert.match(calls, /label create lfi:spec/u);
+  assert.match(calls, /label create lfi:task/u);
 });
 
 test("local init works without gh or a remote and tracks only task documents", async () => {
@@ -163,10 +189,15 @@ exit 1
   assert.match(gitignore, /\.lfi\/\*/u);
   assert.match(gitignore, /!\.lfi\/tasks\//u);
   assert.match(gitignore, /!\.lfi\/specs\//u);
-  assert.equal(
-    await readFile(join(root, "docs", "agents", "issue-tracker.md"), "utf8"),
-    "custom tracker guide\n",
+  const localGuide = await readFile(
+    join(root, "docs", "agents", "issue-tracker.md"),
+    "utf8",
   );
+  assert.match(localGuide, /\.lfi\/specs/u);
+  assert.match(localGuide, /\.lfi\/tasks/u);
+  assert.match(localGuide, /lfi:spec/u);
+  assert.match(localGuide, /lfi:task/u);
+  assert.doesNotMatch(localGuide, /ready-for-agent|model:sol|\.scratch/u);
   assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /Трекер задач/u);
   await assert.rejects(stat(ghMarker));
 });

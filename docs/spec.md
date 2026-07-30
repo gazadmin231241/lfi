@@ -1,7 +1,7 @@
 # LFI v1 specification
 
 LFI (“Let’s Fucking Implement”) is a bilingual TypeScript CLI for unattended
-implementation of local Markdown tasks or ready GitHub Issues with Codex.
+implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
 
 ## User workflow
 
@@ -15,9 +15,9 @@ implementation of local Markdown tasks or ready GitHub Issues with Codex.
 3. `lfi run --dry-run` reports eligible and blocked work without mutations.
 4. `lfi run` performs at most ten stages, with at most three workers in
    parallel. Each issue runs in `.lfi/worktrees/issue-N`.
-5. Eligible issues are open, labelled `ready-for-agent`, and do not carry
-   `blocked`, `needs-info`, or `ready-for-human`. Open dependencies declared in
-   `## Blocked by` or GitHub dependencies block execution.
+5. Eligible GitHub issues are open and labelled `lfi:task`.
+   Specifications use `lfi:spec` and are never executable. Open dependencies
+   declared in `## Blocked by` or GitHub dependencies block execution.
 6. Workers invoke Codex with the configured model/reasoning, the editable
    `task-prompt.md`, and `$implement`. Local implementation changes are
    pre-approved; deploy, SSH, production changes, force-push, destructive
@@ -40,9 +40,11 @@ implementation of local Markdown tasks or ready GitHub Issues with Codex.
 - Detailed failed-agent JSONL is compressed; successful runs keep compact logs.
 - Run logs expire by age (three days by default); active logs are preserved.
 - The pinned `lfi skills` bundle installs eight Matt Pocock skills, including
-  their `agents/openai.yaml`, without overwriting existing skills on install.
+  their `agents/openai.yaml`. LFI conditionally adapts `to-spec` and
+  `to-tickets` for projects carrying the generated LFI tracker contract.
 - GitHub auth is provided by `gh auth login`; Codex auth by `codex login`.
 - `lfi sync` explicitly and resumably mirrors local specs, tasks, parents,
   blockers, and completion state to GitHub.
-- `lfi migrate local` imports open agent-ready Issues into an existing project.
+- `lfi migrate local` imports open `lfi:spec` and `lfi:task` Issues with native
+  parent and blocker relationships into an existing project.
 - The CLI runs in one foreground terminal and does not open terminal windows.

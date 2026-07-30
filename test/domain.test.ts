@@ -20,16 +20,19 @@ const issue = (
   body,
 });
 
-test("selects only open ready issues whose blockers are closed", () => {
+test("selects only lfi tasks whose blockers are closed", () => {
   const issues = [
-    issue(1, ["ready-for-agent"]),
-    issue(2, ["ready-for-agent"], "## Blocked by\n\n- #1"),
-    issue(3, ["ready-for-agent", "blocked"]),
-    issue(4, ["needs-info"]),
+    issue(1, ["lfi:task"]),
+    issue(2, ["lfi:task"], "## Blocked by\n\n- #1"),
+    issue(3, ["lfi:spec"]),
+    issue(4, ["ready-for-agent"]),
+    issue(5, ["lfi:task", "lfi:spec"]),
   ];
 
   assert.deepEqual(
-    selectRunnableIssues(issues, new Set([1, 2, 3, 4])).map((item) => item.number),
+    selectRunnableIssues(issues, new Set([1, 2, 3, 4, 5])).map(
+      (item) => item.number,
+    ),
     [1],
   );
   assert.deepEqual(parseBlockedBy(issues[1]!.body), [1]);

@@ -14,6 +14,7 @@ import {
   type TrackerDocument,
 } from "./local-tracker.js";
 import { runLfi } from "./run-workflow.js";
+import { LFI_TASK_LABEL } from "./tracker-contract.js";
 
 const localIssue = (
   task: TrackerDocument,
@@ -24,7 +25,7 @@ const localIssue = (
   title: task.title,
   url: task.path,
   body: task.body,
-  labels: ["ready-for-agent"],
+  labels: [LFI_TASK_LABEL],
   ...(blockedBy.length > 0 ? { blockedBy: [...blockedBy] } : {}),
 });
 
@@ -52,7 +53,7 @@ export const dryRun = async (
   }
   const repository = await repoInfo(cwd);
   const [issues, allOpen] = await Promise.all([
-    listOpenIssues(cwd, config.ISSUE_LABEL),
+    listOpenIssues(cwd, LFI_TASK_LABEL),
     listAllOpenIssueNumbers(cwd),
   ]);
   const blockers = await nativeBlockers(
@@ -61,8 +62,6 @@ export const dryRun = async (
     issues.map((issue) => issue.number),
   );
   const runnable = selectRunnableIssues(issues, allOpen, {
-    includeLabel: config.ISSUE_LABEL,
-    excludeLabels: config.EXCLUDE_LABELS.split(",").map((label) => label.trim()),
     nativeBlockers: blockers,
   });
   const selected = new Set(selectedIds);

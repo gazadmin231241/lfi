@@ -1,6 +1,7 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import type { TaskSource } from "./config.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 
@@ -14,6 +15,7 @@ export const LOCAL_IGNORE_BLOCK = `${IGNORE_BEGIN}
 !.lfi/specs/*.md
 ${IGNORE_END}
 `;
+export const TRACKER_CONTRACT_MARKER = "<!-- lfi:tracker-contract -->";
 
 const exists = (path: string): Promise<boolean> =>
   access(path).then(
@@ -84,6 +86,80 @@ const updateGitignore = (source: string): string => {
   return `${withoutLegacyRules}${separator}${LOCAL_IGNORE_BLOCK}`;
 };
 
+export const configureTrackerContract = async (
+  cwd: string,
+  language: Language,
+  taskSource: TaskSource,
+): Promise<void> => {
+  await mkdir(join(cwd, "docs", "agents"), { recursive: true });
+  const guidePath = join(cwd, "docs", "agents", "issue-tracker.md");
+  const storage =
+    taskSource === "local"
+      ? localize(
+          language,
+          `Specifications are flat files in \`.lfi/specs/\`; executable tasks are
+flat files in \`.lfi/tasks/\`. Both collections share one monotonically
+increasing \`LFI-N\` ID sequence, including IDs found in Git history. A task
+links to its specification with \`spec: LFI-N\` and to blockers with
+\`blocked_by\`. Approved tasks use \`status: ready\`.
+
+\`$to-spec\` publishes one \`type: spec\` document in \`.lfi/specs/\`.
+\`$to-tickets\` publishes one \`type: task\` document per ticket in
+\`.lfi/tasks/\` and records its \`spec\` relationship.`,
+          `Спецификации хранятся плоскими файлами в \`.lfi/specs/\`, исполняемые
+задачи — в \`.lfi/tasks/\`. Обе коллекции используют одну монотонно
+возрастающую последовательность \`LFI-N\`, включая ID из истории Git. Задача
+ссылается на спецификацию через \`spec: LFI-N\`, а на блокеры — через
+\`blocked_by\`. Утверждённые задачи используют \`status: ready\`.
+
+\`$to-spec\` публикует один документ \`type: spec\` в \`.lfi/specs/\`.
+\`$to-tickets\` публикует по одному документу \`type: task\` на задачу в
+\`.lfi/tasks/\` и записывает связь \`spec\`.`,
+        )
+      : localize(
+          language,
+          `Specifications are GitHub Issues labelled \`lfi:spec\`; executable tasks
+are GitHub Issues labelled \`lfi:task\`. \`$to-spec\` publishes only
+\`lfi:spec\`. \`$to-tickets\` publishes \`lfi:task\` Issues and uses native
+parent and dependency relationships.`,
+          `Спецификации — GitHub Issues с меткой \`lfi:spec\`, исполняемые задачи —
+GitHub Issues с меткой \`lfi:task\`. \`$to-spec\` публикует только
+\`lfi:spec\`. \`$to-tickets\` публикует Issues с \`lfi:task\` и использует
+нативные родительские связи и зависимости.`,
+        );
+  await writeFile(
+    guidePath,
+    localize(
+      language,
+      `${TRACKER_CONTRACT_MARKER}
+# Issue tracker: LFI
+
+${storage}
+
+Local \`type: spec\` and \`type: task\` map exactly to GitHub \`lfi:spec\` and
+\`lfi:task\`. Skills never choose an execution model or assign model labels;
+LFI configuration chooses models.
+
+Use \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\`, and \`[DONE]\` as
+the title/status prefixes. Specifications are never executable.
+`,
+      `${TRACKER_CONTRACT_MARKER}
+# Трекер задач: LFI
+
+${storage}
+
+Локальные \`type: spec\` и \`type: task\` точно соответствуют GitHub
+\`lfi:spec\` и \`lfi:task\`. Навыки не выбирают модель выполнения и не
+назначают модельные метки; модели выбирает конфигурация LFI.
+
+Используйте \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\` и \`[DONE]\`
+как префиксы названия и статуса. Спецификации никогда не исполняются.
+`,
+    ),
+  );
+  await configureAgentInstructions(cwd, language);
+};
+
 export const configureLocalTracker = async (
   cwd: string,
   language: Language = "en",
@@ -97,46 +173,5 @@ export const configureLocalTracker = async (
   const gitignorePath = join(cwd, ".gitignore");
   const source = await readFile(gitignorePath, "utf8").catch(() => "");
   await writeFile(gitignorePath, updateGitignore(source));
-  const guidePath = join(cwd, "docs", "agents", "issue-tracker.md");
-  if (!(await exists(guidePath))) {
-    await writeFile(
-      guidePath,
-      localize(
-        language,
-        `# Issue tracker: LFI Local Markdown
-
-Specifications live as flat Markdown files in \`.lfi/specs/\`. Runnable tasks
-live as \`.lfi/tasks/LFI-N-informative-slug.md\`; specs use the same filename
-pattern in \`.lfi/specs/\`. Use one shared,
-monotonically increasing \`LFI-N\` identifier sequence across both directories.
-Tasks created from an approved breakdown use \`status: ready\`.
-Before allocating an ID, include IDs from Git history; never reuse an ID from
-a deleted file.
-When completing a task by hand, add an ISO-8601 UTC \`completed_at\`; LFI adds
-it automatically after integration.
-
-When a skill publishes or reads tracker work, it must use these files rather
-than GitHub or \`.scratch/\`. GitHub is only an explicit mirror managed by
-\`lfi sync\`.
-`,
-        `# Трекер задач: LFI Local Markdown
-
-Спецификации хранятся плоским списком Markdown-файлов в \`.lfi/specs/\`, а
-исполняемые задачи — как \`.lfi/tasks/LFI-N-информативное-название.md\`;
-спецификации используют тот же шаблон в \`.lfi/specs/\`. Используйте общую,
-монотонно возрастающую последовательность идентификаторов \`LFI-N\` для обеих
-папок. Задачи из утверждённой декомпозиции создаются со \`status: ready\`.
-Перед выделением ID учитывайте ID из истории Git и не переиспользуйте номер
-удалённого файла.
-При ручном завершении добавляйте UTC-время \`completed_at\` в формате ISO-8601;
-после интеграции LFI добавляет его автоматически.
-
-При публикации и чтении задач навыки должны использовать эти файлы вместо
-GitHub или \`.scratch/\`. GitHub — только явное зеркало, управляемое
-командой \`lfi sync\`.
-`,
-      ),
-    );
-  }
-  await configureAgentInstructions(cwd, language);
+  await configureTrackerContract(cwd, language, "local");
 };

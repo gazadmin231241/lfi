@@ -4,6 +4,7 @@ import { loadConfig, updateConfig } from "./config.js";
 import {
   listOpenIssues,
   nativeBlockers,
+  nativeParents,
   repoInfo,
 } from "./github.js";
 import type { GithubIssue } from "./issues.js";
@@ -16,9 +17,14 @@ import {
 import { checkpointTracker } from "./runner-support.js";
 import { configureLocalTracker } from "./local-setup.js";
 import type { Language } from "./i18n.js";
+import {
+  LFI_SPEC_LABEL,
+  LFI_TASK_LABEL,
+} from "./tracker-contract.js";
 
 export interface MigrationSource {
-  listOpenAgentIssues(): Promise<GithubIssue[]>;
+  listOpenLfiIssues(): Promise<GithubIssue[]>;
+  parents(issueNumbers: readonly number[]): Promise<Map<number, number>>;
   blockers(issueNumbers: readonly number[]): Promise<Map<number, number[]>>;
 }
 
@@ -36,11 +42,18 @@ const withoutBlockedBy = (body: string): string =>
 
 const defaultSource = async (
   cwd: string,
-  label: string,
 ): Promise<MigrationSource> => {
   const repository = await repoInfo(cwd);
   return {
-    listOpenAgentIssues: () => listOpenIssues(cwd, label),
+    listOpenLfiIssues: async () => {
+      const [specs, tasks] = await Promise.all([
+        listOpenIssues(cwd, LFI_SPEC_LABEL),
+        listOpenIssues(cwd, LFI_TASK_LABEL),
+      ]);
+      return [...specs, ...tasks];
+    },
+    parents: (numbers) =>
+      nativeParents(cwd, repository.nameWithOwner, numbers),
     blockers: (numbers) =>
       nativeBlockers(cwd, repository.nameWithOwner, numbers),
   };
@@ -59,9 +72,16 @@ export const migrateToLocal = async (
     );
   }
   const source =
-    options.source ?? (await defaultSource(cwd, config.ISSUE_LABEL));
-  const issues = await source.listOpenAgentIssues();
-  const blockers = await source.blockers(issues.map((issue) => issue.number));
+    options.source ?? (await defaultSource(cwd));
+  const issues = (await source.listOpenLfiIssues()).filter((issue) => {
+    const labels = new Set(issue.labels);
+    return labels.has(LFI_SPEC_LABEL) !== labels.has(LFI_TASK_LABEL);
+  });
+  const issueNumbers = issues.map((issue) => issue.number);
+  const [parents, blockers] = await Promise.all([
+    source.parents(issueNumbers),
+    source.blockers(issueNumbers),
+  ]);
   await configureLocalTracker(cwd, options.language ?? "en");
   const tracker = await loadLocalTracker(lfiRoot);
   const issueIds = new Map<number, string>();
@@ -74,24 +94,49 @@ export const migrateToLocal = async (
   const created: TrackerDocument[] = [];
   for (const issue of issues.sort((a, b) => a.number - b.number)) {
     const id = issueIds.get(issue.number)!;
+    const type = issue.labels.includes(LFI_SPEC_LABEL) ? "spec" : "task";
+    const parentNumber = parents.get(issue.number);
+    const spec =
+      parentNumber === undefined ? undefined : issueIds.get(parentNumber);
+    if (parentNumber !== undefined) {
+      const parent = issues.find((candidate) => candidate.number === parentNumber);
+      if (
+        type !== "task" ||
+        !spec ||
+        !parent?.labels.includes(LFI_SPEC_LABEL)
+      ) {
+        throw new Error(
+          `${issue.number}: native parent must be an imported lfi:spec Issue / нативный родитель должен быть импортированной Issue с lfi:spec`,
+        );
+      }
+    }
     const document: TrackerDocument = {
       id,
       number: Number(id.slice(4)),
-      type: "task",
+      type,
       title: issue.title,
       status: "ready",
-      blockedBy: (blockers.get(issue.number) ?? []).flatMap((number) => {
-        const blocker = issueIds.get(number);
-        return blocker === undefined ? [] : [blocker];
-      }),
+      ...(spec ? { spec } : {}),
+      blockedBy:
+        type === "task"
+          ? (blockers.get(issue.number) ?? []).flatMap((number) => {
+              const blocker = issueIds.get(number);
+              return blocker === undefined ? [] : [blocker];
+            })
+          : [],
       githubIssue: issue.number,
       body: withoutBlockedBy(issue.body),
-      path: join(lfiRoot, "tasks", `${id}-${slug(issue.title)}.md`),
+      path: join(
+        lfiRoot,
+        type === "spec" ? "specs" : "tasks",
+        `${id}-${slug(issue.title)}.md`,
+      ),
     };
     await saveTrackerDocument(document);
     created.push(document);
   }
-  await checkpointTracker(cwd, "docs(lfi): import GitHub tasks");
+  await loadLocalTracker(lfiRoot);
+  await checkpointTracker(cwd, "docs(lfi): import GitHub tracker");
   await updateConfig(configPath, { ...config, TASK_SOURCE: "local" });
   return created.map((document) => document.id);
 };

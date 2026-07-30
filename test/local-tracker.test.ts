@@ -141,7 +141,7 @@ test("tracker enforces informative filenames and completion timestamps", async (
   await assert.rejects(loadLocalTracker(root), /informative-slug/u);
 });
 
-test("local status derives the four compact display markers", () => {
+test("local status derives explicit display prefixes", () => {
   const tasks = [
     parseTrackerDocument(
       taskSource.replace("github_issue: 362\n", "").replace("  - LFI-12\n", ""),
@@ -162,8 +162,8 @@ test("local status derives the four compact display markers", () => {
   ];
   const tracker = { documents: tasks, tasks, specs: [] };
   assert.deepEqual(formatLocalStatus(tracker, new Set(["LFI-15"])), [
-    "🔵 LFI-15 — Implement task parser",
-    "✅ LFI-16 — Implement task parser",
+    "[RUNNING] LFI-15 — Implement task parser",
+    "[DONE] LFI-16 — Implement task parser",
   ]);
 });
 
@@ -206,6 +206,6 @@ test("local status orders completions by time and localizes blockers", () => {
     language: "ru",
   });
   assert.match(lines[0]!, /заблокирована задачами LFI-12/u);
-  assert.ok(lines.indexOf("✅ LFI-2 — Implement task parser") <
-    lines.indexOf("✅ LFI-20 — Implement task parser"));
+  assert.ok(lines.indexOf("[DONE] LFI-2 — Implement task parser") <
+    lines.indexOf("[DONE] LFI-20 — Implement task parser"));
 });

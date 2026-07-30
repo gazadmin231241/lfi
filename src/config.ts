@@ -15,8 +15,6 @@ export interface LfiConfig {
   LOG_RETENTION_DAYS: number;
   IDLE_TIMEOUT_MINUTES: number;
   BASE_BRANCH: string;
-  ISSUE_LABEL: string;
-  EXCLUDE_LABELS: string;
   VALIDATE_COMMAND: string;
   WORKTREE_SETUP_COMMAND: string;
 }
@@ -33,8 +31,6 @@ export const DEFAULT_CONFIG: LfiConfig = {
   LOG_RETENTION_DAYS: 3,
   IDLE_TIMEOUT_MINUTES: 15,
   BASE_BRANCH: "main",
-  ISSUE_LABEL: "ready-for-agent",
-  EXCLUDE_LABELS: "blocked,needs-info,ready-for-human",
   VALIDATE_COMMAND: "",
   WORKTREE_SETUP_COMMAND: "",
 };
@@ -58,8 +54,6 @@ export const parseEnvConfig = (source: string): LfiConfig => {
       case "MERGER_MODEL":
       case "GITHUB_REPO":
       case "BASE_BRANCH":
-      case "ISSUE_LABEL":
-      case "EXCLUDE_LABELS":
       case "VALIDATE_COMMAND":
       case "WORKTREE_SETUP_COMMAND":
         result[key] = value;

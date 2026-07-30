@@ -1,5 +1,6 @@
 import { withGithubRetry } from "./github-resilience.js";
 import { gitResult } from "./git.js";
+import { ensureGithubTypeLabels } from "./github.js";
 import type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
 import { requireCommand } from "./process.js";
 
@@ -12,11 +13,13 @@ const parseIssue = (source: string): MirrorIssue => {
   const title = Reflect.get(value, "title");
   const body = Reflect.get(value, "body");
   const state = Reflect.get(value, "state");
+  const labels = Reflect.get(value, "labels");
   if (
     typeof number !== "number" ||
     typeof title !== "string" ||
     typeof body !== "string" ||
-    (state !== "OPEN" && state !== "CLOSED")
+    (state !== "OPEN" && state !== "CLOSED") ||
+    !Array.isArray(labels)
   ) {
     throw new Error("Invalid GitHub issue response");
   }
@@ -25,6 +28,12 @@ const parseIssue = (source: string): MirrorIssue => {
     title,
     body,
     state: state === "OPEN" ? "open" : "closed",
+    labels: labels.flatMap((label): string[] => {
+      if (typeof label === "string") return [label];
+      if (typeof label !== "object" || label === null) return [];
+      const name = Reflect.get(label, "name");
+      return typeof name === "string" ? [name] : [];
+    }),
   };
 };
 
@@ -79,7 +88,7 @@ export const createGhMirrorAdapter = (
     const result = await command(cwd, [
       "issue", "list", "--repo", repo, "--state", "all",
       "--search", `"${id}" in:title`, "--limit", "20",
-      "--json", "number,title,body,state",
+      "--json", "number,title,body,state,labels",
     ]);
     const parsed: unknown = JSON.parse(result.stdout);
     if (!Array.isArray(parsed)) return undefined;
@@ -103,27 +112,32 @@ export const createGhMirrorAdapter = (
         "nameWithOwner",
       ]);
     },
+    ensureTypeLabels: async () => {
+      await ensureGithubTypeLabels(cwd, repo);
+    },
     findByLfiId,
     getIssue: async (number) => {
       const result = await command(cwd, [
         "issue", "view", String(number), "--repo", repo,
-        "--json", "number,title,body,state",
+        "--json", "number,title,body,state,labels",
       ]);
       return parseIssue(result.stdout);
     },
-    createIssue: async (title, body, state, closingComment) => {
-      const id = /LFI-\d+/u.exec(title)?.[0];
+    createIssue: async (desired, closingComment) => {
+      const id = /LFI-\d+/u.exec(desired.title)?.[0];
       const issue = await withGithubRetry(async () => {
         try {
           const result = await requireCommand(
             "gh",
-            ["issue", "create", "--repo", repo, "--title", title, "--body", body],
+            [
+              "issue", "create", "--repo", repo, "--title", desired.title,
+              "--body", desired.body, "--label", desired.labels.join(","),
+            ],
             { cwd },
           );
           return {
             number: Number(result.stdout.trim().split("/").at(-1)),
-            title,
-            body,
+            ...desired,
             state: "open" as const,
           };
         } catch (error) {
@@ -132,12 +146,12 @@ export const createGhMirrorAdapter = (
           throw error;
         }
       });
-      if (state === "closed") {
+      if (desired.state === "closed") {
         await command(cwd, [
           "issue", "close", String(issue.number), "--repo", repo,
           ...(closingComment ? ["--comment", closingComment] : []),
         ]);
-        return { ...issue, state };
+        return { ...issue, state: desired.state };
       }
       return issue;
     },
@@ -145,6 +159,11 @@ export const createGhMirrorAdapter = (
       await command(cwd, [
         "issue", "edit", String(issue.number), "--repo", repo,
         "--title", issue.title, "--body", issue.body,
+      ]);
+      await command(cwd, [
+        "api", "--method", "PUT",
+        `repos/${repo}/issues/${issue.number}/labels`,
+        ...issue.labels.flatMap((label) => ["-f", `labels[]=${label}`]),
       ]);
       await command(cwd, [
         "issue", issue.state === "closed" ? "close" : "reopen",
