@@ -224,6 +224,7 @@ export const runLfi = async (
             await writeFailureLog(log, attempt.logName, attempt.rawOutput);
           }
         }
+        break;
       }
       if (isShutdownRequested()) {
         throw new Error(localize(language, "Interrupted", "Выполнение прервано"));

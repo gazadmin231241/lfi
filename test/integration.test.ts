@@ -25,6 +25,7 @@ const conflictedRepository = async (
   await git("init", "-b", "main");
   await git("config", "user.name", "LFI Test");
   await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, ".gitignore"), "logs/\n");
   await writeFile(join(root, "conflict.txt"), "base\n");
   await git("add", ".");
   await git("commit", "-m", "test: initialize repository");
@@ -47,6 +48,7 @@ const conflictedRepository = async (
 const repairWithFakeCodex = async (
   fixture: Awaited<ReturnType<typeof conflictedRepository>>,
   logName: string,
+  allowedPaths?: readonly string[],
 ) => {
   const originalPath = process.env.PATH;
   process.env.PATH = `${fixture.tools}:${originalPath ?? ""}`;
@@ -63,6 +65,7 @@ const repairWithFakeCodex = async (
       },
       logName,
       language: "en",
+      ...(allowedPaths ? { allowedPaths } : {}),
     });
   } finally {
     process.env.PATH = originalPath;
@@ -122,4 +125,20 @@ test("merge repair cannot commit an unchanged markerless conflict", async () => 
     { cwd: fixture.root },
   );
   assert.equal(unmerged.stdout.trim(), "conflict.txt");
+});
+
+test("repair cannot modify a path outside its allowlist", async () => {
+  const fixture = await conflictedRepository(
+    "printf 'resolved\\n' > conflict.txt; printf 'unrelated\\n' > unrelated.txt",
+  );
+
+  await assert.rejects(
+    repairWithFakeCodex(fixture, "merge-out-of-scope", ["conflict.txt"]),
+    /outside the integrated diff: unrelated\.txt/u,
+  );
+
+  const subject = await runCommand("git", ["log", "-1", "--format=%s"], {
+    cwd: fixture.root,
+  });
+  assert.equal(subject.stdout.trim(), "fix: change conflict file");
 });

@@ -59,6 +59,7 @@ export const mergeWithAgent = async (options: {
   log: RunLogContext;
   logName: string;
   language: Language;
+  allowedPaths?: readonly string[];
 }): Promise<void> => {
   const unmerged = (
     await git(options.cwd, [
@@ -94,6 +95,14 @@ successful resolution because the Codex sandbox protects Git metadata.
 
 Context:
 ${options.context}
+${options.allowedPaths
+  ? `
+Validation repair scope:
+${options.allowedPaths.map((path) => `- ${path}`).join("\n")}
+
+Do not modify paths outside this list.
+`
+  : ""}
 `,
     model: options.config.MERGER_MODEL || options.config.CODEX_MODEL,
     reasoning: options.config.MERGER_REASONING_EFFORT,
@@ -105,6 +114,31 @@ ${options.context}
     prefix: "merge",
   });
   if (result.exitCode === 0) {
+    if (options.allowedPaths) {
+      const [tracked, untracked] = await Promise.all([
+        git(options.cwd, ["diff", "--name-only", "-z", "HEAD"]),
+        git(options.cwd, [
+          "ls-files",
+          "--others",
+          "--exclude-standard",
+          "-z",
+        ]),
+      ]);
+      const allowed = new Set(options.allowedPaths);
+      const changed = `${tracked.stdout}${untracked.stdout}`
+        .split("\0")
+        .filter(Boolean);
+      const unexpected = changed.filter((path) => !allowed.has(path));
+      if (unexpected.length > 0) {
+        throw new Error(
+          localize(
+            options.language,
+            `Merger modified paths outside the integrated diff: ${unexpected.join(", ")}`,
+            `Агент слияния изменил пути вне объединённого diff: ${unexpected.join(", ")}`,
+          ),
+        );
+      }
+    }
     for (const path of unmerged) {
       const current = await gitResult(options.cwd, [
         "hash-object",
@@ -153,12 +187,20 @@ export class ValidationFailure extends Error {
   }
 }
 
+export interface ValidationDiagnostic {
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
 export const validateIntegration = async (options: {
   cwd: string;
   config: LfiConfig;
   language: Language;
   log: RunLogContext;
-  repair: () => Promise<void>;
+  phase: "baseline" | "combined";
+  repair: (diagnostic: ValidationDiagnostic) => Promise<void>;
 }): Promise<void> => {
   if (options.config.WORKTREE_SETUP_COMMAND) {
     const setup = await runShell(options.config.WORKTREE_SETUP_COMMAND, {
@@ -189,8 +231,13 @@ export const validateIntegration = async (options: {
       ].filter(Boolean),
     );
   await logValidation();
-  if (validation.exitCode !== 0) {
-    await options.repair();
+  if (validation.exitCode !== 0 && options.phase === "combined") {
+    await options.repair({
+      command: redactSensitiveText(options.config.VALIDATE_COMMAND),
+      exitCode: validation.exitCode,
+      stdout: redactSensitiveText(validation.stdout),
+      stderr: redactSensitiveText(validation.stderr),
+    });
     validation = await runShell(options.config.VALIDATE_COMMAND, {
       cwd: options.cwd,
     });
@@ -200,8 +247,12 @@ export const validateIntegration = async (options: {
     throw new ValidationFailure(
       localize(
         options.language,
-        `Validation failed:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
-        `Проверка завершилась с ошибкой:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
+        options.phase === "baseline"
+          ? `Baseline validation failed; combined repair was skipped:\n${redactSensitiveText(validation.stderr || validation.stdout)}`
+          : `Validation failed:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
+        options.phase === "baseline"
+          ? `Проверка базовой ревизии завершилась с ошибкой; исправление объединённых изменений не запускалось:\n${redactSensitiveText(validation.stderr || validation.stdout)}`
+          : `Проверка завершилась с ошибкой:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
       ),
       redactSensitiveText(options.config.VALIDATE_COMMAND),
     );

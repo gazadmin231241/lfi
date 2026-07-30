@@ -64,6 +64,89 @@ test("local dry-run selects the dependency frontier without GitHub", async () =>
   assert.deepEqual(selected.blocked.map((task) => task.id), ["LFI-3"]);
 });
 
+test("local run does not repeat accepted work after integration fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-local-baseline-failure-"));
+  const lfiRoot = join(root, ".lfi");
+  const tasks = join(lfiRoot, "tasks");
+  const tools = join(root, "test-tools");
+  const taskPath = join(tasks, "LFI-1-fix-validation.md");
+  const codexCalls = join(root, "codex-calls");
+  await mkdir(tasks, { recursive: true });
+  await mkdir(join(lfiRoot, "specs"));
+  await mkdir(tools);
+  await writeFile(
+    join(root, ".gitignore"),
+    ".lfi/*\n!.lfi/tasks/\n!.lfi/tasks/**\n!.lfi/specs/\n!.lfi/specs/**\n",
+  );
+  await writeFile(
+    join(lfiRoot, "config.env"),
+    serializeEnvConfig({
+      ...DEFAULT_CONFIG,
+      TASK_SOURCE: "local",
+      MAX_PARALLEL: 1,
+      MAX_STAGES: 2,
+      VALIDATE_COMMAND: "printf 'validation is broken\\n' >&2; exit 1",
+    }),
+  );
+  await writeFile(join(lfiRoot, "task-prompt.md"), "Implement the task.\n");
+  await writeFile(
+    taskPath,
+    serializeTrackerDocument({
+      id: "LFI-1",
+      number: 1,
+      type: "task",
+      title: "Fix validation",
+      status: "ready",
+      blockedBy: [],
+      body: "Create baseline-ready.txt.\n",
+      path: taskPath,
+    }),
+  );
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    output="$1"
+  fi
+  shift
+done
+cat >/dev/null
+printf 'called\\n' >> "${codexCalls}"
+printf 'implemented\\n' > implemented.txt
+printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    assert.equal(await runLfi(root, "en"), 1);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  assert.equal(await readFile(codexCalls, "utf8"), "called\n");
+  const readyPath = join(tasks, "[READY] LFI-1 — fix-validation.md");
+  const task = parseTrackerDocument(
+    await readFile(readyPath, "utf8"),
+    readyPath,
+  );
+  assert.equal(task.status, "ready");
+});
+
 test("local run commits worker changes, integrates, and completes a task without GitHub", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-run-"));
   const lfiRoot = join(root, ".lfi");
@@ -301,6 +384,7 @@ printf '%s\\n' '{"status":"incomplete","summary":"blocked"}' > "$output"
   );
 
   const validationTaskPath = join(tasks, "LFI-5-validation-failure.md");
+  const validationCodexCalls = join(root, "validation-codex-calls");
   await writeFile(
     validationTaskPath,
     serializeTrackerDocument({
@@ -320,7 +404,7 @@ printf '%s\\n' '{"status":"incomplete","summary":"blocked"}' > "$output"
       ...DEFAULT_CONFIG,
       TASK_SOURCE: "local",
       MAX_PARALLEL: 1,
-      MAX_STAGES: 1,
+      MAX_STAGES: 3,
       VALIDATE_COMMAND:
         "i=1; while [ $i -le 25 ]; do echo validation-line-$i; i=$((i+1)); done; exit 1",
     }),
@@ -336,6 +420,7 @@ while [ "$#" -gt 0 ]; do
   fi
   shift
 done
+printf 'called\\n' >> "${validationCodexCalls}"
 printf 'validation failure\\n' > validation-failure.txt
 printf '%s\\n' '{"status":"completed","summary":"implemented"}' > "$output"
 `,
@@ -358,11 +443,24 @@ printf '%s\\n' '{"status":"completed","summary":"implemented"}' > "$output"
     process.env.PATH = originalPath;
   }
   const validationOutput = validationTerminal.join("\n");
-  assert.doesNotMatch(validationOutput, /validation-line-[1-5](?:\D|$)/u);
-  assert.match(validationOutput, /validation-line-6/u);
+  assert.equal(
+    (await readFile(validationCodexCalls, "utf8")).trim().split("\n").length,
+    1,
+  );
+  assert.doesNotMatch(validationOutput, /validation-line-[1-6](?:\D|$)/u);
+  assert.match(validationOutput, /validation-line-7/u);
   assert.match(validationOutput, /validation-line-25/u);
   assert.match(validationOutput, /Validation command: i=1; while/u);
   assert.match(validationOutput, /Full output: \.lfi\/logs\/integration\.log/u);
+  assert.match(
+    validationOutput,
+    /Preserved integration branch lfi\/integration-.+ at .+\/integration-/u,
+  );
+  assert.ok(
+    (await readdir(join(lfiRoot, "worktrees"))).some((name) =>
+      name.startsWith("integration-"),
+    ),
+  );
   const integrationLog = await readFile(
     join(lfiRoot, "logs", "integration.log"),
     "utf8",
