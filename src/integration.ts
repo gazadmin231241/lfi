@@ -7,6 +7,7 @@ import {
 } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
+import type { RunLogContext } from "./logs.js";
 import type { Attempt } from "./runner-types.js";
 import { mergeWithAgent, validateIntegration } from "./runner-support.js";
 
@@ -16,18 +17,18 @@ export const integrateAttempts = async (options: {
   baseRef: string;
   baseBranch: string;
   runId: string;
-  stage: number;
+  log: RunLogContext;
   attempts: Attempt[];
   config: LfiConfig;
   gitDirectory: string;
-  logsDirectory: string;
   language: Language;
+  onValidationStarted?: () => void;
 }): Promise<{ sha: string; preserveIntegration: boolean }> => {
   const integration = await createIntegrationWorktree({
     repoRoot: options.cwd,
     worktreesRoot: options.worktreesRoot,
     baseRef: options.baseRef,
-    runId: `${options.runId}-${options.stage}`,
+    runId: `${options.runId}-${options.log.iteration}`,
   });
   let preserveIntegration = false;
   try {
@@ -43,24 +44,26 @@ export const integrateAttempts = async (options: {
           context: `Merge ${attempt.branch} for ${attempt.issue.id}.\n${attempt.issue.body}`,
           config: options.config,
           gitDirectory: options.gitDirectory,
-          logsDirectory: options.logsDirectory,
-          logName: `merge-${attempt.issue.id}-${options.stage}`,
+          log: options.log,
+          logName: "integration",
           language: options.language,
         });
       }
     }
+    options.onValidationStarted?.();
     await validateIntegration({
       cwd: integration.path,
       config: options.config,
       language: options.language,
+      log: options.log,
       repair: () =>
         mergeWithAgent({
           cwd: integration.path,
           context: "Combined validation failed.",
           config: options.config,
           gitDirectory: options.gitDirectory,
-          logsDirectory: options.logsDirectory,
-          logName: `merge-validation-${options.stage}`,
+          log: options.log,
+          logName: "integration",
           language: options.language,
         }),
     });

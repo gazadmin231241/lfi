@@ -39,8 +39,10 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
 ## Operations
 
 - `doctor`, `status`, and `logs` make prerequisites and progress inspectable.
-- Detailed failed-agent JSONL is compressed; successful runs keep compact logs.
-- Run logs expire by age (three days by default); active logs are preserved.
+- Detailed failed-agent JSONL is compressed; successful runs keep flat,
+  task-oriented human-readable logs with timestamped iteration sections.
+- Log sections, failure artifacts, and legacy run directories expire by age
+  (three days by default); active logs are preserved.
 - The pinned `lfi skills` bundle installs eight Matt Pocock skills, including
   their `agents/openai.yaml`. LFI conditionally adapts `to-spec` and
   `to-tickets` for projects carrying the generated LFI tracker contract.

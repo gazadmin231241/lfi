@@ -89,7 +89,7 @@ lfi status [--all|--ready|--blocked|--completed]
 lfi sync [github] [--repo OWNER/REPO] [--dry-run] [--force]
 lfi migrate local
 lfi logs
-lfi logs ISSUE_NUMBER
+lfi logs LFI-ID|ISSUE_NUMBER
 lfi logs prune
 lfi logs prune --all
 lfi skills install
@@ -151,10 +151,19 @@ force-push.
 
 ## Logs
 
-The terminal shows compact prefixed progress. Successful workers retain compact
-logs; failed workers also retain compressed raw JSONL. Expired run directories
-are removed at the start and end of `lfi run`. The default retention is three
-days and is selected during `lfi init`.
+The terminal emphasizes iterations, worker completion, integration, validation,
+and the final result. Agent messages remain live and prefixed; commands, token
+usage, validation details, and successful-process stderr stay in the log files.
+
+`.lfi/logs` is flat: local tasks use `LFI-2.log`, GitHub Issues use
+`issue-123.log`, and combined validation uses `integration.log`. Repeated
+attempts append timestamped iteration sections. Failed workers additionally
+retain compressed raw JSONL under `.lfi/logs/failures/`.
+
+`lfi logs` shows recent runs as a localized table. `lfi logs LFI-2` or `lfi
+logs 123` prints the latest task section and points to the full history. Log
+sections, failure artifacts, and legacy timestamp directories expire according
+to `LOG_RETENTION_DAYS` (three days by default); `0` retains them indefinitely.
 
 ## Development
 

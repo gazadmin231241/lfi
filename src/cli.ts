@@ -1,28 +1,13 @@
 #!/usr/bin/env node
+import { access, readFile, readdir, rm } from "node:fs/promises";
+import { join, relative } from "node:path";
 
-import {
-  access,
-  readFile,
-  readdir,
-  rm,
-} from "node:fs/promises";
-import { join } from "node:path";
-
-import {
-  isReasoningEffort,
-  loadConfig,
-  type TaskSource,
-} from "./config.js";
+import { isReasoningEffort, loadConfig, type TaskSource } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { initializeProject } from "./init.js";
-import {
-  localize,
-  resolveLanguage,
-  saveLanguage,
-  t,
-  type Language,
-} from "./i18n.js";
+import { localize, resolveLanguage, saveLanguage, t, type Language } from "./i18n.js";
 import { pruneExpiredRunLogs } from "./logs.js";
+import { formatLogRuns, formatTaskLogSection, listLogRuns, readLatestTaskLog } from "./log-view.js";
 import { dryRun, runLfi } from "./runner.js";
 import { installSkills, listSkillStatus, SKILLS_COMMIT } from "./skills.js";
 import { requestShutdown } from "./process.js";
@@ -77,7 +62,7 @@ const printHelp = (language: Language) => {
   lfi status [--all|--ready|--blocked|--completed]
   lfi sync [github] [--repo OWNER/REPO] [--dry-run] [--force]
   lfi migrate local
-  lfi logs [ISSUE]
+  lfi logs [LFI-ID|ISSUE]
   lfi logs prune [--all]
   lfi skills install|list|doctor|update
   lfi config language [ru|en]`
@@ -90,7 +75,7 @@ Usage:
   lfi status [--all|--ready|--blocked|--completed]
   lfi sync [github] [--repo OWNER/REPO] [--dry-run] [--force]
   lfi migrate local
-  lfi logs [ISSUE]
+  lfi logs [LFI-ID|ISSUE]
   lfi logs prune [--all]
   lfi skills install|list|doctor|update
   lfi config language [ru|en]`,
@@ -116,26 +101,35 @@ const printDoctor = async (
   return checks.some((check) => check.required && !check.ok) ? 1 : 0;
 };
 
-const showLogs = async (issue?: string): Promise<void> => {
+const showLogs = async (
+  issue: string | undefined,
+  language: Language,
+): Promise<void> => {
+  const lfiRoot = join(cwd, ".lfi");
   const logsRoot = join(cwd, ".lfi", "logs");
-  const runs = (await readdir(logsRoot, { withFileTypes: true }).catch(() => []))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-    .reverse();
   if (!issue) {
-    console.log(runs.join("\n"));
+    const runs = await listLogRuns(lfiRoot);
+    console.log(
+      runs.length > 0
+        ? formatLogRuns(runs, language)
+        : localize(language, "No log history.", "История запусков пуста."),
+    );
     return;
   }
-  for (const run of runs) {
-    const directory = join(logsRoot, run);
-    const files = await readdir(directory);
-    for (const file of files.filter((name) => name.includes(`issue-${issue}`))) {
-      console.log(`\n== ${run}/${file} ==`);
-      if (file.endsWith(".log")) console.log(await readFile(join(directory, file), "utf8"));
-      else console.log(join(directory, file));
-    }
+  const latest = await readLatestTaskLog(logsRoot, issue);
+  if (!latest) {
+    console.log(localize(language, "No task log found.", "Лог задачи не найден."));
+    return;
   }
+  console.log(formatTaskLogSection(latest.content, language));
+  const path = relative(cwd, latest.path);
+  console.log(
+    localize(
+      language,
+      `Full history: less ${path}`,
+      `Полная история: less ${path}`,
+    ),
+  );
 };
 
 const pruneLogs = async (all: boolean, language: Language): Promise<void> => {
@@ -148,10 +142,17 @@ const pruneLogs = async (all: boolean, language: Language): Promise<void> => {
     )
       .then((source) => (JSON.parse(source) as { runId?: string }).runId)
       .catch(() => undefined);
+    if (activeRun) {
+      throw new Error(
+        localize(
+          language,
+          "Cannot remove all logs while an LFI run is active.",
+          "Нельзя удалить все логи, пока выполняется LFI.",
+        ),
+      );
+    }
     for (const entry of await readdir(logsRoot, { withFileTypes: true })) {
-      if (entry.isDirectory() && entry.name !== activeRun) {
-        await rm(join(logsRoot, entry.name), { recursive: true, force: true });
-      }
+      await rm(join(logsRoot, entry.name), { recursive: true, force: true });
     }
     return;
   }
@@ -369,7 +370,7 @@ const main = async (): Promise<number> => {
   }
   if (command === "logs") {
     if (positional[1] === "prune") await pruneLogs(has("--all"), language);
-    else await showLogs(positional[1]);
+    else await showLogs(positional[1], language);
     return 0;
   }
   throw new Error(

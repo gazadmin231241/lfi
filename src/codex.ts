@@ -1,10 +1,12 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { createGzip } from "node:zlib";
-import { createReadStream, createWriteStream } from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ReasoningEffort } from "./config.js";
+import {
+  formatRunLogSection,
+  redactSensitiveText,
+  type RunLogContext,
+} from "./logs.js";
 import { runCommand } from "./process.js";
 
 const workerSchema = {
@@ -22,7 +24,7 @@ export interface CodexRunResult {
   status: "completed" | "incomplete" | undefined;
   summary: string;
   compactLogPath: string;
-  rawLogPath?: string;
+  rawOutput: string;
 }
 
 const parseFinal = (
@@ -42,7 +44,9 @@ const parseFinal = (
   }
 };
 
-const eventSummary = (line: string): string | undefined => {
+const eventSummary = (
+  line: string,
+): { text: string; showInTerminal: boolean } | undefined => {
   try {
     const event = JSON.parse(line) as {
       type?: string;
@@ -50,25 +54,27 @@ const eventSummary = (line: string): string | undefined => {
       usage?: { input_tokens?: number; output_tokens?: number };
     };
     if (event.type === "item.completed" && event.item?.type === "agent_message") {
-      return event.item.text;
+      return {
+        text: event.item.text ?? "",
+        showInTerminal: true,
+      };
     }
     if (event.type === "item.started" && event.item?.type === "command_execution") {
-      return `$ ${event.item.command ?? "command"}`;
+      return {
+        text: `$ ${event.item.command ?? "command"}`,
+        showInTerminal: false,
+      };
     }
     if (event.type === "turn.completed") {
-      return `turn.completed input=${event.usage?.input_tokens ?? "?"} output=${event.usage?.output_tokens ?? "?"}`;
+      return {
+        text: `turn.completed input=${event.usage?.input_tokens ?? "?"} output=${event.usage?.output_tokens ?? "?"}`,
+        showInTerminal: false,
+      };
     }
   } catch {
     return undefined;
   }
   return undefined;
-};
-
-const gzipAndRemove = async (path: string): Promise<string> => {
-  const target = `${path}.gz`;
-  await pipeline(createReadStream(path), createGzip(), createWriteStream(target));
-  await rm(path, { force: true });
-  return target;
 };
 
 export const runCodex = async (options: {
@@ -77,17 +83,20 @@ export const runCodex = async (options: {
   model: string;
   reasoning: ReasoningEffort;
   gitDirectory: string;
-  logsDirectory: string;
+  log: RunLogContext;
   logName: string;
   idleTimeoutMinutes: number;
   structured?: boolean;
   prefix: string;
 }): Promise<CodexRunResult> => {
-  await mkdir(options.logsDirectory, { recursive: true });
-  const rawPath = join(options.logsDirectory, `${options.logName}.jsonl`);
-  const compactPath = join(options.logsDirectory, `${options.logName}.log`);
-  const finalPath = join(options.logsDirectory, `${options.logName}.result.json`);
-  const schemaPath = join(options.logsDirectory, "worker-output-schema.json");
+  await mkdir(options.log.directory, { recursive: true });
+  const compactPath = join(options.log.directory, `${options.logName}.log`);
+  const artifactKey = `${options.logName}-${options.log.startedAt}-${options.log.iteration}`.replace(
+    /[^a-z0-9_.-]/giu,
+    "-",
+  );
+  const finalPath = join(options.log.directory, `.${artifactKey}.result.json`);
+  const schemaPath = join(options.log.directory, `.${artifactKey}.schema.json`);
   if (options.structured !== false) {
     await writeFile(schemaPath, `${JSON.stringify(workerSchema, null, 2)}\n`);
   }
@@ -127,29 +136,37 @@ export const runCodex = async (options: {
       for (const line of lines) {
         const summary = eventSummary(line);
         if (!summary) continue;
-        console.log(`[${options.prefix}] ${summary}`);
-        compactLines.push(summary);
+        const text = redactSensitiveText(summary.text);
+        if (summary.showInTerminal) {
+          console.log(`[${options.prefix}] ${text}`);
+        }
+        compactLines.push(text);
       }
     },
     onStderr: (chunk) => {
-      process.stderr.write(`[${options.prefix}] ${chunk}`);
-      compactLines.push(chunk);
+      compactLines.push(redactSensitiveText(chunk));
     },
   });
   const finalSource = await readFile(finalPath, "utf8").catch(() => "");
   const parsed = parseFinal(finalSource);
-  await writeFile(rawPath, result.stdout);
-  await writeFile(
+  const summary = redactSensitiveText(parsed.summary || result.stderr);
+  await appendFile(
     compactPath,
-    `${compactLines.join("\n")}\n\nexit=${result.exitCode}\nstatus=${parsed.status ?? "missing"}\n${parsed.summary}\n`,
+    formatRunLogSection(
+      options.log.startedAt,
+      options.log.iteration,
+      `${compactLines.join("\n")}\n\nexit=${result.exitCode}\nstatus=${parsed.status ?? "missing"}\n${summary}`,
+    ),
   );
-  await rm(finalPath, { force: true });
-  const rawLogPath = await gzipAndRemove(rawPath).catch(() => undefined);
+  await Promise.all([
+    rm(finalPath, { force: true }),
+    rm(schemaPath, { force: true }),
+  ]);
   return {
     exitCode: result.exitCode,
     status: parsed.status,
-    summary: parsed.summary || result.stderr,
+    summary,
     compactLogPath: compactPath,
-    ...(rawLogPath ? { rawLogPath } : {}),
+    rawOutput: result.stdout,
   };
 };

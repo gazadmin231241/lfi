@@ -78,6 +78,46 @@ test("log pruning removes expired runs but preserves active run", async () => {
   assert.equal(await readFile(join(activeRun, "worker.log"), "utf8"), "active");
 });
 
+test("log pruning removes expired flat-log sections and failure artifacts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-flat-logs-"));
+  const failures = join(root, "failures");
+  await mkdir(failures);
+  const taskLog = join(root, "LFI-2.log");
+  await writeFile(
+    taskLog,
+    `
+--- Run started: 2026-07-20T10:00:00.000Z; iteration: 1 ---
+old command
+
+--- Run started: 2026-07-29T10:00:00.000Z; iteration: 2 ---
+new message
+`,
+  );
+  const oldFailure = join(
+    failures,
+    "LFI-2--2026-07-20T10-00-00.000Z--iteration-1.jsonl.gz",
+  );
+  const newFailure = join(
+    failures,
+    "LFI-2--2026-07-29T10-00-00.000Z--iteration-2.jsonl.gz",
+  );
+  await writeFile(oldFailure, "old");
+  await writeFile(newFailure, "new");
+  await utimes(oldFailure, new Date("2026-07-20T10:00:00.000Z"), new Date("2026-07-20T10:00:00.000Z"));
+  await utimes(newFailure, new Date("2026-07-29T10:00:00.000Z"), new Date("2026-07-29T10:00:00.000Z"));
+
+  await pruneExpiredRunLogs(root, {
+    retentionDays: 3,
+    now: new Date("2026-07-30T12:00:00.000Z"),
+  });
+
+  const retained = await readFile(taskLog, "utf8");
+  assert.doesNotMatch(retained, /old command/u);
+  assert.match(retained, /new message/u);
+  await assert.rejects(stat(oldFailure));
+  assert.equal(await readFile(newFailure, "utf8"), "new");
+});
+
 test("init creates an ignored, runnable project configuration from detected defaults", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-init-"));
   const bin = join(root, "bin");

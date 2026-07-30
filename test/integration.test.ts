@@ -56,7 +56,11 @@ const repairWithFakeCodex = async (
       context: "Resolve the test integration.",
       config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
       gitDirectory: join(fixture.root, ".git"),
-      logsDirectory: fixture.logs,
+      log: {
+        directory: fixture.logs,
+        startedAt: "2026-07-30T13:44:12.749Z",
+        iteration: 1,
+      },
       logName,
       language: "en",
     });

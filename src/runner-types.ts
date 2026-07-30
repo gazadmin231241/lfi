@@ -11,4 +11,7 @@ export interface Attempt {
   summary: string;
   worktreePath: string;
   branch: string;
+  logName?: string;
+  rawOutput?: string;
+  failureLogPath?: string;
 }

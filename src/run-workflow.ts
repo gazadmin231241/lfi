@@ -1,146 +1,28 @@
-import { mkdir, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
-import { runCodex } from "./codex.js";
+import { attemptWork } from "./attempt-work.js";
 import { mapConcurrent } from "./concurrency.js";
 import { loadConfig } from "./config.js";
 import { closeIssue, commentFinalFailure, setIssueStatus } from "./github.js";
-import {
-  commitWorktreeChanges,
-  commitsAhead,
-  ensureIssueWorktree,
-  git,
-  gitCommonDirectory,
-  gitResult,
-  localRepoInfo,
-  removeWorktreeAndBranch,
-  worktreeClean,
-} from "./git.js";
+import { git, gitCommonDirectory, localRepoInfo, removeWorktreeAndBranch } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
-import {
-  loadLocalTracker,
-  runnableLocalTasks,
-} from "./local-tracker.js";
+import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import { recordLocalCompletion } from "./local-run-state.js";
-import { pruneExpiredRunLogs } from "./logs.js";
-import { renderWorkerPrompt } from "./prompts.js";
+import { pruneExpiredRunLogs, writeFailureLog } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
+import { printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted } from "./run-display.js";
+import { saveRunSummary } from "./run-history.js";
 import { listWork } from "./run-source.js";
-import type { Attempt, WorkItem } from "./runner-types.js";
+import type { Attempt } from "./runner-types.js";
 import {
   checkpointTracker,
-  mergeWithAgent,
   readPendingClosures,
+  ValidationFailure,
   writePendingClosures,
 } from "./runner-support.js";
-import { evaluateWorkerResult } from "./worker-result.js";
 import { reconcileTrackerFilenames } from "./tracker-files.js";
-
-const attemptWork = async (options: {
-  cwd: string;
-  worktreesRoot: string;
-  baseRef: string;
-  issue: WorkItem;
-  config: Awaited<ReturnType<typeof loadConfig>>;
-  gitDirectory: string;
-  runLogs: string;
-  taskTemplate: string;
-  stage: number;
-  language: Language;
-}): Promise<Attempt> => {
-  const key =
-    options.config.TASK_SOURCE === "local"
-      ? options.issue.id.toLowerCase()
-      : `issue-${options.issue.number}`;
-  try {
-    const worktree = await ensureIssueWorktree({
-      repoRoot: options.cwd,
-      worktreesRoot: options.worktreesRoot,
-      issueNumber: options.issue.number,
-      workItem: key,
-      baseRef: options.baseRef,
-      setupCommand: options.config.WORKTREE_SETUP_COMMAND,
-    });
-    if (!worktree.created) {
-      const update = await gitResult(worktree.path, [
-        "merge",
-        options.baseRef,
-        "--no-edit",
-      ]);
-      if (update.exitCode !== 0) {
-        await mergeWithAgent({
-          cwd: worktree.path,
-          context: `Update ${options.issue.id} from ${options.baseRef}.`,
-          config: options.config,
-          gitDirectory: options.gitDirectory,
-          logsDirectory: options.runLogs,
-          logName: `${key}-update-${options.stage}`,
-          language: options.language,
-        });
-      }
-    }
-    const codex = await runCodex({
-      cwd: worktree.path,
-      prompt: renderWorkerPrompt(options.taskTemplate, options.issue),
-      model: options.config.CODEX_MODEL,
-      reasoning: options.config.CODEX_REASONING_EFFORT,
-      gitDirectory: options.gitDirectory,
-      logsDirectory: options.runLogs,
-      logName: `${key}-${options.stage}`,
-      idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
-      prefix: key,
-    });
-    if (codex.exitCode === 0 && codex.status === "completed") {
-      await commitWorktreeChanges(
-        worktree.path,
-        `feat(lfi): implement ${options.issue.id}`,
-      );
-    }
-    const evaluation = evaluateWorkerResult({
-      processExitCode: codex.exitCode,
-      status: codex.status,
-      commitsAhead: await commitsAhead(worktree.path, options.baseRef),
-      worktreeClean: await worktreeClean(worktree.path),
-    });
-    return {
-      issue: options.issue,
-      accepted: evaluation.accepted,
-      summary: evaluation.accepted
-        ? codex.summary
-        : `${codex.summary}\n${evaluation.reasons.join(", ")}`,
-      worktreePath: worktree.path,
-      branch: worktree.branch,
-    };
-  } catch (error) {
-    return {
-      issue: options.issue,
-      accepted: false,
-      summary: error instanceof Error ? error.message : String(error),
-      worktreePath: join(options.worktreesRoot, key),
-      branch: `lfi/${key}`,
-    };
-  }
-};
-
-const saveRunSummary = async (
-  stateRoot: string,
-  runLogs: string,
-  runId: string,
-  summary: object,
-): Promise<void> => {
-  const serialized = `${JSON.stringify(summary, null, 2)}\n`;
-  await writeFile(join(stateRoot, "last-run.json"), serialized);
-  const historyRoot = join(stateRoot, "history");
-  await mkdir(historyRoot, { recursive: true });
-  await writeFile(join(historyRoot, `${runId}.json`), serialized);
-  const history = (await readdir(historyRoot)).sort();
-  for (const old of history.slice(0, Math.max(0, history.length - 50))) {
-    await rm(join(historyRoot, old), { force: true });
-  }
-  await writeFile(join(runLogs, "summary.json"), serialized);
-};
 
 export const runLfi = async (
   cwd: string,
@@ -187,9 +69,8 @@ export const runLfi = async (
   const logsRoot = join(lfiRoot, "logs");
   const worktreesRoot = join(lfiRoot, "worktrees");
   await mkdir(stateRoot, { recursive: true });
-  const runId = new Date().toISOString().replaceAll(":", "-");
-  const runLogs = join(logsRoot, runId);
-  await mkdir(runLogs, { recursive: true });
+  const startedAt = new Date().toISOString();
+  const runId = startedAt.replaceAll(":", "-");
   const lockPath = join(stateRoot, "run.lock");
   const lock = await open(lockPath, "wx").catch(() => undefined);
   if (!lock) {
@@ -206,6 +87,7 @@ export const runLfi = async (
   const pendingPath = join(stateRoot, "pending-closures.json");
   const completed = new Set<string>();
   const attempted = new Map<string, string>();
+  let iterations = 0;
   let pending = await readPendingClosures(pendingPath);
   if (config.TASK_SOURCE === "local") pending = [];
   const branch =
@@ -242,6 +124,7 @@ export const runLfi = async (
         currentStatePath,
         `${JSON.stringify({
           runId,
+          startedAt,
           status: "running",
           stage,
           activeIssues: runnable.map((item) => item.id),
@@ -249,14 +132,15 @@ export const runLfi = async (
         }, null, 2)}\n`,
       );
       if (runnable.length === 0) break;
+      iterations = stage;
+      const log = { directory: logsRoot, startedAt, iteration: stage };
       if (config.TASK_SOURCE === "github") {
         await mapConcurrent(runnable, 3, (issue) =>
           setIssueStatus(cwd, issue.number, "running", issue.title),
         );
       }
-      console.log(
-        `${localize(language, "Runnable", "Доступны")}: ${runnable.map((item) => item.id).join(", ")}`,
-      );
+      printIteration(language, stage, runnable.map((item) => item.id));
+      for (const issue of runnable) printWorkStarted(language, issue.id);
       const attempts = await mapConcurrent(
         runnable,
         config.MAX_PARALLEL,
@@ -268,31 +152,33 @@ export const runLfi = async (
             issue,
             config,
             gitDirectory,
-            runLogs,
+            log,
             taskTemplate,
-            stage,
             language,
           }),
       );
       for (const attempt of attempts) {
         attempted.set(attempt.issue.id, attempt.summary);
+        printWorkFinished(language, attempt.issue.id, attempt.accepted);
       }
       const accepted = attempts.filter((attempt) => attempt.accepted);
       if (accepted.length === 0) continue;
       try {
+        printIntegrationStarted(language, accepted.map((attempt) => ({ id: attempt.issue.id, branch: attempt.branch })));
         const result = await integrateAttempts({
           cwd,
           worktreesRoot,
           baseRef,
           baseBranch: config.BASE_BRANCH,
           runId,
-          stage,
+          log,
           attempts: accepted,
           config,
           gitDirectory,
-          logsDirectory: runLogs,
           language,
+          onValidationStarted: () => printValidationStarted(language),
         });
+        printIntegrationCompleted(language, branch);
         if (config.TASK_SOURCE === "local") {
           await recordLocalCompletion(cwd, accepted);
         } else {
@@ -326,10 +212,18 @@ export const runLfi = async (
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        console.error(
-          `${localize(language, "[integration]", "[интеграция]")} ${reason}`,
+        await printIntegrationFailed(
+          language,
+          reason,
+          error instanceof ValidationFailure ? error.command : undefined,
+          logsRoot,
         );
-        for (const attempt of accepted) attempted.set(attempt.issue.id, reason);
+        for (const attempt of accepted) {
+          attempted.set(attempt.issue.id, reason);
+          if (attempt.logName && attempt.rawOutput !== undefined) {
+            await writeFailureLog(log, attempt.logName, attempt.rawOutput);
+          }
+        }
       }
       if (isShutdownRequested()) {
         throw new Error(localize(language, "Interrupted", "Выполнение прервано"));
@@ -364,12 +258,15 @@ export const runLfi = async (
     }
     const summary = {
       runId,
+      startedAt,
+      iterations,
       completed: [...completed],
       unresolved: unresolved.map(([id, reason]) => ({ id, reason })),
       pendingClosures: pending.map((item) => item.number),
       finishedAt: new Date().toISOString(),
     };
-    await saveRunSummary(stateRoot, runLogs, runId, summary);
+    await saveRunSummary(stateRoot, runId, summary);
+    await printRunSummary(language, [...completed], unresolved, logsRoot);
     await rm(currentStatePath, { force: true });
     if (config.TASK_SOURCE === "local") {
       await reconcileTrackerFilenames(
@@ -383,7 +280,9 @@ export const runLfi = async (
       currentStatePath,
       `${JSON.stringify({
         runId,
+        startedAt,
         status: isShutdownRequested() ? "interrupted" : "failed",
+        stage: iterations,
         completed: [...completed],
         error: error instanceof Error ? error.message : String(error),
       }, null, 2)}\n`,

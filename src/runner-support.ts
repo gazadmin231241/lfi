@@ -5,6 +5,11 @@ import type { LfiConfig } from "./config.js";
 import { commitWorktreeChanges, git, gitResult } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
+import {
+  appendRunLog,
+  redactSensitiveText,
+  type RunLogContext,
+} from "./logs.js";
 import { runShell } from "./process.js";
 
 export interface PendingClosure {
@@ -51,7 +56,7 @@ export const mergeWithAgent = async (options: {
   context: string;
   config: LfiConfig;
   gitDirectory: string;
-  logsDirectory: string;
+  log: RunLogContext;
   logName: string;
   language: Language;
 }): Promise<void> => {
@@ -93,7 +98,7 @@ ${options.context}
     model: options.config.MERGER_MODEL || options.config.CODEX_MODEL,
     reasoning: options.config.MERGER_REASONING_EFFORT,
     gitDirectory: options.gitDirectory,
-    logsDirectory: options.logsDirectory,
+    log: options.log,
     logName: options.logName,
     idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
     structured: false,
@@ -138,10 +143,21 @@ ${options.context}
   }
 };
 
+export class ValidationFailure extends Error {
+  readonly command: string;
+
+  constructor(message: string, command: string) {
+    super(message);
+    this.name = "ValidationFailure";
+    this.command = command;
+  }
+}
+
 export const validateIntegration = async (options: {
   cwd: string;
   config: LfiConfig;
   language: Language;
+  log: RunLogContext;
   repair: () => Promise<void>;
 }): Promise<void> => {
   if (options.config.WORKTREE_SETUP_COMMAND) {
@@ -152,30 +168,42 @@ export const validateIntegration = async (options: {
       throw new Error(
         localize(
           options.language,
-          `Integration setup failed:\n${setup.stderr || setup.stdout}`,
-          `Подготовка общего worktree завершилась с ошибкой:\n${setup.stderr || setup.stdout}`,
+          `Integration setup failed:\n${redactSensitiveText(setup.stderr || setup.stdout)}`,
+          `Подготовка общего worktree завершилась с ошибкой:\n${redactSensitiveText(setup.stderr || setup.stdout)}`,
         ),
       );
     }
   }
   let validation = await runShell(options.config.VALIDATE_COMMAND, {
     cwd: options.cwd,
-    onStdout: (chunk) => process.stdout.write(`[validate] ${chunk}`),
-    onStderr: (chunk) => process.stderr.write(`[validate] ${chunk}`),
   });
+  const logValidation = () =>
+    appendRunLog(
+      options.log,
+      "integration",
+      [
+        `$ ${options.config.VALIDATE_COMMAND}`,
+        validation.stdout,
+        validation.stderr,
+        `exit=${validation.exitCode}`,
+      ].filter(Boolean),
+    );
+  await logValidation();
   if (validation.exitCode !== 0) {
     await options.repair();
     validation = await runShell(options.config.VALIDATE_COMMAND, {
       cwd: options.cwd,
     });
+    await logValidation();
   }
   if (validation.exitCode !== 0) {
-    throw new Error(
+    throw new ValidationFailure(
       localize(
         options.language,
-        `Validation failed:\n${validation.stderr || validation.stdout}`,
-        `Проверка завершилась с ошибкой:\n${validation.stderr || validation.stdout}`,
+        `Validation failed:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
+        `Проверка завершилась с ошибкой:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
       ),
+      redactSensitiveText(options.config.VALIDATE_COMMAND),
     );
   }
 };

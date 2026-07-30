@@ -4,6 +4,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -84,7 +85,8 @@ test("local run commits worker changes, integrates, and completes a task without
       TASK_SOURCE: "local",
       MAX_PARALLEL: 1,
       MAX_STAGES: 2,
-      VALIDATE_COMMAND: "test -f implemented.txt",
+      VALIDATE_COMMAND:
+        "printf 'validation detail: implemented.txt exists github_pat_EXAMPLE_SECRET_123456\\n' && test -f implemented.txt",
     }),
   );
   await writeFile(join(lfiRoot, "task-prompt.md"), "Implement the task.\n");
@@ -113,6 +115,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 printf 'implemented\\n' > implemented.txt
+printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Implementation is ready."}}'
 printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
 `,
   );
@@ -143,12 +146,39 @@ exit 97
   );
 
   const originalPath = process.env.PATH;
+  const originalLog = console.log;
+  const terminal: string[] = [];
   process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  console.log = (...values: unknown[]) => {
+    terminal.push(values.join(" "));
+  };
   try {
     assert.equal(await runLfi(root, "en"), 0);
   } finally {
+    console.log = originalLog;
     process.env.PATH = originalPath;
   }
+
+  const output = terminal.join("\n");
+  assert.match(output, /={20,}\nIteration 1\n={20,}/u);
+  assert.match(output, /  Runnable: LFI-1/u);
+  assert.match(output, /    Work started/u);
+  assert.match(output, /\[lfi-1\] Implementation is ready\./u);
+  assert.match(output, /-{20,}\nIntegration\n-{20,}/u);
+  assert.match(output, /    Merging branch: lfi\/lfi-1 \(LFI-1\)/u);
+  assert.match(output, /    Combined validation passed/u);
+  assert.match(output, /    Changes merged into main/u);
+  assert.match(output, /-{20,}\nSummary\n-{20,}/u);
+  assert.match(output, /  Completed: LFI-1/u);
+  assert.doesNotMatch(output, /\$ /u);
+  assert.doesNotMatch(output, /validation detail/u);
+  const successfulIntegrationLog = await readFile(
+    join(lfiRoot, "logs", "integration.log"),
+    "utf8",
+  );
+  assert.match(successfulIntegrationLog, /validation detail: implemented\.txt exists/u);
+  assert.match(successfulIntegrationLog, /\[REDACTED\]/u);
+  assert.doesNotMatch(successfulIntegrationLog, /github_pat_EXAMPLE_SECRET_123456/u);
 
   assert.equal(await readFile(join(root, "implemented.txt"), "utf8"), "implemented\n");
   const completedPath = join(
@@ -209,5 +239,139 @@ exit 97
       "utf8",
     ).then((source) => source.includes("status: ready")),
     true,
+  );
+
+  const failingPath = join(tasks, "LFI-4-failing.md");
+  await writeFile(
+    failingPath,
+    serializeTrackerDocument({
+      id: "LFI-4",
+      number: 4,
+      type: "task",
+      title: "Failing task",
+      status: "ready",
+      blockedBy: [],
+      body: "Report an incomplete result.\n",
+      path: failingPath,
+    }),
+  );
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    output="$1"
+  fi
+  shift
+done
+printf '%s\\n' '{"type":"item.started","item":{"type":"command_execution","command":"sed -n '\\''1,40p'\\'' failing.txt"}}'
+printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Could not complete the task."}}'
+printf '%s\\n' 'provider warning' >&2
+printf '%s\\n' '{"status":"incomplete","summary":"blocked"}' > "$output"
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const failureTerminal: string[] = [];
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  console.log = (...values: unknown[]) => {
+    failureTerminal.push(values.join(" "));
+  };
+  try {
+    assert.equal(await runLfi(root, "en", ["LFI-4"]), 1);
+  } finally {
+    console.log = originalLog;
+    process.env.PATH = originalPath;
+  }
+  const failures = await readdir(join(lfiRoot, "logs", "failures"));
+  assert.equal(failures.length, 2);
+  assert.ok(failures.every((name) => /^LFI-4--.+--iteration-\d+\.jsonl\.gz$/u.test(name)));
+  assert.equal(
+    (await readdir(join(lfiRoot, "logs"))).some((name) =>
+      /^LFI-1.*\.jsonl\.gz$/u.test(name),
+    ),
+    false,
+  );
+  const failureOutput = failureTerminal.join("\n");
+  assert.match(failureOutput, /Log: \.lfi\/logs\/LFI-4\.log/u);
+  assert.match(
+    failureOutput,
+    /Diagnostics: \.lfi\/logs\/failures\/LFI-4--.+--iteration-2\.jsonl\.gz/u,
+  );
+
+  const validationTaskPath = join(tasks, "LFI-5-validation-failure.md");
+  await writeFile(
+    validationTaskPath,
+    serializeTrackerDocument({
+      id: "LFI-5",
+      number: 5,
+      type: "task",
+      title: "Validation failure",
+      status: "ready",
+      blockedBy: [],
+      body: "Create validation-failure.txt.\n",
+      path: validationTaskPath,
+    }),
+  );
+  await writeFile(
+    join(lfiRoot, "config.env"),
+    serializeEnvConfig({
+      ...DEFAULT_CONFIG,
+      TASK_SOURCE: "local",
+      MAX_PARALLEL: 1,
+      MAX_STAGES: 1,
+      VALIDATE_COMMAND:
+        "i=1; while [ $i -le 25 ]; do echo validation-line-$i; i=$((i+1)); done; exit 1",
+    }),
+  );
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    output="$1"
+  fi
+  shift
+done
+printf 'validation failure\\n' > validation-failure.txt
+printf '%s\\n' '{"status":"completed","summary":"implemented"}' > "$output"
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const validationTerminal: string[] = [];
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  console.log = (...values: unknown[]) => {
+    validationTerminal.push(values.join(" "));
+  };
+  const originalError = console.error;
+  console.error = (...values: unknown[]) => {
+    validationTerminal.push(values.join(" "));
+  };
+  try {
+    assert.equal(await runLfi(root, "en", ["LFI-5"]), 1);
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+    process.env.PATH = originalPath;
+  }
+  const validationOutput = validationTerminal.join("\n");
+  assert.doesNotMatch(validationOutput, /validation-line-[1-5](?:\D|$)/u);
+  assert.match(validationOutput, /validation-line-6/u);
+  assert.match(validationOutput, /validation-line-25/u);
+  assert.match(validationOutput, /Validation command: i=1; while/u);
+  assert.match(validationOutput, /Full output: \.lfi\/logs\/integration\.log/u);
+  const integrationLog = await readFile(
+    join(lfiRoot, "logs", "integration.log"),
+    "utf8",
+  );
+  assert.match(integrationLog, /validation-line-1/u);
+  assert.match(integrationLog, /validation-line-25/u);
+  assert.ok(
+    (await readdir(join(lfiRoot, "logs", "failures"))).some((name) =>
+      /^LFI-5--.+--iteration-1\.jsonl\.gz$/u.test(name),
+    ),
   );
 });
