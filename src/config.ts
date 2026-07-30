@@ -1,8 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type TaskSource = "local" | "github";
 
 export interface LfiConfig {
+  TASK_SOURCE: TaskSource;
+  GITHUB_REPO: string;
   CODEX_MODEL: string;
   CODEX_REASONING_EFFORT: ReasoningEffort;
   MERGER_MODEL: string;
@@ -19,6 +22,8 @@ export interface LfiConfig {
 }
 
 export const DEFAULT_CONFIG: LfiConfig = {
+  TASK_SOURCE: "local",
+  GITHUB_REPO: "",
   CODEX_MODEL: "",
   CODEX_REASONING_EFFORT: "medium",
   MERGER_MODEL: "",
@@ -40,7 +45,7 @@ export const serializeEnvConfig = (config: LfiConfig): string =>
     .join("\n")}\n`;
 
 export const parseEnvConfig = (source: string): LfiConfig => {
-  const result: LfiConfig = { ...DEFAULT_CONFIG };
+  const result: LfiConfig = { ...DEFAULT_CONFIG, TASK_SOURCE: "github" };
   for (const rawLine of source.split(/\r?\n/u)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
@@ -51,12 +56,21 @@ export const parseEnvConfig = (source: string): LfiConfig => {
     switch (key) {
       case "CODEX_MODEL":
       case "MERGER_MODEL":
+      case "GITHUB_REPO":
       case "BASE_BRANCH":
       case "ISSUE_LABEL":
       case "EXCLUDE_LABELS":
       case "VALIDATE_COMMAND":
       case "WORKTREE_SETUP_COMMAND":
         result[key] = value;
+        break;
+      case "TASK_SOURCE":
+        if (value === "local" || value === "github") result.TASK_SOURCE = value;
+        else {
+          throw new Error(
+            `TASK_SOURCE must be local or github / должен быть local или github: ${value}`,
+          );
+        }
         break;
       case "CODEX_REASONING_EFFORT":
       case "MERGER_REASONING_EFFORT":
@@ -137,3 +151,9 @@ export const loadConfig = async (path: string): Promise<LfiConfig> =>
 
 export const saveConfig = async (path: string, config: LfiConfig): Promise<void> =>
   writeFile(path, serializeEnvConfig(validateConfig(config)), { flag: "wx" });
+
+export const updateConfig = async (
+  path: string,
+  config: LfiConfig,
+): Promise<void> =>
+  writeFile(path, serializeEnvConfig(validateConfig(config)));

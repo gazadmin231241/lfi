@@ -8,7 +8,11 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 
-import { isReasoningEffort, loadConfig } from "./config.js";
+import {
+  isReasoningEffort,
+  loadConfig,
+  type TaskSource,
+} from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { initializeProject } from "./init.js";
 import {
@@ -22,6 +26,9 @@ import { pruneExpiredRunLogs } from "./logs.js";
 import { dryRun, runLfi } from "./runner.js";
 import { installSkills, listSkillStatus, SKILLS_COMMIT } from "./skills.js";
 import { requestShutdown } from "./process.js";
+import { migrateToLocal } from "./migrate.js";
+import { localStatusLines, type StatusFilter } from "./status.js";
+import { syncGithubMirror } from "./sync.js";
 
 const args = process.argv.slice(2);
 const cwd = process.cwd();
@@ -31,6 +38,8 @@ const valueOptions = new Set([
   "--model",
   "--reasoning",
   "--log-retention-days",
+  "--task-source",
+  "--repo",
 ]);
 const positional: string[] = [];
 for (let index = 0; index < args.length; index++) {
@@ -63,9 +72,11 @@ const printHelp = (language: Language) => {
 
 Использование:
   lfi init [--advanced] [--yes] [--model MODEL] [--reasoning EFFORT]
-  lfi doctor
-  lfi run [--dry-run]
-  lfi status
+  lfi doctor [--sync]
+  lfi run [LFI-ID...] [--dry-run]
+  lfi status [--all|--ready|--blocked|--completed]
+  lfi sync [github] [--repo OWNER/REPO] [--dry-run] [--force]
+  lfi migrate local
   lfi logs [ISSUE]
   lfi logs prune [--all]
   lfi skills install|list|doctor|update
@@ -74,9 +85,11 @@ const printHelp = (language: Language) => {
 
 Usage:
   lfi init [--advanced] [--yes] [--model MODEL] [--reasoning EFFORT]
-  lfi doctor
-  lfi run [--dry-run]
-  lfi status
+  lfi doctor [--sync]
+  lfi run [LFI-ID...] [--dry-run]
+  lfi status [--all|--ready|--blocked|--completed]
+  lfi sync [github] [--repo OWNER/REPO] [--dry-run] [--force]
+  lfi migrate local
   lfi logs [ISSUE]
   lfi logs prune [--all]
   lfi skills install|list|doctor|update
@@ -92,8 +105,11 @@ const requireConfig = async (language: Language) => {
   return loadConfig(path);
 };
 
-const printDoctor = async (language: Language): Promise<number> => {
-  const checks = await runDoctor(cwd, language);
+const printDoctor = async (
+  language: Language,
+  sync: boolean,
+): Promise<number> => {
+  const checks = await runDoctor(cwd, language, { sync });
   for (const check of checks) {
     console.log(`${check.ok ? "✓" : check.required ? "✗" : "!"} ${check.name}: ${check.detail}`);
   }
@@ -184,6 +200,21 @@ const main = async (): Promise<number> => {
     }
     const supportedReasoning =
       reasoning && isReasoningEffort(reasoning) ? reasoning : undefined;
+    const requestedSource = option("--task-source");
+    if (
+      requestedSource !== undefined &&
+      requestedSource !== "local" &&
+      requestedSource !== "github"
+    ) {
+      throw new Error(
+        localize(
+          language,
+          "Task source must be local or github.",
+          "Источник задач должен быть local или github.",
+        ),
+      );
+    }
+    const taskSource = requestedSource as TaskSource | undefined;
     const result = await initializeProject({
       cwd,
       language,
@@ -192,16 +223,26 @@ const main = async (): Promise<number> => {
       ...(retention ? { retentionDays: Number(retention) } : {}),
       yes: has("--yes"),
       advanced: has("--advanced"),
+      ...(taskSource ? { taskSource } : {}),
     });
     console.log(t(language, result === "created" ? "initialized" : "alreadyInitialized"));
+    const initialized = await loadConfig(join(cwd, ".lfi", "config.env"));
     console.log(
-      language === "ru"
-        ? "Далее: gh auth login, codex login, lfi skills install, $setup-matt-pocock-skills, lfi doctor, lfi run --dry-run"
-        : "Next: gh auth login, codex login, lfi skills install, $setup-matt-pocock-skills, lfi doctor, lfi run --dry-run",
+      initialized.TASK_SOURCE === "local"
+        ? localize(
+            language,
+            "Next: codex login, lfi skills install, lfi doctor, lfi run --dry-run",
+            "Далее: codex login, lfi skills install, lfi doctor, lfi run --dry-run",
+          )
+        : localize(
+            language,
+            "Next: gh auth login, codex login, lfi skills install, lfi doctor, lfi run --dry-run",
+            "Далее: gh auth login, codex login, lfi skills install, lfi doctor, lfi run --dry-run",
+          ),
     );
     return 0;
   }
-  if (command === "doctor") return printDoctor(language);
+  if (command === "doctor") return printDoctor(language, has("--sync"));
   if (command === "skills") {
     const subcommand = positional[1] ?? "list";
     if (subcommand === "install" || subcommand === "update") {
@@ -239,19 +280,39 @@ const main = async (): Promise<number> => {
   }
   if (command === "run") {
     await requireConfig(language);
+    const selected = positional.slice(1);
     if (has("--dry-run")) {
-      const plan = await dryRun(cwd);
+      const plan = await dryRun(cwd, selected);
       console.log(
-        `${localize(language, "Runnable", "Доступны")}: ${plan.runnable.map((issue) => `#${issue.number} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
+        `${localize(language, "Runnable", "Доступны")}: ${plan.runnable.map((issue) => `${issue.id ?? `#${issue.number}`} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
       );
       console.log(
-        `${localize(language, "Blocked/excluded", "Заблокированы/исключены")}: ${plan.blocked.map((issue) => `#${issue.number} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
+        `${localize(language, "Blocked/excluded", "Заблокированы/исключены")}: ${plan.blocked.map((issue) => `${issue.id ?? `#${issue.number}`} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
       );
       return 0;
     }
-    return runLfi(cwd, language);
+    return runLfi(cwd, language, selected);
   }
   if (command === "status") {
+    const config = await requireConfig(language);
+    if (config.TASK_SOURCE === "local") {
+      const filter: StatusFilter | undefined = has("--ready")
+        ? "ready"
+        : has("--blocked")
+          ? "blocked"
+          : has("--completed")
+            ? "completed"
+            : undefined;
+      console.log(
+        (
+          await localStatusLines(cwd, {
+            ...(has("--all") ? { all: true } : {}),
+            ...(filter ? { filter } : {}),
+          })
+        ).join("\n") || localize(language, "No local tasks.", "Локальных задач нет."),
+      );
+      return 0;
+    }
     const stateRoot = join(cwd, ".lfi", "state");
     const active = await readFile(join(stateRoot, "current-run.json"), "utf8").catch(
       () => "",
@@ -266,6 +327,32 @@ const main = async (): Promise<number> => {
           "No completed LFI runs.",
           "Завершённых запусков LFI пока нет.",
         ),
+    );
+    return 0;
+  }
+  if (command === "sync") {
+    const result = await syncGithubMirror(cwd, {
+      ...(option("--repo") ? { repo: option("--repo")! } : {}),
+      ...(has("--dry-run") ? { dryRun: true } : {}),
+      ...(has("--force") ? { force: true } : {}),
+    });
+    console.log(
+      localize(
+        language,
+        `Created: ${result.created.join(", ") || "none"}; updated: ${result.updated.join(", ") || "none"}; skipped: ${result.skipped.length}; failed: ${result.failed.map((item) => item.id).join(", ") || "none"}`,
+        `Создано: ${result.created.join(", ") || "нет"}; обновлено: ${result.updated.join(", ") || "нет"}; пропущено: ${result.skipped.length}; ошибки: ${result.failed.map((item) => item.id).join(", ") || "нет"}`,
+      ),
+    );
+    return result.failed.length === 0 ? 0 : 1;
+  }
+  if (command === "migrate" && positional[1] === "local") {
+    const ids = await migrateToLocal(cwd);
+    console.log(
+      localize(
+        language,
+        `Migrated to Local Markdown: ${ids.join(", ") || "no open tasks"}.`,
+        `Миграция в Local Markdown завершена: ${ids.join(", ") || "открытых задач нет"}.`,
+      ),
     );
     return 0;
   }

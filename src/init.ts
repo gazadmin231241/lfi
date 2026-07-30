@@ -14,11 +14,17 @@ import {
   saveConfig,
   type LfiConfig,
   type ReasoningEffort,
+  type TaskSource,
 } from "./config.js";
 import { detectCommands } from "./detect.js";
 import { repoInfo } from "./github.js";
+import { localRepoInfo } from "./git.js";
 import type { Language } from "./i18n.js";
 import { defaultTaskPrompt } from "./prompts.js";
+import {
+  configureLocalTracker,
+  LOCAL_IGNORE_BLOCK,
+} from "./local-setup.js";
 
 export interface InitOptions {
   cwd: string;
@@ -28,6 +34,7 @@ export interface InitOptions {
   retentionDays?: number;
   yes?: boolean;
   advanced?: boolean;
+  taskSource?: TaskSource;
 }
 
 const exists = async (path: string) =>
@@ -46,6 +53,17 @@ const askRetention = async (language: Language): Promise<number> => {
   input.close();
   const value = Number(answer.trim() || "3");
   return Number.isFinite(value) && value >= 0 ? value : 3;
+};
+
+const askTaskSource = async (language: Language): Promise<TaskSource> => {
+  const input = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await input.question(
+    language === "ru"
+      ? "Где хранить задачи? [1] Local Markdown  [2] GitHub Issues: "
+      : "Where should tasks be stored? [1] Local Markdown  [2] GitHub Issues: ",
+  );
+  input.close();
+  return answer.trim() === "2" ? "github" : "local";
 };
 
 const askAdvanced = async (
@@ -125,8 +143,15 @@ export const initializeProject = async (
   const configPath = join(lfiRoot, "config.env");
   if (await exists(configPath)) return "exists";
 
+  const taskSource =
+    options.taskSource ??
+    (process.stdin.isTTY && !options.yes
+      ? await askTaskSource(options.language)
+      : "local");
   const [repo, commands] = await Promise.all([
-    repoInfo(options.cwd),
+    taskSource === "github"
+      ? repoInfo(options.cwd)
+      : localRepoInfo(options.cwd),
     detectCommands(options.cwd),
   ]);
   const retentionDays =
@@ -136,6 +161,7 @@ export const initializeProject = async (
       : DEFAULT_CONFIG.LOG_RETENTION_DAYS);
   let config: LfiConfig = {
     ...DEFAULT_CONFIG,
+    TASK_SOURCE: taskSource,
     CODEX_MODEL: options.model ?? DEFAULT_CONFIG.CODEX_MODEL,
     CODEX_REASONING_EFFORT:
       options.reasoning ?? DEFAULT_CONFIG.CODEX_REASONING_EFFORT,
@@ -195,6 +221,8 @@ export const initializeProject = async (
     mkdir(join(lfiRoot, "logs"), { recursive: true }),
     mkdir(join(lfiRoot, "state"), { recursive: true }),
     mkdir(join(lfiRoot, "worktrees"), { recursive: true }),
+    mkdir(join(lfiRoot, "tasks"), { recursive: true }),
+    mkdir(join(lfiRoot, "specs"), { recursive: true }),
   ]);
   await saveConfig(configPath, config);
   await writeFile(
@@ -204,10 +232,16 @@ export const initializeProject = async (
   );
   const gitignorePath = join(options.cwd, ".gitignore");
   const gitignore = await readFile(gitignorePath, "utf8").catch(() => "");
-  if (!gitignore.split(/\r?\n/u).includes(".lfi/")) {
+  const ignoreBlock =
+    config.TASK_SOURCE === "local"
+      ? LOCAL_IGNORE_BLOCK
+      : ".lfi/\n";
+  if (config.TASK_SOURCE === "local") {
+    await configureLocalTracker(options.cwd);
+  } else if (!gitignore.includes(ignoreBlock.trim())) {
     await appendFile(
       gitignorePath,
-      `${gitignore && !gitignore.endsWith("\n") ? "\n" : ""}.lfi/\n`,
+      `${gitignore && !gitignore.endsWith("\n") ? "\n" : ""}${ignoreBlock}`,
     );
   }
   return "created";

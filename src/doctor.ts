@@ -4,6 +4,9 @@ import { homedir } from "node:os";
 
 import { runCommand } from "./process.js";
 import { localize, type Language } from "./i18n.js";
+import { loadConfig } from "./config.js";
+import { inferGithubRepo } from "./github-mirror-adapter.js";
+import { loadLocalTracker } from "./local-tracker.js";
 
 export interface DoctorCheck {
   name: string;
@@ -28,15 +31,25 @@ const requiredSkills = [
 export const runDoctor = async (
   cwd: string,
   language: Language,
+  options: { sync?: boolean } = {},
 ): Promise<DoctorCheck[]> => {
-  const commands: ReadonlyArray<readonly [string, readonly string[]]> = [
+  const config = await loadConfig(join(cwd, ".lfi", "config.env")).catch(
+    () => undefined,
+  );
+  const commands: Array<readonly [string, readonly string[]]> = [
     ["git", ["--version"]],
-    ["gh", ["auth", "status"]],
     ["codex", ["login", "status"]],
   ];
+  if (options.sync || config?.TASK_SOURCE === "github") {
+    commands.splice(1, 0, ["gh", ["auth", "status"]]);
+  }
   const commandChecks = await Promise.all(
     commands.map(async ([command, args]) => {
-      const result = await runCommand(command, args);
+      const result = await runCommand(command, args).catch((error) => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+      }));
       return {
         name: command,
         ok: result.exitCode === 0,
@@ -69,8 +82,75 @@ export const runDoctor = async (
   const setupConfigured = await exists(
     join(cwd, "docs", "agents", "issue-tracker.md"),
   );
+  const syncChecks: DoctorCheck[] = [];
+  if (options.sync) {
+    const tracker = await loadLocalTracker(join(cwd, ".lfi"))
+      .then(() => ({
+        name: "local tracker",
+        ok: true,
+        detail: localize(
+          language,
+          "documents are valid",
+          "документы корректны",
+        ),
+        required: true,
+      }))
+      .catch((error) => ({
+        name: "local tracker",
+        ok: false,
+        detail: error instanceof Error ? error.message : String(error),
+        required: true,
+      }));
+    syncChecks.push(tracker);
+    const repo =
+      config?.GITHUB_REPO || (await inferGithubRepo(cwd).catch(() => undefined));
+    if (!repo) {
+      syncChecks.push({
+        name: "GitHub destination",
+        ok: false,
+        detail: localize(
+          language,
+          "not configured; pass --repo to lfi sync",
+          "не настроен; передайте --repo команде lfi sync",
+        ),
+        required: true,
+      });
+    } else {
+      const accessResult = await runCommand(
+        "gh",
+        ["repo", "view", repo, "--json", "nameWithOwner"],
+        { cwd },
+      ).catch((error) => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+      }));
+      syncChecks.push({
+        name: "GitHub destination",
+        ok: accessResult.exitCode === 0,
+        detail:
+          (accessResult.stdout || accessResult.stderr).trim().split("\n")[0] ??
+          repo,
+        required: true,
+      });
+    }
+    syncChecks.push({
+      name: "GitHub mirror",
+      ok: config?.TASK_SOURCE === "local",
+      detail:
+        config?.TASK_SOURCE === "local"
+          ? localize(language, "ready to synchronize", "готово к синхронизации")
+          : localize(
+              language,
+              "sync requires Local Markdown mode",
+              "для sync нужен режим Local Markdown",
+            ),
+      required: true,
+    });
+  }
   return [
     ...commandChecks,
+    ...syncChecks,
     ...skillChecks,
     {
       name: "$setup-matt-pocock-skills",

@@ -1,4 +1,5 @@
 import { requireCommand } from "./process.js";
+import { withGithubRetry } from "./github-resilience.js";
 import type { GithubIssue } from "./issues.js";
 import { localize, type Language } from "./i18n.js";
 
@@ -10,13 +11,35 @@ interface GhIssue {
   labels: Array<{ name: string }>;
 }
 
+const gh = (
+  cwd: string,
+  args: readonly string[],
+) => withGithubRetry(() => requireCommand("gh", args, { cwd }));
+
+const mapConcurrent = async <T, R>(
+  values: readonly T[],
+  limit: number,
+  worker: (value: T) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(values.length);
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, async () => {
+      while (cursor < values.length) {
+        const index = cursor++;
+        results[index] = await worker(values[index]!);
+      }
+    }),
+  );
+  return results;
+};
+
 export const repoInfo = async (
   cwd: string,
 ): Promise<{ nameWithOwner: string; defaultBranch: string }> => {
-  const result = await requireCommand(
-    "gh",
+  const result = await gh(
+    cwd,
     ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"],
-    { cwd },
   );
   const parsed = JSON.parse(result.stdout) as {
     nameWithOwner: string;
@@ -32,8 +55,8 @@ export const listOpenIssues = async (
   cwd: string,
   label: string,
 ): Promise<GithubIssue[]> => {
-  const result = await requireCommand(
-    "gh",
+  const result = await gh(
+    cwd,
     [
       "issue",
       "list",
@@ -46,7 +69,6 @@ export const listOpenIssues = async (
       "--json",
       "number,title,url,body,labels",
     ],
-    { cwd },
   );
   return (JSON.parse(result.stdout) as GhIssue[]).map((issue) => ({
     ...issue,
@@ -57,10 +79,9 @@ export const listOpenIssues = async (
 export const listAllOpenIssueNumbers = async (
   cwd: string,
 ): Promise<Set<number>> => {
-  const result = await requireCommand(
-    "gh",
+  const result = await gh(
+    cwd,
     ["issue", "list", "--state", "open", "--limit", "1000", "--json", "number"],
-    { cwd },
   );
   return new Set(
     (JSON.parse(result.stdout) as Array<{ number: number }>).map(
@@ -75,17 +96,18 @@ export const nativeBlockers = async (
   issueNumbers: readonly number[],
 ): Promise<Map<number, number[]>> => {
   const result = new Map<number, number[]>();
-  await Promise.all(
-    issueNumbers.map(async (number) => {
-      const response = await requireCommand(
-        "gh",
+  await mapConcurrent(
+    issueNumbers,
+    3,
+    async (number) => {
+      const response = await gh(
+        cwd,
         [
           "api",
           `repos/${repo}/issues/${number}/dependencies/blocked_by`,
           "--jq",
           ".[].number",
         ],
-        { cwd },
       );
       result.set(
         number,
@@ -94,7 +116,7 @@ export const nativeBlockers = async (
           .filter(Boolean)
           .map(Number),
       );
-    }),
+    },
   );
   return result;
 };
@@ -109,10 +131,9 @@ export const closeIssue = async (
     language === "ru"
       ? `Выполнено LFI и опубликовано в ${sha}.`
       : `Completed by LFI and published in ${sha}.`;
-  await requireCommand(
-    "gh",
+  await gh(
+    cwd,
     ["issue", "close", String(number), "--comment", comment],
-    { cwd },
   );
 };
 
@@ -121,8 +142,8 @@ export const commentFinalFailure = async (
   number: number,
   language: Language,
 ): Promise<void> => {
-  await requireCommand(
-    "gh",
+  await gh(
+    cwd,
     [
       "issue",
       "comment",
@@ -134,6 +155,5 @@ export const commentFinalFailure = async (
         "LFI не смог завершить эту задачу за настроенное количество этапов. Worktree и локальные логи сохранены для проверки.",
       ),
     ],
-    { cwd },
   );
 };

@@ -2,20 +2,18 @@
 
 [English](README.md)
 
-LFI превращает подготовленные GitHub Issues в проверенные commits с помощью
-Codex и изолированных Git worktree. Он параллельно выполняет несколько задач,
-разрешает интеграционные конфликты, проверяет общий результат, обновляет
-default-ветку и закрывает выполненные Issues.
+LFI превращает локальные Markdown-задачи или подготовленные GitHub Issues в
+проверенные commits с помощью Codex и изолированных Git worktree. Локальный
+режим работает без remote, а GitHub можно обновить позже явной синхронизацией.
 
-> LFI умеет напрямую обновлять default-ветку. Сначала используйте
-> `lfi run --dry-run` и запускайте инструмент только там, где такой workflow
-> действительно разрешён.
+> GitHub-режим умеет напрямую обновлять default-ветку. Локальный режим никогда
+> не выполняет fetch или push. Сначала используйте `lfi run --dry-run`.
 
 ## Требования
 
 - Node.js 22+
 - Git
-- GitHub CLI с выполненным `gh auth login`
+- GitHub CLI только для GitHub-режима, миграции или синхронизации
 - Codex CLI с выполненным `codex login`
 - pnpm для сборки и локальной установки LFI
 
@@ -44,30 +42,37 @@ lfi run
 
 Команда `lfi skills install` устанавливает закреплённый минимальный набор из
 [`mattpocock/skills`](https://github.com/mattpocock/skills). Перед использованием
-`to-spec` и `to-tickets` откройте Codex в проекте и один раз запустите
-`$setup-matt-pocock-skills`.
+`to-spec` и `to-tickets`: локальная инициализация автоматически записывает для
+них tracker contract.
 
-## Какие задачи выбираются
+## Хранение задач
 
-LFI берёт открытые Issues с `ready-for-agent`, исключая `blocked`, `needs-info`
-и `ready-for-human`. Открытые ссылки в секции ниже считаются блокерами:
+`lfi init` спрашивает, где хранить задачи. Для новых и неинтерактивных проектов
+по умолчанию используется Local Markdown:
 
-```md
-## Blocked by
-
-- #123
+```text
+.lfi/tasks/LFI-2-implement-parser.md
+.lfi/specs/LFI-1-local-first-workflow.md
 ```
 
-Labels и основную ветку можно изменить в `.lfi/config.env`.
+Эти файлы версионируются, а `.lfi/logs`, `.lfi/state` и `.lfi/worktrees`
+игнорируются. Tasks и specs используют общую последовательность `LFI-N`.
+Сохраняются статусы `ready`, `completed`, `cancelled`; состояния выполнения и
+блокировки вычисляются.
+
+GitHub-режим сохраняет контракт Issues с `ready-for-agent` и учитывает
+текстовые и нативные зависимости.
 
 ## Команды
 
 ```text
-lfi init
-lfi doctor
-lfi run
+lfi init [--task-source local|github]
+lfi doctor [--sync]
+lfi run [LFI-ID...]
 lfi run --dry-run
-lfi status
+lfi status [--all|--ready|--blocked|--completed]
+lfi sync [github] [--repo OWNER/REPO] [--dry-run] [--force]
+lfi migrate local
 lfi logs
 lfi logs ISSUE_NUMBER
 lfi logs prune
@@ -81,9 +86,9 @@ lfi config language en|ru
 
 ## Настройка
 
-Обычный `lfi init` определяет почти всё автоматически и спрашивает только срок
-хранения логов. Модель, reasoning, количество параллельных задач и этапов,
-labels, команды подготовки и проверки остаются доступны в `.lfi/config.env`.
+Обычный `lfi init` спрашивает источник задач и срок хранения логов. Модель,
+reasoning, количество параллельных задач и этапов, GitHub mirror, labels,
+команды подготовки и проверки доступны в `.lfi/config.env`.
 
 Для интерактивной настройки этих параметров используйте
 `lfi init --advanced`.
@@ -95,10 +100,15 @@ labels, команды подготовки и проверки остаются
 
 Каждая задача работает в сохраняемом worktree. Ветка допускается к объединению,
 только если Codex вернул структурированный статус завершения, создал commits и
-оставил чистый worktree. Общая integration-ветка обязана пройти validation до
-push и закрытия Issues.
+оставил чистый worktree. Общая integration-ветка обязана пройти validation. В
+local-mode она сливается в текущую ветку обычным Git merge без push. При
+конфликте LFI сохраняет integration worktree и выводит команду восстановления.
 
-Если GitHub принял push, но временно не смог закрыть Issue, LFI сохраняет эту
+`lfi sync` односторонне зеркалирует локальные specs и tasks в GitHub. Команда
+ограничивает параллельность тремя запросами, повторяет временные сетевые ошибки
+и ответы 502/503/504 и сохраняет mappings без создания дублей.
+
+В GitHub-режиме, если GitHub принял push, но временно не смог закрыть Issue, LFI сохраняет эту
 операцию и повторяет её в начале следующего запуска. Во время работы `lfi
 status` показывает текущий запуск, а после завершения — результат последнего.
 

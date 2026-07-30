@@ -12,6 +12,7 @@ import {
 } from "../src/config.js";
 import { initializeProject } from "../src/init.js";
 import { pruneExpiredRunLogs } from "../src/logs.js";
+import { runCommand } from "../src/process.js";
 
 test("config round-trips defaults and keeps advanced values editable", () => {
   const serialized = serializeEnvConfig(DEFAULT_CONFIG);
@@ -22,6 +23,11 @@ test("config round-trips defaults and keeps advanced values editable", () => {
   assert.equal(parsed.MAX_STAGES, 10);
   assert.equal(parsed.LOG_RETENTION_DAYS, 3);
   assert.equal(parsed.ISSUE_LABEL, "ready-for-agent");
+  assert.equal(parsed.TASK_SOURCE, "local");
+});
+
+test("config treats missing task source as the legacy GitHub mode", () => {
+  assert.equal(parseEnvConfig("BASE_BRANCH=main\n").TASK_SOURCE, "github");
 });
 
 test("config rejects unsafe concurrency and invalid numeric values", () => {
@@ -85,6 +91,7 @@ printf '%s\\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trun
       language: "en",
       retentionDays: 7,
       yes: true,
+      taskSource: "github",
       model: "gpt-test",
       reasoning: "high",
     });
@@ -107,4 +114,51 @@ printf '%s\\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trun
     await readFile(join(root, ".lfi", "task-prompt.md"), "utf8"),
     /Use \$implement/u,
   );
+});
+
+test("local init works without gh or a remote and tracks only task documents", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-local-init-"));
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  const ghMarker = join(root, "gh-called");
+  await writeFile(
+    join(bin, "gh"),
+    `#!/bin/sh
+touch '${ghMarker}'
+exit 1
+`,
+  );
+  await chmod(join(bin, "gh"), 0o755);
+  await runCommand("git", ["init", "-b", "main"], { cwd: root });
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${bin}:${previousPath}`;
+  try {
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: {} }));
+    await initializeProject({
+      cwd: root,
+      language: "ru",
+      retentionDays: 3,
+      yes: true,
+      taskSource: "local",
+    });
+  } finally {
+    process.env.PATH = previousPath;
+  }
+
+  const config = parseEnvConfig(
+    await readFile(join(root, ".lfi", "config.env"), "utf8"),
+  );
+  assert.equal(config.TASK_SOURCE, "local");
+  assert.equal(config.BASE_BRANCH, "main");
+  assert.equal(await stat(join(root, ".lfi", "tasks")).then((item) => item.isDirectory()), true);
+  assert.equal(await stat(join(root, ".lfi", "specs")).then((item) => item.isDirectory()), true);
+  const gitignore = await readFile(join(root, ".gitignore"), "utf8");
+  assert.match(gitignore, /\.lfi\/\*/u);
+  assert.match(gitignore, /!\.lfi\/tasks\//u);
+  assert.match(gitignore, /!\.lfi\/specs\//u);
+  assert.match(
+    await readFile(join(root, "docs", "agents", "issue-tracker.md"), "utf8"),
+    /\.lfi\/tasks/u,
+  );
+  await assert.rejects(stat(ghMarker));
 });

@@ -8,10 +8,13 @@ export const defaultTaskPrompt = (language: "en" | "ru"): string =>
 export const renderWorkerPrompt = (
   template: string,
   issue: GithubIssue,
-): string => `${template
+): string => {
+  const identifier = issue.id ?? `#${issue.number}`;
+  return `${template
   .replaceAll("{{ISSUE_URL}}", issue.url)
   .replaceAll("{{ISSUE_NUMBER}}", String(issue.number))
-  .replaceAll("{{ISSUE_TITLE}}", issue.title)}
+  .replaceAll("{{ISSUE_TITLE}}", issue.title)
+  .replaceAll("{{TASK_ID}}", identifier)}
 
 # Issue
 
@@ -19,7 +22,7 @@ ${issue.body}
 
 # LFI constraints
 
-- Work only on issue #${issue.number}.
+- Work only on ${identifier}.
 - Read the applicable AGENTS.md files and use installed user skills.
 - Schema changes, non-destructive migrations, dependencies, lockfile edits, root configuration, and file moves required by this issue are pre-approved.
 - Never deploy, use production SSH, modify production data, delete database volumes, expose secrets, or force-push.
@@ -28,6 +31,7 @@ ${issue.body}
 - Leave the worktree clean.
 - Your final response must conform to the output schema. Use status "completed" only when the entire issue is implemented, reviewed, tested, and committed. Otherwise use "incomplete" and explain the remaining work.
 `;
+};
 
 export const mergerPrompt = (
   context: string,

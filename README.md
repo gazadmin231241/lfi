@@ -2,19 +2,18 @@
 
 [Русский](README.ru.md)
 
-LFI turns ready GitHub Issues into reviewed, validated commits using Codex and
-isolated Git worktrees. It runs multiple issues in parallel, resolves
-integration conflicts, validates the combined result, pushes the repository's
-default branch, and closes completed issues.
+LFI turns local Markdown tasks or ready GitHub Issues into reviewed, validated
+commits using Codex and isolated Git worktrees. Local mode works without a
+remote; GitHub can be updated later as an explicit reporting mirror.
 
-> LFI can push directly to your default branch. Start with `lfi run --dry-run`
-> and use it only in repositories where this workflow is intentional.
+> GitHub mode can push directly to your default branch. Local mode never
+> fetches or pushes. Start with `lfi run --dry-run`.
 
 ## Requirements
 
 - Node.js 22+
 - Git
-- [GitHub CLI](https://cli.github.com/) authenticated with `gh auth login`
+- [GitHub CLI](https://cli.github.com/) only for GitHub mode, migration, or sync
 - [Codex CLI](https://developers.openai.com/codex/cli/) authenticated with
   `codex login`
 - pnpm for building/linking LFI from source
@@ -44,30 +43,37 @@ lfi run
 
 `lfi skills install` installs a pinned minimal bundle from
 [`mattpocock/skills`](https://github.com/mattpocock/skills). Open Codex in the
-target repository and run `$setup-matt-pocock-skills` once before relying on
-`to-spec`/`to-tickets`.
+target repository and use `to-spec`/`to-tickets`; local initialization writes
+their tracker contract automatically.
 
-## Issue contract
+## Task storage
 
-LFI selects open Issues with `ready-for-agent`, excluding `blocked`,
-`needs-info`, and `ready-for-human`. It respects open references in:
+`lfi init` asks where tasks live. New and non-interactive projects default to
+Local Markdown:
 
-```md
-## Blocked by
-
-- #123
+```text
+.lfi/tasks/LFI-2-implement-parser.md
+.lfi/specs/LFI-1-local-first-workflow.md
 ```
 
-The labels and base branch are editable in `.lfi/config.env`.
+These files are versioned; `.lfi/logs`, `.lfi/state`, and `.lfi/worktrees`
+remain local. Tasks use Markdown with YAML frontmatter and one shared `LFI-N`
+ID sequence. Persisted statuses are `ready`, `completed`, and `cancelled`;
+in-progress and blocked display states are derived.
+
+GitHub mode retains the existing `ready-for-agent` Issue contract and supports
+both textual and native dependencies.
 
 ## Commands
 
 ```text
-lfi init
-lfi doctor
-lfi run
+lfi init [--task-source local|github]
+lfi doctor [--sync]
+lfi run [LFI-ID...]
 lfi run --dry-run
-lfi status
+lfi status [--all|--ready|--blocked|--completed]
+lfi sync [github] [--repo OWNER/REPO] [--dry-run] [--force]
+lfi migrate local
 lfi logs
 lfi logs ISSUE_NUMBER
 lfi logs prune
@@ -81,12 +87,12 @@ lfi config language en|ru
 
 ## Configuration
 
-Normal initialization detects almost everything and only asks for log
-retention. Advanced values remain editable in `.lfi/config.env`, including:
+Normal initialization asks for task storage and log retention. Advanced values
+remain editable in `.lfi/config.env`, including:
 
 - Codex and merger model/reasoning
 - parallel workers and stage count
-- labels and default branch
+- task source, GitHub mirror repository, labels, and default branch
 - validation and worktree setup commands
 - inactivity timeout
 
@@ -97,12 +103,20 @@ Use `lfi init --advanced` to edit those values interactively during setup.
 
 ## Safety and completion
 
-Each issue gets a persistent worktree. A branch is eligible for integration
+Each task gets a persistent worktree. A branch is eligible for integration
 only after Codex reports structured completion, creates commits, and leaves the
 worktree clean. The combined integration branch must pass the configured
-validation command before LFI pushes it and closes Issues.
+validation command. Local mode merges the validated integration branch back
+into the current host branch using ordinary Git semantics and never pushes. If
+host changes prevent the merge, LFI preserves the integration worktree and
+prints a recovery command.
 
-If GitHub accepts the push but temporarily fails to close an Issue, LFI records
+`lfi sync` is a one-way local-to-GitHub mirror. It publishes specs as parents,
+tasks as children, dependencies where supported, and open/closed state. Sync is
+resumable, limits GitHub concurrency to three, retries transient network and
+502/503/504 failures, and persists each mapping to avoid duplicate Issues.
+
+In GitHub mode, if GitHub accepts the push but temporarily fails to close an Issue, LFI records
 the pending closure and retries it at the beginning of the next run. `lfi
 status` shows the active run while work is in progress and falls back to the
 most recent completed run.

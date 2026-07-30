@@ -1,5 +1,5 @@
 import { access, mkdir, rm } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 import { requireCommand, runCommand, runShell } from "./process.js";
 
@@ -19,6 +19,25 @@ export const gitResult = (
   args: readonly string[],
 ) => runCommand("git", args, { cwd });
 
+export const localRepoInfo = async (
+  cwd: string,
+): Promise<{ nameWithOwner: string; defaultBranch: string }> => {
+  const branch = await gitResult(cwd, ["branch", "--show-current"]).catch(() => {
+    throw new Error(
+      "Local mode requires Git. / Для локального режима требуется Git.",
+    );
+  });
+  if (branch.exitCode !== 0) {
+    throw new Error(
+      "Local mode requires a Git repository. / Для локального режима требуется Git-репозиторий.",
+    );
+  }
+  return {
+    nameWithOwner: basename(resolve(cwd)),
+    defaultBranch: branch.stdout.trim() || "main",
+  };
+};
+
 export const gitCommonDirectory = async (cwd: string): Promise<string> => {
   const value = (await git(cwd, ["rev-parse", "--git-common-dir"])).stdout.trim();
   return isAbsolute(value) ? value : resolve(cwd, value);
@@ -28,11 +47,13 @@ export const ensureIssueWorktree = async (options: {
   repoRoot: string;
   worktreesRoot: string;
   issueNumber: number;
-  baseBranch: string;
+  workItem?: string;
+  baseRef: string;
   setupCommand: string;
 }): Promise<{ path: string; branch: string; created: boolean }> => {
-  const path = join(options.worktreesRoot, `issue-${options.issueNumber}`);
-  const branch = `lfi/issue-${options.issueNumber}`;
+  const key = options.workItem ?? `issue-${options.issueNumber}`;
+  const path = join(options.worktreesRoot, key);
+  const branch = `lfi/${key}`;
   if (await exists(path)) return { path, branch, created: false };
   await mkdir(options.worktreesRoot, { recursive: true });
   const branchExists =
@@ -54,7 +75,7 @@ export const ensureIssueWorktree = async (options: {
           "-b",
           branch,
           path,
-          `origin/${options.baseBranch}`,
+          options.baseRef,
         ],
   );
   if (options.setupCommand) {
@@ -69,7 +90,7 @@ export const ensureIssueWorktree = async (options: {
 export const createIntegrationWorktree = async (options: {
   repoRoot: string;
   worktreesRoot: string;
-  baseBranch: string;
+  baseRef: string;
   runId: string;
 }): Promise<{ path: string; branch: string }> => {
   const path = join(options.worktreesRoot, `integration-${options.runId}`);
@@ -80,7 +101,7 @@ export const createIntegrationWorktree = async (options: {
     "-b",
     branch,
     path,
-    `origin/${options.baseBranch}`,
+    options.baseRef,
   ]);
   return { path, branch };
 };
@@ -90,14 +111,14 @@ export const worktreeClean = async (cwd: string): Promise<boolean> =>
 
 export const commitsAhead = async (
   cwd: string,
-  baseBranch: string,
+  baseRef: string,
 ): Promise<number> =>
   Number(
     (
       await git(cwd, [
         "rev-list",
         "--count",
-        `origin/${baseBranch}..HEAD`,
+        `${baseRef}..HEAD`,
       ])
     ).stdout.trim(),
   );
