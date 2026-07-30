@@ -42,12 +42,16 @@ export const formatLocalStatus = (
   const cancelled = tracker.tasks.filter(
     (task) => states.get(task.id) === "cancelled",
   );
-  const visible = options.all
+  const visibleTasks = options.all
     ? [...activeTasks, ...completed, ...cancelled]
     : [...activeTasks, ...completed.slice(0, 10)];
+  const visible = [...tracker.specs, ...visibleTasks];
   return visible
-    .filter((task) => {
-      const state = states.get(task.id);
+    .filter((document) => {
+      const state =
+        document.type === "spec"
+          ? trackerDisplayState(document, tracker, active)
+          : states.get(document.id);
       return (
         !options.filter ||
         (options.filter === "completed" && state === "done") ||
@@ -56,7 +60,7 @@ export const formatLocalStatus = (
       );
     })
     .map((task) => {
-      const state = states.get(task.id)!;
+      const state = trackerDisplayState(task, tracker, active);
       const blockers =
         state === "blocked"
           ? ` · ${localize(

@@ -1,16 +1,24 @@
 import { join } from "node:path";
 
+import { mapConcurrent } from "./concurrency.js";
 import { loadConfig } from "./config.js";
 import {
   listAllOpenIssueNumbers,
   listOpenIssues,
   nativeBlockers,
   repoInfo,
+  setIssueStatus,
 } from "./github.js";
-import { selectRunnableIssues } from "./issues.js";
+import {
+  githubTaskState,
+  selectRunnableIssues,
+} from "./issues.js";
 import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import type { WorkItem } from "./runner-types.js";
-import { LFI_TASK_LABEL } from "./tracker-contract.js";
+import {
+  LFI_SPEC_LABEL,
+  LFI_TASK_LABEL,
+} from "./tracker-contract.js";
 
 export const listWork = async (
   cwd: string,
@@ -46,6 +54,21 @@ export const listWork = async (
     issues.map((issue) => issue.number),
   );
   const selected = new Set(selectedIds);
+  await mapConcurrent(
+    issues.filter(
+      (issue) =>
+        !issue.labels.includes(LFI_SPEC_LABEL) &&
+        !completed.has(`#${issue.number}`),
+    ),
+    3,
+    (issue) =>
+      setIssueStatus(
+        cwd,
+        issue.number,
+        githubTaskState(issue, allOpen, blockers),
+        issue.title,
+      ),
+  );
   return selectRunnableIssues(issues, allOpen, {
     nativeBlockers: blockers,
   })

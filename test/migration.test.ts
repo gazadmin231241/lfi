@@ -32,16 +32,36 @@ test("migration preserves LFI document types and native relationships", async ()
       listOpenLfiIssues: async () => [
         {
           number: 10,
-          title: "Feature specification",
+          title: "[SPEC] LFI-20 — Feature specification",
           url: "https://github.test/10",
-          body: "Specify the feature.\n",
+          body: `Specify the feature.
+
+## Заблокировано задачами
+
+Нет — можно начинать сразу.
+
+---
+Управляется LFI из LFI-20.
+`,
           labels: ["lfi:spec"],
         },
         {
           number: 11,
-          title: "First task",
+          title: "[READY] LFI-21 — First task",
           url: "https://github.test/11",
-          body: "Build first.\n",
+          body: `Build first.
+
+## Родитель
+
+LFI-20
+
+## Заблокировано задачами
+
+Нет — можно начинать сразу.
+
+---
+Управляется LFI из LFI-21.
+`,
           labels: ["lfi:task"],
         },
         {
@@ -70,7 +90,11 @@ test("migration preserves LFI document types and native relationships", async ()
       join(root, ".lfi", "specs", "LFI-1-feature-specification.md"),
       "utf8",
     ),
-    /type: spec[\s\S]*github_issue: 10/u,
+    /type: spec[\s\S]*title: "Feature specification"[\s\S]*github_issue: 10/u,
+  );
+  assert.doesNotMatch(
+    await readFile(join(root, ".lfi", "tasks", "LFI-2-first-task.md"), "utf8"),
+    /\[READY\]|## Родитель|## Заблокировано|Управляется LFI/u,
   );
   assert.match(
     await readFile(join(root, ".lfi", "tasks", "LFI-3-second-task.md"), "utf8"),

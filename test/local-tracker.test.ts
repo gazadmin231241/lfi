@@ -142,6 +142,15 @@ test("tracker enforces informative filenames and completion timestamps", async (
 });
 
 test("local status derives explicit display prefixes", () => {
+  const spec = parseTrackerDocument(
+    taskSource
+      .replace("type: task", "type: spec")
+      .replaceAll("LFI-15", "LFI-14")
+      .replace("spec: LFI-14\n", "")
+      .replace("  - LFI-12\n", "")
+      .replace("github_issue: 362\n", ""),
+    "spec.md",
+  );
   const tasks = [
     parseTrackerDocument(
       taskSource.replace("github_issue: 362\n", "").replace("  - LFI-12\n", ""),
@@ -160,8 +169,9 @@ test("local status derives explicit display prefixes", () => {
       "completed.md",
     ),
   ];
-  const tracker = { documents: tasks, tasks, specs: [] };
+  const tracker = { documents: [spec, ...tasks], tasks, specs: [spec] };
   assert.deepEqual(formatLocalStatus(tracker, new Set(["LFI-15"])), [
+    "[SPEC] LFI-14 — Implement task parser",
     "[RUNNING] LFI-15 — Implement task parser",
     "[DONE] LFI-16 — Implement task parser",
   ]);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  githubTaskState,
   parseBlockedBy,
   selectRunnableIssues,
   type GithubIssue,
@@ -41,6 +42,31 @@ test("selects only lfi tasks whose blockers are closed", () => {
 test("does not treat references outside the Blocked by section as blockers", () => {
   const body = "## Parent\n\n#42\n\n## Blocked by\n\nNone — can start immediately.";
   assert.deepEqual(parseBlockedBy(body), []);
+});
+
+test("parses English and Russian managed blocker sections", () => {
+  assert.deepEqual(
+    parseBlockedBy(
+      "## Родитель\n\n#40\n\n## Заблокировано задачами\n\n- #41\n- #42",
+    ),
+    [41, 42],
+  );
+  assert.deepEqual(
+    parseBlockedBy(
+      "## Заблокировано задачами\n\nНет — можно начинать сразу; контекст #99.",
+    ),
+    [],
+  );
+});
+
+test("derives GitHub task readiness from textual and native blockers", () => {
+  const task = issue(2, ["lfi:task"], "## Blocked by\n\n- #1");
+  assert.equal(githubTaskState(task, new Set([1])), "blocked");
+  assert.equal(githubTaskState(task, new Set()), "ready");
+  assert.equal(
+    githubTaskState(issue(3, ["lfi:task"]), new Set([1]), new Map([[3, [1]]])),
+    "blocked",
+  );
 });
 
 test("accepts a worker only after structured completion and a clean committed branch", () => {

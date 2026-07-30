@@ -20,7 +20,7 @@ name: ${name}
     return `${header}Apply the \`ready-for-agent\` triage label.\n`;
   }
   if (name === "to-tickets") {
-    return `${header}- **Execution model**\n- \`.scratch/<feature-slug>/issues/\`\nWhen the configured tracker vocabulary defines mutually exclusive execution-model labels, apply one.\n`;
+    return `${header}- \`.scratch/<feature-slug>/issues/\`\nApply the \`ready-for-agent\` triage label.\n`;
   }
   return `${header}Original instructions.\n`;
 };
@@ -48,15 +48,18 @@ name: example
   assert.match(spec, /lfi:tracker-contract/u);
   assert.match(spec, /\.lfi\/specs/u);
   assert.match(spec, /lfi:spec/u);
+  assert.match(spec, /\[SPEC\]/u);
   assert.match(spec, /take precedence/u);
 
   const tickets = adaptLfiSkill(
     "to-tickets",
-    `${frontmatter}- **Execution model**\n- \`.scratch/<feature-slug>/issues/\`\nWhen the configured tracker vocabulary defines mutually exclusive execution-model labels, apply one.\n`,
+    `${frontmatter}- \`.scratch/<feature-slug>/issues/\`\nApply the \`ready-for-agent\` triage label.\n`,
   );
   assert.match(tickets, /\.lfi\/tasks/u);
   assert.match(tickets, /lfi:task/u);
+  assert.match(tickets, /\[READY\].*\[BLOCKED\]/su);
   assert.match(tickets, /must not ask for an execution model/u);
+  assert.match(tickets, /Never[\s\S]*ready-for-agent/u);
   assert.equal(adaptLfiSkill("to-tickets", tickets), tickets);
 });
 
@@ -85,7 +88,7 @@ test("skill install and update apply the LFI adaptation before replacement", asy
   );
   assert.match(
     await readFile(join(destinationRoot, "to-tickets", "SKILL.md"), "utf8"),
-    /\.lfi\/tasks[\s\S]*must not ask for an execution model/u,
+    /\.lfi\/tasks[\s\S]*Never[\s\S]*ready-for-agent/u,
   );
 
   const beforeFailure = await readFile(

@@ -16,6 +16,10 @@ export const LOCAL_IGNORE_BLOCK = `${IGNORE_BEGIN}
 ${IGNORE_END}
 `;
 export const TRACKER_CONTRACT_MARKER = "<!-- lfi:tracker-contract -->";
+const TRACKER_CONTRACT_BEGIN = "<!-- lfi:tracker-contract:begin -->";
+const TRACKER_CONTRACT_END = "<!-- lfi:tracker-contract:end -->";
+const AGENT_TRACKER_BEGIN = "<!-- lfi:agent-tracker:begin -->";
+const AGENT_TRACKER_END = "<!-- lfi:agent-tracker:end -->";
 
 const exists = (path: string): Promise<boolean> =>
   access(path).then(
@@ -26,36 +30,64 @@ const exists = (path: string): Promise<boolean> =>
 const configureAgentInstructions = async (
   cwd: string,
   language: Language,
+  taskSource: TaskSource,
 ): Promise<void> => {
   const claude = join(cwd, "CLAUDE.md");
   const agents = join(cwd, "AGENTS.md");
   const path = (await exists(claude)) ? claude : agents;
   const source = await readFile(path, "utf8").catch(() => "");
-  if (
-    source.includes("docs/agents/issue-tracker.md") ||
-    source.includes("### Issue tracker") ||
-    source.includes("### Трекер задач")
-  ) {
-    return;
-  }
-  const block = localize(
-    language,
-    `## Agent skills
+  const storage = taskSource === "local"
+    ? localize(
+        language,
+        "Tasks and specs use LFI Local Markdown.",
+        "Задачи и спецификации используют LFI Local Markdown.",
+      )
+    : localize(
+        language,
+        "Tasks and specs use GitHub Issues with the LFI tracker contract.",
+        "Задачи и спецификации используют GitHub Issues по контракту трекера LFI.",
+      );
+  const block = localize(language, `${AGENT_TRACKER_BEGIN}
+## Agent skills
 
 ### Issue tracker
 
-Tasks and specs use LFI Local Markdown. See \`docs/agents/issue-tracker.md\`.
+${storage} See \`docs/agents/issue-tracker.md\`.
+${AGENT_TRACKER_END}
 `,
-    `## Навыки агентов
+  `${AGENT_TRACKER_BEGIN}
+## Навыки агентов
 
 ### Трекер задач
 
-Задачи и спецификации используют LFI Local Markdown. См. \`docs/agents/issue-tracker.md\`.
-`,
+${storage} См. \`docs/agents/issue-tracker.md\`.
+${AGENT_TRACKER_END}
+`);
+  const managed = new RegExp(
+    `${AGENT_TRACKER_BEGIN}[\\s\\S]*?${AGENT_TRACKER_END}\\r?\\n?`,
+    "u",
   );
+  const legacyManaged =
+    /## (?:Agent skills|Навыки агентов)\s+### (?:Issue tracker|Трекер задач)\s+(?:Tasks and specs use|Задачи и спецификации используют)[^\n]*\s+(?:See|См\.) `docs\/agents\/issue-tracker\.md`\.\r?\n?/u;
+  if (
+    !managed.test(source) &&
+    !legacyManaged.test(source) &&
+    (
+      source.includes("docs/agents/issue-tracker.md") ||
+      source.includes("### Issue tracker") ||
+      source.includes("### Трекер задач")
+    )
+  ) {
+    return;
+  }
+  const updated = managed.test(source)
+    ? source.replace(managed, block)
+    : legacyManaged.test(source)
+      ? source.replace(legacyManaged, block.trimEnd())
+      : `${source}${source && !source.endsWith("\n") ? "\n" : ""}${source ? "\n" : ""}${block}`;
   await writeFile(
     path,
-    `${source}${source && !source.endsWith("\n") ? "\n" : ""}${source ? "\n" : ""}${block}`,
+    updated,
   );
 };
 
@@ -127,11 +159,10 @@ GitHub Issues с меткой \`lfi:task\`. \`$to-spec\` публикует то
 \`lfi:spec\`. \`$to-tickets\` публикует Issues с \`lfi:task\` и использует
 нативные родительские связи и зависимости.`,
         );
-  await writeFile(
-    guidePath,
-    localize(
+  const contract = localize(
       language,
-      `${TRACKER_CONTRACT_MARKER}
+      `${TRACKER_CONTRACT_BEGIN}
+${TRACKER_CONTRACT_MARKER}
 # Issue tracker: LFI
 
 ${storage}
@@ -142,8 +173,10 @@ LFI configuration chooses models.
 
 Use \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\`, and \`[DONE]\` as
 the title/status prefixes. Specifications are never executable.
+${TRACKER_CONTRACT_END}
 `,
-      `${TRACKER_CONTRACT_MARKER}
+      `${TRACKER_CONTRACT_BEGIN}
+${TRACKER_CONTRACT_MARKER}
 # Трекер задач: LFI
 
 ${storage}
@@ -154,10 +187,25 @@ ${storage}
 
 Используйте \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\` и \`[DONE]\`
 как префиксы названия и статуса. Спецификации никогда не исполняются.
+${TRACKER_CONTRACT_END}
 `,
-    ),
+    );
+  const source = await readFile(guidePath, "utf8").catch(() => "");
+  const managed = new RegExp(
+    `${TRACKER_CONTRACT_BEGIN}[\\s\\S]*?${TRACKER_CONTRACT_END}\\r?\\n?`,
+    "u",
   );
-  await configureAgentInstructions(cwd, language);
+  const legacyManaged = new RegExp(
+    `${TRACKER_CONTRACT_MARKER}[\\s\\S]*?(?:Specifications are never executable\\.|Спецификации никогда не исполняются\\.)\\r?\\n?`,
+    "u",
+  );
+  const updated = managed.test(source)
+    ? source.replace(managed, contract)
+    : legacyManaged.test(source)
+      ? source.replace(legacyManaged, contract.trimEnd())
+      : `${source}${source && !source.endsWith("\n") ? "\n" : ""}${source ? "\n" : ""}${contract}`;
+  await writeFile(guidePath, updated);
+  await configureAgentInstructions(cwd, language, taskSource);
 };
 
 export const configureLocalTracker = async (

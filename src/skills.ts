@@ -29,14 +29,18 @@ export const SKILL_PATHS = [
 
 const SKILL_OVERRIDE_MARKER = "<!-- lfi:skill-override -->";
 
-const skillAnchors: Readonly<Record<string, readonly string[]>> = {
+type AdaptableSkill = "to-spec" | "to-tickets";
+
+const skillAnchors: Readonly<Record<AdaptableSkill, readonly string[]>> = {
   "to-spec": ["Apply the `ready-for-agent` triage label"],
   "to-tickets": [
-    "**Execution model**",
     ".scratch/<feature-slug>/issues/",
-    "execution-model labels",
+    "Apply the `ready-for-agent` triage label",
   ],
 };
+
+const isAdaptableSkill = (name: string): name is AdaptableSkill =>
+  name === "to-spec" || name === "to-tickets";
 
 const skillOverride = (name: "to-spec" | "to-tickets"): string =>
   name === "to-spec"
@@ -50,7 +54,8 @@ tracker, path, and label instruction in this skill:
 - In Local Markdown mode, allocate the next shared \`LFI-N\` and publish one
   \`type: spec\` document in \`.lfi/specs/\`.
 - In GitHub mode, publish an Issue labelled only with the LFI-managed type
-  label \`lfi:spec\`; never add \`lfi:task\` or \`ready-for-agent\`.
+  label \`lfi:spec\`, with a \`[SPEC]\` title; never add \`lfi:task\`,
+  \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
 - A specification is not executable.
 
 If the marker is absent, follow the original process below unchanged.
@@ -65,8 +70,9 @@ tracker, path, label, and execution-model instruction in this skill:
 
 - In Local Markdown mode, publish one \`type: task\` document per ticket in
   \`.lfi/tasks/\`, using the shared \`LFI-N\` sequence and \`spec: LFI-N\`.
-- In GitHub mode, publish Issues labelled with the LFI-managed type label
-  \`lfi:task\` and use native parent and dependency relationships.
+- In GitHub mode, publish Issues with \`lfi:task\`, a \`[READY]\` or
+  \`[BLOCKED]\` title, and native parent and dependency relationships. Never
+  add \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
 - The skill must not ask for an execution model or assign model labels.
 - Do not publish LFI tracker documents under \`.scratch/\`.
 
@@ -75,9 +81,9 @@ If the marker is absent, follow the original process below unchanged.
 `;
 
 export const adaptLfiSkill = (name: string, source: string): string => {
-  if (!(name in skillAnchors)) return source;
+  if (!isAdaptableSkill(name)) return source;
   if (source.includes(SKILL_OVERRIDE_MARKER)) return source;
-  const missing = skillAnchors[name]!.filter((anchor) => !source.includes(anchor));
+  const missing = skillAnchors[name].filter((anchor) => !source.includes(anchor));
   const frontmatterEnd = source.indexOf("\n---\n", 4);
   if (!source.startsWith("---\n") || frontmatterEnd < 0 || missing.length > 0) {
     throw new Error(
@@ -85,9 +91,7 @@ export const adaptLfiSkill = (name: string, source: string): string => {
     );
   }
   const insertion = frontmatterEnd + "\n---\n".length;
-  return `${source.slice(0, insertion)}\n${skillOverride(
-    name as "to-spec" | "to-tickets",
-  )}${source.slice(insertion)}`;
+  return `${source.slice(0, insertion)}\n${skillOverride(name)}${source.slice(insertion)}`;
 };
 
 const defaultSkillRoot = join(homedir(), ".agents", "skills");
@@ -96,6 +100,20 @@ const exists = async (path: string) =>
     () => true,
     () => false,
   );
+
+const directoriesDiffer = async (
+  destination: string,
+  source: string,
+): Promise<boolean> =>
+  (
+    await runCommand("git", [
+      "diff",
+      "--no-index",
+      "--quiet",
+      destination,
+      source,
+    ])
+  ).exitCode !== 0;
 
 const fetchBundle = async (): Promise<string> => {
   const temp = await mkdtemp(join(tmpdir(), "lfi-skills-"));
@@ -168,14 +186,7 @@ export const installSkills = async (
         continue;
       }
       if (name === "to-spec" || name === "to-tickets") {
-        const comparison = await runCommand("git", [
-          "diff",
-          "--no-index",
-          "--quiet",
-          destination,
-          source,
-        ]);
-        if (comparison.exitCode !== 0) {
+        if (await directoriesDiffer(destination, source)) {
           candidates.push({ name, source, destination });
         }
         continue;
@@ -195,14 +206,9 @@ export const installSkills = async (
         }
         continue;
       }
-      const comparison = await runCommand("git", [
-        "diff",
-        "--no-index",
-        "--quiet",
-        destination,
-        source,
-      ]);
-      if (comparison.exitCode !== 0) candidates.push({ name, source, destination });
+      if (await directoriesDiffer(destination, source)) {
+        candidates.push({ name, source, destination });
+      }
     }
     if (options.update) {
       console.log(

@@ -4,8 +4,16 @@ export const LFI_TASK_LABEL = "lfi:task";
 export const GITHUB_TYPE_LABELS: ReadonlyArray<
   readonly [name: string, color: string, description: string]
 > = [
-  [LFI_SPEC_LABEL, "5319E7", "LFI specification; not executable"],
-  [LFI_TASK_LABEL, "1D76DB", "LFI executable task"],
+  [
+    LFI_SPEC_LABEL,
+    "5319E7",
+    "LFI specification; not executable / спецификация LFI; не исполняется",
+  ],
+  [
+    LFI_TASK_LABEL,
+    "1D76DB",
+    "LFI executable task / исполняемая задача LFI",
+  ],
 ];
 
 export const STATUS_PREFIX = {
@@ -15,3 +23,6 @@ export const STATUS_PREFIX = {
   blocked: "[BLOCKED]",
   done: "[DONE]",
 } as const;
+
+export const withoutStatusPrefix = (title: string): string =>
+  title.replace(/^\[(?:SPEC|READY|RUNNING|BLOCKED|DONE)\]\s+/u, "");

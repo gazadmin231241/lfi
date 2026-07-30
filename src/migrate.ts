@@ -7,7 +7,11 @@ import {
   nativeParents,
   repoInfo,
 } from "./github.js";
-import type { GithubIssue } from "./issues.js";
+import {
+  type GithubIssue,
+  withoutManagedGithubSections,
+  withoutManagedGithubTitle,
+} from "./issues.js";
 import {
   loadLocalTracker,
   nextRepositoryLfiId,
@@ -34,11 +38,6 @@ const slug = (title: string): string =>
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-|-$/gu, "")
     .slice(0, 80) || "task";
-
-const withoutBlockedBy = (body: string): string =>
-  body
-    .replace(/^##\s+Blocked by\s*$[\s\S]*?(?=^##\s+|\s*$)/imu, "")
-    .trimStart();
 
 const defaultSource = async (
   cwd: string,
@@ -94,6 +93,7 @@ export const migrateToLocal = async (
   const created: TrackerDocument[] = [];
   for (const issue of issues.sort((a, b) => a.number - b.number)) {
     const id = issueIds.get(issue.number)!;
+    const title = withoutManagedGithubTitle(issue.title);
     const type = issue.labels.includes(LFI_SPEC_LABEL) ? "spec" : "task";
     const parentNumber = parents.get(issue.number);
     const spec =
@@ -114,7 +114,7 @@ export const migrateToLocal = async (
       id,
       number: Number(id.slice(4)),
       type,
-      title: issue.title,
+      title,
       status: "ready",
       ...(spec ? { spec } : {}),
       blockedBy:
@@ -125,11 +125,11 @@ export const migrateToLocal = async (
             })
           : [],
       githubIssue: issue.number,
-      body: withoutBlockedBy(issue.body),
+      body: withoutManagedGithubSections(issue.body),
       path: join(
         lfiRoot,
         type === "spec" ? "specs" : "tasks",
-        `${id}-${slug(issue.title)}.md`,
+        `${id}-${slug(title)}.md`,
       ),
     };
     await saveTrackerDocument(document);

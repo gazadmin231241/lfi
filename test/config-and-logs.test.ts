@@ -11,6 +11,7 @@ import {
   validateConfig,
 } from "../src/config.js";
 import { initializeProject } from "../src/init.js";
+import { configureTrackerContract } from "../src/local-setup.js";
 import { pruneExpiredRunLogs } from "../src/logs.js";
 import { runCommand } from "../src/process.js";
 
@@ -140,6 +141,40 @@ esac
   const calls = await readFile(ghCalls, "utf8");
   assert.match(calls, /label create lfi:spec/u);
   assert.match(calls, /label create lfi:task/u);
+  const agentInstructions = await readFile(join(root, "AGENTS.md"), "utf8");
+  assert.match(agentInstructions, /GitHub Issues/u);
+  assert.doesNotMatch(agentInstructions, /use LFI Local Markdown/u);
+});
+
+test("tracker contract upgrades preserve text around the legacy marker", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-guide-upgrade-"));
+  const directory = join(root, "docs", "agents");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "issue-tracker.md"),
+    `User preface.
+
+<!-- lfi:tracker-contract -->
+# Issue tracker: LFI
+
+Old managed contract. Specifications are never executable.
+
+User appendix.
+`,
+  );
+
+  await configureTrackerContract(root, "en", "local");
+  const guide = await readFile(join(directory, "issue-tracker.md"), "utf8");
+  assert.match(guide, /^User preface\./u);
+  assert.match(guide, /User appendix\.\s*$/u);
+  assert.match(guide, /lfi:tracker-contract:begin/u);
+
+  await configureTrackerContract(root, "en", "github");
+  assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /GitHub Issues/u);
+  await configureTrackerContract(root, "en", "local");
+  const agents = await readFile(join(root, "AGENTS.md"), "utf8");
+  assert.match(agents, /LFI Local Markdown/u);
+  assert.doesNotMatch(agents, /Tasks and specs use GitHub Issues/u);
 });
 
 test("local init works without gh or a remote and tracks only task documents", async () => {
@@ -193,6 +228,7 @@ exit 1
     join(root, "docs", "agents", "issue-tracker.md"),
     "utf8",
   );
+  assert.match(localGuide, /^custom tracker guide/mu);
   assert.match(localGuide, /\.lfi\/specs/u);
   assert.match(localGuide, /\.lfi\/tasks/u);
   assert.match(localGuide, /lfi:spec/u);

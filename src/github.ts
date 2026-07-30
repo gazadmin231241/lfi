@@ -3,7 +3,11 @@ import { withGithubRetry } from "./github-resilience.js";
 import type { GithubIssue } from "./issues.js";
 import { localize, type Language } from "./i18n.js";
 import { mapConcurrent } from "./concurrency.js";
-import { GITHUB_TYPE_LABELS } from "./tracker-contract.js";
+import {
+  GITHUB_TYPE_LABELS,
+  STATUS_PREFIX,
+  withoutStatusPrefix,
+} from "./tracker-contract.js";
 
 interface GhIssue {
   number: number;
@@ -158,10 +162,43 @@ export const closeIssue = async (
     language === "ru"
       ? `Выполнено LFI и опубликовано в ${sha}.`
       : `Completed by LFI and published in ${sha}.`;
+  await setIssueStatus(cwd, number, "done");
   await gh(
     cwd,
     ["issue", "close", String(number), "--comment", comment],
   );
+};
+
+type ExecutableIssueState = "ready" | "running" | "blocked" | "done";
+
+export const setIssueStatus = async (
+  cwd: string,
+  number: number,
+  state: ExecutableIssueState,
+  knownTitle?: string,
+): Promise<void> => {
+  const title =
+    knownTitle ??
+    (
+      await gh(cwd, [
+        "issue",
+        "view",
+        String(number),
+        "--json",
+        "title",
+        "--jq",
+        ".title",
+      ])
+    ).stdout.trim();
+  const desired = `${STATUS_PREFIX[state]} ${withoutStatusPrefix(title)}`;
+  if (desired === title) return;
+  await gh(cwd, [
+    "issue",
+    "edit",
+    String(number),
+    "--title",
+    desired,
+  ]);
 };
 
 export const commentFinalFailure = async (

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { runCodex } from "./codex.js";
 import { mapConcurrent } from "./concurrency.js";
 import { loadConfig } from "./config.js";
-import { closeIssue, commentFinalFailure } from "./github.js";
+import { closeIssue, commentFinalFailure, setIssueStatus } from "./github.js";
 import {
   commitsAhead,
   ensureIssueWorktree,
@@ -259,6 +259,11 @@ export const runLfi = async (
         }, null, 2)}\n`,
       );
       if (runnable.length === 0) break;
+      if (config.TASK_SOURCE === "github") {
+        await mapConcurrent(runnable, 3, (issue) =>
+          setIssueStatus(cwd, issue.number, "running", issue.title),
+        );
+      }
       console.log(
         `${localize(language, "Runnable", "Доступны")}: ${runnable.map((item) => item.id).join(", ")}`,
       );
@@ -361,6 +366,7 @@ export const runLfi = async (
     const unresolved = [...attempted].filter(([id]) => !completed.has(id));
     if (config.TASK_SOURCE === "github") {
       for (const [id] of unresolved) {
+        await setIssueStatus(cwd, Number(id.slice(1)), "ready").catch(() => undefined);
         await commentFinalFailure(cwd, Number(id.slice(1)), language).catch(
           () => undefined,
         );
