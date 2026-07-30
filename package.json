@@ -1,0 +1,43 @@
+{
+  "name": "@gazadmin231241/lfi",
+  "version": "0.1.0",
+  "description": "LFI — Let's Fucking Implement. Turn ready GitHub issues into reviewed, validated commits with Codex and Git worktrees.",
+  "type": "module",
+  "bin": {
+    "lfi": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.ru.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "prepublishOnly": "pnpm check"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gazadmin231241/lfi.git"
+  },
+  "keywords": [
+    "codex",
+    "github-issues",
+    "git-worktree",
+    "agent",
+    "automation"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,132 @@
+import {
+  access,
+  cp,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+} from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { createInterface } from "node:readline/promises";
+
+import { requireCommand, runCommand } from "./process.js";
+
+export const SKILLS_COMMIT = "2ab958093e83e0ec752e6c1c5932da465bf23e0c";
+
+export const SKILL_PATHS = [
+  "skills/engineering/setup-matt-pocock-skills",
+  "skills/engineering/to-spec",
+  "skills/engineering/to-tickets",
+  "skills/engineering/prototype",
+  "skills/engineering/implement",
+  "skills/engineering/tdd",
+  "skills/engineering/code-review",
+  "skills/engineering/resolving-merge-conflicts",
+] as const;
+
+const skillRoot = join(homedir(), ".agents", "skills");
+const exists = async (path: string) =>
+  access(path).then(
+    () => true,
+    () => false,
+  );
+
+const fetchBundle = async (): Promise<string> => {
+  const temp = await mkdtemp(join(tmpdir(), "lfi-skills-"));
+  await requireCommand("git", [
+    "clone",
+    "--quiet",
+    "--filter=blob:none",
+    "--no-checkout",
+    "https://github.com/mattpocock/skills.git",
+    temp,
+  ]);
+  await requireCommand("git", ["sparse-checkout", "set", ...SKILL_PATHS], {
+    cwd: temp,
+  });
+  await requireCommand("git", ["checkout", "--quiet", SKILLS_COMMIT], {
+    cwd: temp,
+  });
+  return temp;
+};
+
+export const listSkillStatus = async (): Promise<
+  Array<{ name: string; installed: boolean; hasOpenAiMetadata: boolean }>
+> =>
+  Promise.all(
+    SKILL_PATHS.map(async (path) => {
+      const name = basename(path);
+      return {
+        name,
+        installed: await exists(join(skillRoot, name, "SKILL.md")),
+        hasOpenAiMetadata: await exists(
+          join(skillRoot, name, "agents", "openai.yaml"),
+        ),
+      };
+    }),
+  );
+
+export const installSkills = async (
+  options: { update?: boolean; yes?: boolean } = {},
+): Promise<string[]> => {
+  const bundle = await fetchBundle();
+  const changed: string[] = [];
+  await mkdir(skillRoot, { recursive: true });
+  try {
+    const candidates: Array<{ name: string; source: string; destination: string }> = [];
+    for (const path of SKILL_PATHS) {
+      const name = basename(path);
+      const source = join(bundle, path);
+      const destination = join(skillRoot, name);
+      if (!(await exists(destination))) {
+        candidates.push({ name, source, destination });
+        continue;
+      }
+      if (!options.update) continue;
+      const comparison = await runCommand("git", [
+        "diff",
+        "--no-index",
+        "--quiet",
+        destination,
+        source,
+      ]);
+      if (comparison.exitCode !== 0) candidates.push({ name, source, destination });
+    }
+    if (options.update) {
+      console.log(
+        `Skill changes at ${SKILLS_COMMIT.slice(0, 12)}: ${candidates.map((item) => item.name).join(", ") || "none"}`,
+      );
+    }
+    if (
+      options.update &&
+      candidates.length > 0 &&
+      !options.yes &&
+      process.stdin.isTTY
+    ) {
+      const input = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await input.question(
+        `Update the LFI skill bundle to ${SKILLS_COMMIT.slice(0, 12)}? [y/N] `,
+      );
+      input.close();
+      if (!/^y/iu.test(answer.trim())) return [];
+    }
+    for (const { name, source, destination } of candidates) {
+      if (await exists(destination)) {
+        await rm(destination, { recursive: true, force: true });
+      }
+      await cp(source, destination, { recursive: true });
+      const metadata = join(destination, "agents", "openai.yaml");
+      if (!(await exists(metadata))) {
+        throw new Error(`${name} is missing agents/openai.yaml at pinned commit`);
+      }
+      changed.push(name);
+    }
+  } finally {
+    await rm(bundle, { recursive: true, force: true });
+  }
+  return changed;
+};
+
+export const readInstalledSkill = async (name: string): Promise<string> =>
+  readFile(join(skillRoot, name, "SKILL.md"), "utf8");
