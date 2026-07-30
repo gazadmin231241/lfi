@@ -1,4 +1,12 @@
-import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ReasoningEffort } from "./config.js";
@@ -23,8 +31,6 @@ export interface CodexRunResult {
   exitCode: number;
   status: "completed" | "incomplete" | undefined;
   summary: string;
-  compactLogPath: string;
-  rawOutput: string;
 }
 
 const parseFinal = (
@@ -91,82 +97,89 @@ export const runCodex = async (options: {
 }): Promise<CodexRunResult> => {
   await mkdir(options.log.directory, { recursive: true });
   const compactPath = join(options.log.directory, `${options.logName}.log`);
-  const artifactKey = `${options.logName}-${options.log.startedAt}-${options.log.iteration}`.replace(
-    /[^a-z0-9_.-]/giu,
-    "-",
-  );
-  const finalPath = join(options.log.directory, `.${artifactKey}.result.json`);
-  const schemaPath = join(options.log.directory, `.${artifactKey}.schema.json`);
-  if (options.structured !== false) {
-    await writeFile(schemaPath, `${JSON.stringify(workerSchema, null, 2)}\n`);
-  }
-  let lineBuffer = "";
-  const compactLines: string[] = [];
-  const args = [
-    "--ask-for-approval",
-    "never",
-    "exec",
-    "--json",
-    "--sandbox",
-    "workspace-write",
-    "--add-dir",
-    options.gitDirectory,
-    "-c",
-    `model_reasoning_effort="${options.reasoning}"`,
-    "-c",
-    "sandbox_workspace_write.network_access=true",
-    "-C",
-    options.cwd,
-    "-o",
-    finalPath,
-  ];
-  if (options.model) args.push("--model", options.model);
-  if (options.structured !== false) {
-    args.push("--output-schema", schemaPath);
-  }
-  args.push("-");
-  const result = await runCommand("codex", args, {
-    cwd: options.cwd,
-    input: options.prompt,
-    idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
-    onStdout: (chunk) => {
-      lineBuffer += chunk;
-      const lines = lineBuffer.split("\n");
-      lineBuffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const summary = eventSummary(line);
-        if (!summary) continue;
-        const text = redactSensitiveText(summary.text);
-        if (summary.showInTerminal) {
-          console.log(`[${options.prefix}] ${text}`);
-        }
-        compactLines.push(text);
-      }
-    },
-    onStderr: (chunk) => {
-      compactLines.push(redactSensitiveText(chunk));
-    },
-  });
-  const finalSource = await readFile(finalPath, "utf8").catch(() => "");
-  const parsed = parseFinal(finalSource);
-  const summary = redactSensitiveText(parsed.summary || result.stderr);
+  const artifacts = await mkdtemp(join(tmpdir(), "lfi-codex-"));
+  const finalPath = join(artifacts, "result.json");
+  const schemaPath = join(artifacts, "schema.json");
   await appendFile(
     compactPath,
     formatRunLogSection(
       options.log.startedAt,
       options.log.iteration,
-      `${compactLines.join("\n")}\n\nexit=${result.exitCode}\nstatus=${parsed.status ?? "missing"}\n${summary}`,
+      "",
     ),
   );
-  await Promise.all([
-    rm(finalPath, { force: true }),
-    rm(schemaPath, { force: true }),
-  ]);
-  return {
-    exitCode: result.exitCode,
-    status: parsed.status,
-    summary,
-    compactLogPath: compactPath,
-    rawOutput: result.stdout,
+  let lineBuffer = "";
+  let logWrites = Promise.resolve();
+  const appendDetail = (content: string): void => {
+    const redacted = redactSensitiveText(content);
+    logWrites = logWrites.then(() => appendFile(compactPath, redacted));
   };
+  const recordEvent = (line: string): void => {
+    const summary = eventSummary(line);
+    if (!summary) return;
+    const text = redactSensitiveText(summary.text);
+    if (summary.showInTerminal) {
+      const message = `[${options.prefix}] ${text}`;
+      if (options.log.output) options.log.output.log(message);
+      else console.log(message);
+    }
+    appendDetail(`${text}\n`);
+  };
+  try {
+    if (options.structured !== false) {
+      await writeFile(schemaPath, `${JSON.stringify(workerSchema, null, 2)}\n`);
+    }
+    const args = [
+      "--ask-for-approval",
+      "never",
+      "exec",
+      "--json",
+      "--sandbox",
+      "workspace-write",
+      "--add-dir",
+      options.gitDirectory,
+      "-c",
+      `model_reasoning_effort="${options.reasoning}"`,
+      "-c",
+      "sandbox_workspace_write.network_access=true",
+      "-C",
+      options.cwd,
+      "-o",
+      finalPath,
+    ];
+    if (options.model) args.push("--model", options.model);
+    if (options.structured !== false) {
+      args.push("--output-schema", schemaPath);
+    }
+    args.push("-");
+    const result = await runCommand("codex", args, {
+      cwd: options.cwd,
+      input: options.prompt,
+      idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
+      onStdout: (chunk) => {
+        lineBuffer += chunk;
+        const lines = lineBuffer.split("\n");
+        lineBuffer = lines.pop() ?? "";
+        for (const line of lines) recordEvent(line);
+      },
+      onStderr: (chunk) => {
+        appendDetail(chunk);
+      },
+    });
+    if (lineBuffer) recordEvent(lineBuffer);
+    const finalSource = await readFile(finalPath, "utf8").catch(() => "");
+    const parsed = parseFinal(finalSource);
+    const summary = redactSensitiveText(parsed.summary || result.stderr);
+    appendDetail(
+      `\nexit=${result.exitCode}\nstatus=${parsed.status ?? "missing"}\n${summary}\n`,
+    );
+    return {
+      exitCode: result.exitCode,
+      status: parsed.status,
+      summary,
+    };
+  } finally {
+    await logWrites;
+    await rm(artifacts, { recursive: true, force: true });
+  }
 };

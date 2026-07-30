@@ -10,7 +10,7 @@ import { localize } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
 import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import { recordLocalCompletion } from "./local-run-state.js";
-import { pruneExpiredRunLogs, writeFailureLog } from "./logs.js";
+import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
 import { printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
@@ -40,6 +40,7 @@ export const runLfi = async (
       ),
     );
   }
+  const startupErrors: string[] = [];
   if (config.TASK_SOURCE === "local") {
     await reconcileTrackerFilenames(
       await loadLocalTracker(lfiRoot),
@@ -55,7 +56,7 @@ export const runLfi = async (
             tracker.tasks.find((candidate) => candidate.id === id)?.status !==
             "completed",
         );
-        console.error(
+        startupErrors.push(
           localize(
             language,
             `${task.id} is blocked by ${unfinished.join(", ")}.`,
@@ -102,6 +103,8 @@ export const runLfi = async (
     retentionDays: config.LOG_RETENTION_DAYS,
     activeRunName: runId,
   });
+  const output = await createRunOutput(logsRoot, startedAt);
+  for (const message of startupErrors) output.error(message);
   try {
     if (config.TASK_SOURCE === "github") {
       const stillPending = [];
@@ -133,14 +136,19 @@ export const runLfi = async (
       );
       if (runnable.length === 0) break;
       iterations = stage;
-      const log = { directory: logsRoot, startedAt, iteration: stage };
+      const log = {
+        directory: logsRoot,
+        startedAt,
+        iteration: stage,
+        output,
+      };
       if (config.TASK_SOURCE === "github") {
         await mapConcurrent(runnable, 3, (issue) =>
           setIssueStatus(cwd, issue.number, "running", issue.title),
         );
       }
-      printIteration(language, stage, runnable.map((item) => item.id));
-      for (const issue of runnable) printWorkStarted(language, issue.id);
+      printIteration(output, language, stage, runnable.map((item) => item.id));
+      for (const issue of runnable) printWorkStarted(output, language, issue.id);
       const attempts = await mapConcurrent(
         runnable,
         config.MAX_PARALLEL,
@@ -159,12 +167,24 @@ export const runLfi = async (
       );
       for (const attempt of attempts) {
         attempted.set(attempt.issue.id, attempt.summary);
-        printWorkFinished(language, attempt.issue.id, attempt.accepted);
+        printWorkFinished(
+          output,
+          language,
+          attempt.issue.id,
+          attempt.accepted,
+        );
       }
       const accepted = attempts.filter((attempt) => attempt.accepted);
       if (accepted.length === 0) continue;
       try {
-        printIntegrationStarted(language, accepted.map((attempt) => ({ id: attempt.issue.id, branch: attempt.branch })));
+        printIntegrationStarted(
+          output,
+          language,
+          accepted.map((attempt) => ({
+            id: attempt.issue.id,
+            branch: attempt.branch,
+          })),
+        );
         const result = await integrateAttempts({
           cwd,
           worktreesRoot,
@@ -176,9 +196,9 @@ export const runLfi = async (
           config,
           gitDirectory,
           language,
-          onValidationStarted: () => printValidationStarted(language),
+          onValidationStarted: () => printValidationStarted(output, language),
         });
-        printIntegrationCompleted(language, branch);
+        printIntegrationCompleted(output, language, branch);
         if (config.TASK_SOURCE === "local") {
           await recordLocalCompletion(cwd, accepted);
         } else {
@@ -191,7 +211,7 @@ export const runLfi = async (
                 (item) => item.number !== attempt.issue.number,
               );
             } catch {
-              console.error(
+              output.error(
                 localize(
                   language,
                   `Published ${attempt.issue.id}, but closing it failed; the next run will retry.`,
@@ -213,17 +233,13 @@ export const runLfi = async (
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         await printIntegrationFailed(
+          output,
           language,
           reason,
           error instanceof ValidationFailure ? error.command : undefined,
           logsRoot,
         );
-        for (const attempt of accepted) {
-          attempted.set(attempt.issue.id, reason);
-          if (attempt.logName && attempt.rawOutput !== undefined) {
-            await writeFailureLog(log, attempt.logName, attempt.rawOutput);
-          }
-        }
+        for (const attempt of accepted) attempted.set(attempt.issue.id, reason);
         break;
       }
       if (isShutdownRequested()) {
@@ -267,7 +283,13 @@ export const runLfi = async (
       finishedAt: new Date().toISOString(),
     };
     await saveRunSummary(stateRoot, runId, summary);
-    await printRunSummary(language, [...completed], unresolved, logsRoot);
+    await printRunSummary(
+      output,
+      language,
+      [...completed],
+      unresolved,
+      logsRoot,
+    );
     await rm(currentStatePath, { force: true });
     if (config.TASK_SOURCE === "local") {
       await reconcileTrackerFilenames(
@@ -290,6 +312,7 @@ export const runLfi = async (
     );
     throw error;
   } finally {
+    await output.flush();
     await lock.close();
     await rm(lockPath, { force: true });
   }

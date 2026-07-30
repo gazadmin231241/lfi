@@ -8,7 +8,6 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
 
 const runHeader = /^--- Run started: ([^;]+); iteration: (\d+) ---$/mu;
 
@@ -16,6 +15,13 @@ export interface RunLogContext {
   directory: string;
   startedAt: string;
   iteration: number;
+  output?: RunOutput;
+}
+
+export interface RunOutput {
+  log: (message: string) => void;
+  error: (message: string) => void;
+  flush: () => Promise<void>;
 }
 
 export const redactSensitiveText = (source: string): string => {
@@ -78,20 +84,33 @@ export const appendRunLog = async (
   return path;
 };
 
-export const writeFailureLog = async (
-  context: RunLogContext,
-  name: string,
-  rawOutput: string,
-): Promise<string> => {
-  const failuresRoot = join(context.directory, "failures");
-  await mkdir(failuresRoot, { recursive: true });
-  const timestamp = context.startedAt.replaceAll(":", "-");
-  const path = join(
-    failuresRoot,
-    `${name}--${timestamp}--iteration-${context.iteration}.jsonl.gz`,
+export const createRunOutput = async (
+  logsRoot: string,
+  startedAt: string,
+): Promise<RunOutput> => {
+  await mkdir(logsRoot, { recursive: true });
+  const path = join(logsRoot, "run.log");
+  await appendFile(
+    path,
+    formatRunLogSection(startedAt, 0, ""),
   );
-  await writeFile(path, gzipSync(redactSensitiveText(rawOutput)));
-  return path;
+  let writes = Promise.resolve();
+  const write = (message: string): void => {
+    writes = writes.then(() => appendFile(path, `${message}\n`));
+  };
+  return {
+    log: (message) => {
+      const redacted = redactSensitiveText(message);
+      console.log(redacted);
+      write(redacted);
+    },
+    error: (message) => {
+      const redacted = redactSensitiveText(message);
+      console.error(redacted);
+      write(redacted);
+    },
+    flush: () => writes,
+  };
 };
 
 export const pruneExpiredRunLogs = async (
@@ -129,15 +148,20 @@ export const pruneExpiredRunLogs = async (
       continue;
     }
     if (entry.isDirectory() && entry.name === "failures") {
-      for (const failure of await readdir(join(logsRoot, entry.name), {
+      const failuresRoot = join(logsRoot, entry.name);
+      for (const failure of await readdir(failuresRoot, {
         withFileTypes: true,
       })) {
         if (!failure.isFile()) continue;
         const relativePath = join(entry.name, failure.name);
-        const path = join(logsRoot, relativePath);
+        const path = join(failuresRoot, failure.name);
         if ((await stat(path)).mtimeMs >= cutoff) continue;
         await rm(path, { force: true });
         removed.push(relativePath);
+      }
+      if ((await readdir(failuresRoot)).length === 0) {
+        await rm(failuresRoot, { recursive: true, force: true });
+        removed.push(entry.name);
       }
       continue;
     }

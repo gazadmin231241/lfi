@@ -157,18 +157,20 @@ force-push.
 ## Logs
 
 The terminal emphasizes iterations, worker completion, integration, validation,
-and the final result. Agent messages remain live and prefixed; commands, token
-usage, validation details, and successful-process stderr stay in the log files.
+and the final result. `.lfi/logs/run.log` mirrors that LFI-owned stdout/stderr
+stream in real time. The shell prompt itself is not part of the log.
 
 `.lfi/logs` is flat: local tasks use `LFI-2.log`, GitHub Issues use
 `issue-123.log`, and combined validation uses `integration.log`. Repeated
-attempts append timestamped iteration sections. Failed workers additionally
-retain compressed raw JSONL under `.lfi/logs/failures/`.
+attempts append timestamped iteration sections. Task logs stream readable agent
+messages, commands, token usage, stderr, exit status, and the final summary in
+real time; failed workers use the same task log instead of a separate raw
+artifact.
 
 `lfi logs` shows recent runs as a localized table. `lfi logs LFI-2` or `lfi
 logs 123` prints the latest task section and points to the full history. Log
-sections, failure artifacts, and legacy timestamp directories expire according
-to `LOG_RETENTION_DAYS` (three days by default); `0` retains them indefinitely.
+sections and legacy timestamp directories expire according to
+`LOG_RETENTION_DAYS` (three days by default); `0` retains them indefinitely.
 
 ## Development
 

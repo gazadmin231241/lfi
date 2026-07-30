@@ -1,8 +1,9 @@
-import { access, readdir } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
+import type { RunOutput } from "./logs.js";
 
 const majorRule = "=".repeat(50);
 const minorRule = "-".repeat(50);
@@ -11,30 +12,33 @@ const section = (rule: string, title: string, body: string): string =>
   `\n${rule}\n${title}\n${rule}\n\n${body}`;
 
 export const printIteration = (
+  output: RunOutput,
   language: Language,
   stage: number,
   ids: readonly string[],
 ): void => {
   const title = `${localize(language, "Iteration", "Итерация")} ${stage}`;
   const runnable = localize(language, "Runnable", "Доступны");
-  console.log(section(majorRule, title, `  ${runnable}: ${ids.join(", ")}`));
+  output.log(section(majorRule, title, `  ${runnable}: ${ids.join(", ")}`));
 };
 
 export const printWorkStarted = (
+  output: RunOutput,
   language: Language,
   id: string,
 ): void => {
-  console.log(
+  output.log(
     `\n  ${id}\n    ${localize(language, "Work started", "Работа началась")}`,
   );
 };
 
 export const printWorkFinished = (
+  output: RunOutput,
   language: Language,
   id: string,
   accepted: boolean,
 ): void => {
-  console.log(
+  output.log(
     `\n  ${id}\n    ${localize(
       language,
       accepted ? "Implementation completed" : "Implementation incomplete",
@@ -44,11 +48,12 @@ export const printWorkFinished = (
 };
 
 export const printIntegrationStarted = (
+  output: RunOutput,
   language: Language,
   branches: readonly { id: string; branch: string }[],
 ): void => {
   const title = localize(language, "Integration", "Интеграция");
-  console.log(
+  output.log(
     section(
       minorRule,
       title,
@@ -62,8 +67,11 @@ export const printIntegrationStarted = (
   );
 };
 
-export const printValidationStarted = (language: Language): void => {
-  console.log(
+export const printValidationStarted = (
+  output: RunOutput,
+  language: Language,
+): void => {
+  output.log(
     `    ${localize(
       language,
       "Validating combined changes...",
@@ -73,10 +81,11 @@ export const printValidationStarted = (language: Language): void => {
 };
 
 export const printIntegrationCompleted = (
+  output: RunOutput,
   language: Language,
   branch: string,
 ): void => {
-  console.log(
+  output.log(
     `    ${localize(
       language,
       "Combined validation passed",
@@ -90,6 +99,7 @@ export const printIntegrationCompleted = (
 };
 
 export const printIntegrationFailed = async (
+  output: RunOutput,
   language: Language,
   reason: string,
   validationCommand: string | undefined,
@@ -114,7 +124,7 @@ export const printIntegrationFailed = async (
         )}: .lfi/logs/integration.log`,
     )
     .catch(() => "");
-  console.error(
+  output.error(
     `    ${localize(
       language,
       "Integration failed",
@@ -127,6 +137,7 @@ const taskLogName = (id: string): string =>
   id.startsWith("#") ? `issue-${id.slice(1)}` : id;
 
 export const printRunSummary = async (
+  output: RunOutput,
   language: Language,
   completed: readonly string[],
   unresolved: readonly [string, string][],
@@ -155,13 +166,6 @@ export const printRunSummary = async (
           `      ${localize(language, "Log", "Лог")}: .lfi/logs/${taskLog}`,
         );
       }
-      const failures = await readdir(join(logsRoot, "failures")).catch(() => []);
-      const diagnostic = failures.filter((file) => file.startsWith(`${name}--`)).sort().at(-1);
-      if (diagnostic) {
-        lines.push(
-          `      ${localize(language, "Diagnostics", "Диагностика")}: .lfi/logs/failures/${diagnostic}`,
-        );
-      }
     }
   }
   if (lines.length === 0) {
@@ -169,5 +173,5 @@ export const printRunSummary = async (
       `  ${localize(language, "No runnable tasks", "Нет доступных задач")}`,
     );
   }
-  console.log(section(minorRule, title, lines.join("\n")));
+  output.log(section(minorRule, title, lines.join("\n")));
 };

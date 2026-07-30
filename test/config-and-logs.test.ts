@@ -116,6 +116,12 @@ new message
   assert.match(retained, /new message/u);
   await assert.rejects(stat(oldFailure));
   assert.equal(await readFile(newFailure, "utf8"), "new");
+
+  await pruneExpiredRunLogs(root, {
+    retentionDays: 3,
+    now: new Date("2026-08-10T12:00:00.000Z"),
+  });
+  await assert.rejects(stat(failures));
 });
 
 test("init creates an ignored, runnable project configuration from detected defaults", async () => {

@@ -41,6 +41,9 @@ export const runCommand = (
       stdio: ["pipe", "pipe", "pipe"],
     });
     activeChildren.add(child);
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") reject(error);
+    });
     let stdout = "";
     let stderr = "";
     let idleTimer: NodeJS.Timeout | undefined;

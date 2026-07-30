@@ -5,6 +5,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -255,6 +256,15 @@ exit 97
   assert.match(output, /  Completed: LFI-1/u);
   assert.doesNotMatch(output, /\$ /u);
   assert.doesNotMatch(output, /validation detail/u);
+  const runLog = await readFile(join(lfiRoot, "logs", "run.log"), "utf8");
+  assert.match(
+    runLog,
+    /Run started: .+; iteration: 0 ---\n[\s\S]*Iteration 1/u,
+  );
+  assert.equal(
+    runLog.slice(runLog.indexOf("\n", runLog.indexOf("--- Run started:")) + 1).trim(),
+    output.trim(),
+  );
   const successfulIntegrationLog = await readFile(
     join(lfiRoot, "logs", "integration.log"),
     "utf8",
@@ -323,6 +333,10 @@ exit 97
     ).then((source) => source.includes("status: ready")),
     true,
   );
+  assert.match(
+    await readFile(join(lfiRoot, "logs", "run.log"), "utf8"),
+    /LFI-2 заблокирована задачами LFI-3\./u,
+  );
 
   const failingPath = join(tasks, "LFI-4-failing.md");
   await writeFile(
@@ -367,21 +381,20 @@ printf '%s\\n' '{"status":"incomplete","summary":"blocked"}' > "$output"
     console.log = originalLog;
     process.env.PATH = originalPath;
   }
-  const failures = await readdir(join(lfiRoot, "logs", "failures"));
-  assert.equal(failures.length, 2);
-  assert.ok(failures.every((name) => /^LFI-4--.+--iteration-\d+\.jsonl\.gz$/u.test(name)));
-  assert.equal(
-    (await readdir(join(lfiRoot, "logs"))).some((name) =>
-      /^LFI-1.*\.jsonl\.gz$/u.test(name),
-    ),
-    false,
+  await assert.rejects(stat(join(lfiRoot, "logs", "failures")));
+  const failedTaskLog = await readFile(
+    join(lfiRoot, "logs", "LFI-4.log"),
+    "utf8",
   );
+  assert.match(failedTaskLog, /sed -n '1,40p' failing\.txt/u);
+  assert.match(failedTaskLog, /Could not complete the task\./u);
+  assert.match(failedTaskLog, /provider warning/u);
+  assert.match(failedTaskLog, /exit=0/u);
+  assert.match(failedTaskLog, /status=incomplete/u);
+  assert.match(failedTaskLog, /blocked/u);
   const failureOutput = failureTerminal.join("\n");
   assert.match(failureOutput, /Log: \.lfi\/logs\/LFI-4\.log/u);
-  assert.match(
-    failureOutput,
-    /Diagnostics: \.lfi\/logs\/failures\/LFI-4--.+--iteration-2\.jsonl\.gz/u,
-  );
+  assert.doesNotMatch(failureOutput, /Diagnostics:/u);
 
   const validationTaskPath = join(tasks, "LFI-5-validation-failure.md");
   const validationCodexCalls = join(root, "validation-codex-calls");
@@ -467,9 +480,5 @@ printf '%s\\n' '{"status":"completed","summary":"implemented"}' > "$output"
   );
   assert.match(integrationLog, /validation-line-1/u);
   assert.match(integrationLog, /validation-line-25/u);
-  assert.ok(
-    (await readdir(join(lfiRoot, "logs", "failures"))).some((name) =>
-      /^LFI-5--.+--iteration-1\.jsonl\.gz$/u.test(name),
-    ),
-  );
+  await assert.rejects(stat(join(lfiRoot, "logs", "failures")));
 });

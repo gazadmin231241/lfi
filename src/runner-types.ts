@@ -12,6 +12,4 @@ export interface Attempt {
   worktreePath: string;
   branch: string;
   logName?: string;
-  rawOutput?: string;
-  failureLogPath?: string;
 }

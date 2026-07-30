@@ -10,7 +10,7 @@ import {
   worktreeClean,
 } from "./git.js";
 import type { Language } from "./i18n.js";
-import { writeFailureLog, type RunLogContext } from "./logs.js";
+import type { RunLogContext } from "./logs.js";
 import { renderWorkerPrompt } from "./prompts.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
 import { mergeWithAgent } from "./runner-support.js";
@@ -82,9 +82,6 @@ export const attemptWork = async (options: {
       commitsAhead: await commitsAhead(worktree.path, options.baseRef),
       worktreeClean: await worktreeClean(worktree.path),
     });
-    const failureLogPath = evaluation.accepted
-      ? undefined
-      : await writeFailureLog(options.log, logName, codex.rawOutput);
     return {
       issue: options.issue,
       accepted: evaluation.accepted,
@@ -94,8 +91,6 @@ export const attemptWork = async (options: {
       worktreePath: worktree.path,
       branch: worktree.branch,
       logName,
-      rawOutput: codex.rawOutput,
-      ...(failureLogPath ? { failureLogPath } : {}),
     };
   } catch (error) {
     return {
