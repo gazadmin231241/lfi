@@ -122,10 +122,15 @@ only after Codex reports structured completion. Codex edits and validates files
 inside its `workspace-write` sandbox; because that sandbox intentionally keeps
 Git metadata read-only, the LFI host stages and commits a successful worker's
 changes. The combined integration branch must pass the configured validation
-command. Local mode merges the validated integration branch back into the
-current host branch using ordinary Git semantics and never pushes. If host
-changes prevent the merge, LFI preserves the integration worktree and prints a
-recovery command.
+command. If that command fails, LFI runs it against a separately prepared base
+worktree first. A base failure is reported without invoking Codex. If the base
+passes, the merger receives the exact redacted diagnostics and may change only
+paths already present in the integrated diff. LFI makes one repair attempt and
+does not send an accepted task back through implementation after an integration
+failure. Local mode merges the validated integration branch back into the
+current host branch using ordinary Git semantics and never pushes. Any
+integration failure preserves the integration worktree and prints its branch
+and path for recovery.
 
 `lfi sync` is a one-way local-to-GitHub mirror. It publishes specs as parents,
 tasks as children, fixed LFI type labels, dependencies where supported,

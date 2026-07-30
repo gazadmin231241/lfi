@@ -28,8 +28,12 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
    worker changes. Acceptance then requires commits ahead of the base and a
    clean worktree.
 8. Successful branches merge into a temporary integration worktree. Conflicts
-   and combined validation failures invoke the merger model with
-   `$resolving-merge-conflicts`.
+   invoke the merger model with `$resolving-merge-conflicts`. After a combined
+   validation failure, LFI first runs the same command in a separately prepared
+   base worktree. Base failures skip model repair. Otherwise the merger receives
+   redacted command output and may modify only paths in the integrated diff.
+   One failed integration repair stops the run and preserves the worktree
+   instead of re-running accepted implementation work.
 9. In local mode the validated integration branch merges to the host checkout
    without network access. In GitHub mode the base is pushed and Issues close
    only after validation.
