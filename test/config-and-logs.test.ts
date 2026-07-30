@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { DEFAULT_CONFIG, parseEnvConfig, serializeEnvConfig } from "../src/config.js";
+import {
+  DEFAULT_CONFIG,
+  parseEnvConfig,
+  serializeEnvConfig,
+  validateConfig,
+} from "../src/config.js";
 import { initializeProject } from "../src/init.js";
 import { pruneExpiredRunLogs } from "../src/logs.js";
 
@@ -17,6 +22,21 @@ test("config round-trips defaults and keeps advanced values editable", () => {
   assert.equal(parsed.MAX_STAGES, 10);
   assert.equal(parsed.LOG_RETENTION_DAYS, 3);
   assert.equal(parsed.ISSUE_LABEL, "ready-for-agent");
+});
+
+test("config rejects unsafe concurrency and invalid numeric values", () => {
+  assert.throws(
+    () => validateConfig({ ...DEFAULT_CONFIG, MAX_PARALLEL: 0 }),
+    /MAX_PARALLEL/u,
+  );
+  assert.throws(
+    () => validateConfig({ ...DEFAULT_CONFIG, LOG_RETENTION_DAYS: Number.NaN }),
+    /LOG_RETENTION_DAYS/u,
+  );
+  assert.throws(
+    () => parseEnvConfig("CODEX_REASONING_EFFORT=extreme\n"),
+    /unsupported/u,
+  );
 });
 
 test("log pruning removes expired runs but preserves active run", async () => {

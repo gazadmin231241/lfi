@@ -11,6 +11,7 @@ import { basename, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { requireCommand, runCommand } from "./process.js";
+import { localize, type Language } from "./i18n.js";
 
 export const SKILLS_COMMIT = "2ab958093e83e0ec752e6c1c5932da465bf23e0c";
 
@@ -68,8 +69,9 @@ export const listSkillStatus = async (): Promise<
   );
 
 export const installSkills = async (
-  options: { update?: boolean; yes?: boolean } = {},
+  options: { update?: boolean; yes?: boolean; language?: Language } = {},
 ): Promise<string[]> => {
+  const language = options.language ?? "en";
   const bundle = await fetchBundle();
   const changed: string[] = [];
   await mkdir(skillRoot, { recursive: true });
@@ -83,7 +85,21 @@ export const installSkills = async (
         candidates.push({ name, source, destination });
         continue;
       }
-      if (!options.update) continue;
+      if (!options.update) {
+        const installedMetadata = join(destination, "agents", "openai.yaml");
+        const sourceMetadata = join(source, "agents", "openai.yaml");
+        if (!(await exists(installedMetadata))) {
+          if (!(await exists(sourceMetadata))) {
+            throw new Error(
+              `${name} is missing agents/openai.yaml at pinned commit / в закреплённом коммите отсутствует agents/openai.yaml`,
+            );
+          }
+          await mkdir(join(destination, "agents"), { recursive: true });
+          await cp(sourceMetadata, installedMetadata);
+          changed.push(name);
+        }
+        continue;
+      }
       const comparison = await runCommand("git", [
         "diff",
         "--no-index",
@@ -95,7 +111,11 @@ export const installSkills = async (
     }
     if (options.update) {
       console.log(
-        `Skill changes at ${SKILLS_COMMIT.slice(0, 12)}: ${candidates.map((item) => item.name).join(", ") || "none"}`,
+        localize(
+          language,
+          `Skill changes at ${SKILLS_COMMIT.slice(0, 12)}: ${candidates.map((item) => item.name).join(", ") || "none"}`,
+          `Изменения навыков на ${SKILLS_COMMIT.slice(0, 12)}: ${candidates.map((item) => item.name).join(", ") || "нет"}`,
+        ),
       );
     }
     if (
@@ -106,7 +126,11 @@ export const installSkills = async (
     ) {
       const input = createInterface({ input: process.stdin, output: process.stdout });
       const answer = await input.question(
-        `Update the LFI skill bundle to ${SKILLS_COMMIT.slice(0, 12)}? [y/N] `,
+        localize(
+          language,
+          `Update the LFI skill bundle to ${SKILLS_COMMIT.slice(0, 12)}? [y/N] `,
+          `Обновить набор навыков LFI до ${SKILLS_COMMIT.slice(0, 12)}? [y/N] `,
+        ),
       );
       input.close();
       if (!/^y/iu.test(answer.trim())) return [];
@@ -118,7 +142,9 @@ export const installSkills = async (
       await cp(source, destination, { recursive: true });
       const metadata = join(destination, "agents", "openai.yaml");
       if (!(await exists(metadata))) {
-        throw new Error(`${name} is missing agents/openai.yaml at pinned commit`);
+        throw new Error(
+          `${name} is missing agents/openai.yaml at pinned commit / в закреплённом коммите отсутствует agents/openai.yaml`,
+        );
       }
       changed.push(name);
     }

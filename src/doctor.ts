@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 import { runCommand } from "./process.js";
+import { localize, type Language } from "./i18n.js";
 
 export interface DoctorCheck {
   name: string;
@@ -24,7 +25,10 @@ const requiredSkills = [
   "resolving-merge-conflicts",
 ];
 
-export const runDoctor = async (cwd: string): Promise<DoctorCheck[]> => {
+export const runDoctor = async (
+  cwd: string,
+  language: Language,
+): Promise<DoctorCheck[]> => {
   const commands: ReadonlyArray<readonly [string, readonly string[]]> = [
     ["git", ["--version"]],
     ["gh", ["auth", "status"]],
@@ -42,16 +46,29 @@ export const runDoctor = async (cwd: string): Promise<DoctorCheck[]> => {
     }),
   );
   const skillChecks = await Promise.all(
-    requiredSkills.map(async (skill) => ({
-      name: `$${skill}`,
-      ok: await exists(join(homedir(), ".agents", "skills", skill, "SKILL.md")),
-      detail: join("~/.agents/skills", skill),
-      required: true,
-    })),
+    requiredSkills.map(async (skill) => {
+      const directory = join(homedir(), ".agents", "skills", skill);
+      const [hasSkill, hasMetadata] = await Promise.all([
+        exists(join(directory, "SKILL.md")),
+        exists(join(directory, "agents", "openai.yaml")),
+      ]);
+      return {
+        name: `$${skill}`,
+        ok: hasSkill && hasMetadata,
+        detail: hasSkill && !hasMetadata
+          ? localize(
+              language,
+              `${join("~/.agents/skills", skill)} is missing agents/openai.yaml`,
+              `в ${join("~/.agents/skills", skill)} отсутствует agents/openai.yaml`,
+            )
+          : join("~/.agents/skills", skill),
+        required: true,
+      };
+    }),
   );
-  const setupConfigured =
-    (await exists(join(cwd, "docs", "agents", "issue-tracker.md"))) ||
-    (await exists(join(cwd, "CONTEXT.md")));
+  const setupConfigured = await exists(
+    join(cwd, "docs", "agents", "issue-tracker.md"),
+  );
   return [
     ...commandChecks,
     ...skillChecks,
@@ -59,8 +76,16 @@ export const runDoctor = async (cwd: string): Promise<DoctorCheck[]> => {
       name: "$setup-matt-pocock-skills",
       ok: setupConfigured,
       detail: setupConfigured
-        ? "project agent workflow detected"
-        : "open Codex and run $setup-matt-pocock-skills",
+        ? localize(
+            language,
+            "project agent workflow detected",
+            "настройка агентского процесса найдена",
+          )
+        : localize(
+            language,
+            "open Codex and run $setup-matt-pocock-skills",
+            "откройте Codex и выполните $setup-matt-pocock-skills",
+          ),
       required: false,
     },
   ];

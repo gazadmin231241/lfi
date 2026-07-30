@@ -10,6 +10,7 @@ import { createInterface } from "node:readline/promises";
 
 import {
   DEFAULT_CONFIG,
+  isReasoningEffort,
   saveConfig,
   type LfiConfig,
   type ReasoningEffort,
@@ -47,37 +48,69 @@ const askRetention = async (language: Language): Promise<number> => {
   return Number.isFinite(value) && value >= 0 ? value : 3;
 };
 
-const askAdvanced = async (config: LfiConfig): Promise<LfiConfig> => {
+const askAdvanced = async (
+  config: LfiConfig,
+  language: Language,
+): Promise<LfiConfig> => {
   const input = createInterface({ input: process.stdin, output: process.stdout });
-  const ask = async (label: string, current: string | number) =>
-    (await input.question(`${label} [${current || "Codex default"}] `)).trim() ||
+  const label = (english: string, russian: string) =>
+    language === "ru" ? russian : english;
+  const ask = async (name: string, current: string | number) =>
+    (await input.question(`${name} [${current || label("Codex default", "по умолчанию Codex")}] `)).trim() ||
     String(current);
+  const codexReasoning = await ask(
+    label("Codex reasoning", "Уровень рассуждений Codex"),
+    config.CODEX_REASONING_EFFORT,
+  );
+  const mergerReasoning = await ask(
+    label("Merger reasoning", "Уровень рассуждений при слиянии"),
+    config.MERGER_REASONING_EFFORT,
+  );
+  if (!isReasoningEffort(codexReasoning) || !isReasoningEffort(mergerReasoning)) {
+    input.close();
+    throw new Error(
+      label(
+        "Unsupported reasoning effort.",
+        "Указан неподдерживаемый уровень рассуждений.",
+      ),
+    );
+  }
   const result: LfiConfig = {
     ...config,
-    CODEX_MODEL: await ask("Codex model", config.CODEX_MODEL),
-    CODEX_REASONING_EFFORT: (await ask(
-      "Codex reasoning",
-      config.CODEX_REASONING_EFFORT,
-    )) as ReasoningEffort,
+    CODEX_MODEL: await ask(label("Codex model", "Модель Codex"), config.CODEX_MODEL),
+    CODEX_REASONING_EFFORT: codexReasoning,
     MERGER_MODEL: await ask(
-      "Merger model",
+      label("Merger model", "Модель для слияния"),
       config.MERGER_MODEL || config.CODEX_MODEL,
     ),
-    MERGER_REASONING_EFFORT: (await ask(
-      "Merger reasoning",
-      config.MERGER_REASONING_EFFORT,
-    )) as ReasoningEffort,
-    MAX_PARALLEL: Number(await ask("Parallel workers", config.MAX_PARALLEL)),
-    MAX_STAGES: Number(await ask("Maximum stages", config.MAX_STAGES)),
-    IDLE_TIMEOUT_MINUTES: Number(
-      await ask("Idle timeout (minutes)", config.IDLE_TIMEOUT_MINUTES),
+    MERGER_REASONING_EFFORT: mergerReasoning,
+    MAX_PARALLEL: Number(
+      await ask(label("Parallel workers", "Параллельных задач"), config.MAX_PARALLEL),
     ),
-    BASE_BRANCH: await ask("Base branch", config.BASE_BRANCH),
-    ISSUE_LABEL: await ask("Ready issue label", config.ISSUE_LABEL),
-    EXCLUDE_LABELS: await ask("Excluded labels", config.EXCLUDE_LABELS),
-    VALIDATE_COMMAND: await ask("Validation command", config.VALIDATE_COMMAND),
+    MAX_STAGES: Number(
+      await ask(label("Maximum stages", "Максимум этапов"), config.MAX_STAGES),
+    ),
+    IDLE_TIMEOUT_MINUTES: Number(
+      await ask(
+        label("Idle timeout (minutes)", "Тайм-аут бездействия (минуты)"),
+        config.IDLE_TIMEOUT_MINUTES,
+      ),
+    ),
+    BASE_BRANCH: await ask(label("Base branch", "Основная ветка"), config.BASE_BRANCH),
+    ISSUE_LABEL: await ask(
+      label("Ready issue label", "Метка готовой задачи"),
+      config.ISSUE_LABEL,
+    ),
+    EXCLUDE_LABELS: await ask(
+      label("Excluded labels", "Исключаемые метки"),
+      config.EXCLUDE_LABELS,
+    ),
+    VALIDATE_COMMAND: await ask(
+      label("Validation command", "Команда проверки"),
+      config.VALIDATE_COMMAND,
+    ),
     WORKTREE_SETUP_COMMAND: await ask(
-      "Worktree setup command",
+      label("Worktree setup command", "Команда подготовки worktree"),
       config.WORKTREE_SETUP_COMMAND,
     ),
   };
@@ -114,7 +147,7 @@ export const initializeProject = async (
     WORKTREE_SETUP_COMMAND: commands.setup,
   };
   if (options.advanced && process.stdin.isTTY && !options.yes) {
-    config = await askAdvanced(config);
+    config = await askAdvanced(config, options.language);
   }
 
   console.log(
@@ -122,8 +155,8 @@ export const initializeProject = async (
       ? [
           `Репозиторий: ${repo.nameWithOwner}`,
           `Ветка: ${config.BASE_BRANCH}`,
-          `Модель: ${config.CODEX_MODEL || "default Codex model"}`,
-          `Reasoning: ${config.CODEX_REASONING_EFFORT}`,
+          `Модель: ${config.CODEX_MODEL || "модель Codex по умолчанию"}`,
+          `Уровень рассуждений: ${config.CODEX_REASONING_EFFORT}`,
           `Параллельно: ${config.MAX_PARALLEL}`,
           `Этапов: ${config.MAX_STAGES}`,
           `Проверка: ${config.VALIDATE_COMMAND || "не определена"}`,
@@ -149,7 +182,13 @@ export const initializeProject = async (
         : "\nCreate configuration? [Y/n] ",
     );
     input.close();
-    if (/^n/iu.test(answer.trim())) throw new Error("Initialization cancelled.");
+    if (/^n/iu.test(answer.trim())) {
+      throw new Error(
+        options.language === "ru"
+          ? "Инициализация отменена."
+          : "Initialization cancelled.",
+      );
+    }
   }
 
   await Promise.all([

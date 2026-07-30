@@ -8,10 +8,16 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 
-import { loadConfig } from "./config.js";
+import { isReasoningEffort, loadConfig } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { initializeProject } from "./init.js";
-import { resolveLanguage, saveLanguage, t, type Language } from "./i18n.js";
+import {
+  localize,
+  resolveLanguage,
+  saveLanguage,
+  t,
+  type Language,
+} from "./i18n.js";
 import { pruneExpiredRunLogs } from "./logs.js";
 import { dryRun, runLfi } from "./runner.js";
 import { installSkills, listSkillStatus, SKILLS_COMMIT } from "./skills.js";
@@ -37,7 +43,9 @@ for (let index = 0; index < args.length; index++) {
 }
 
 process.once("SIGINT", () => {
-  console.error("\nStopping LFI; worktrees and state will be preserved...");
+  console.error(
+    "\nStopping LFI; worktrees and state will be preserved. / LFI останавливается; worktree и состояние будут сохранены...",
+  );
   requestShutdown();
 });
 process.once("SIGTERM", requestShutdown);
@@ -76,16 +84,16 @@ Usage:
   );
 };
 
-const requireConfig = async () => {
+const requireConfig = async (language: Language) => {
   const path = join(cwd, ".lfi", "config.env");
   await access(path).catch(() => {
-    throw new Error("No .lfi/config.env found. Run `lfi init` first.");
+    throw new Error(t(language, "noConfig"));
   });
   return loadConfig(path);
 };
 
-const printDoctor = async (): Promise<number> => {
-  const checks = await runDoctor(cwd);
+const printDoctor = async (language: Language): Promise<number> => {
+  const checks = await runDoctor(cwd, language);
   for (const check of checks) {
     console.log(`${check.ok ? "✓" : check.required ? "✗" : "!"} ${check.name}: ${check.detail}`);
   }
@@ -114,8 +122,8 @@ const showLogs = async (issue?: string): Promise<void> => {
   }
 };
 
-const pruneLogs = async (all: boolean): Promise<void> => {
-  const config = await requireConfig();
+const pruneLogs = async (all: boolean, language: Language): Promise<void> => {
+  const config = await requireConfig(language);
   const logsRoot = join(cwd, ".lfi", "logs");
   if (all) {
     const activeRun = await readFile(
@@ -134,7 +142,13 @@ const pruneLogs = async (all: boolean): Promise<void> => {
   const removed = await pruneExpiredRunLogs(logsRoot, {
     retentionDays: config.LOG_RETENTION_DAYS,
   });
-  console.log(`Removed ${removed.length} expired run log(s).`);
+  console.log(
+    localize(
+      language,
+      `Removed ${removed.length} expired run log(s).`,
+      `Удалено устаревших каталогов с логами: ${removed.length}.`,
+    ),
+  );
 };
 
 const main = async (): Promise<number> => {
@@ -158,13 +172,23 @@ const main = async (): Promise<number> => {
   }
   if (command === "init") {
     const retention = option("--log-retention-days");
+    const reasoning = option("--reasoning");
+    if (reasoning && !isReasoningEffort(reasoning)) {
+      throw new Error(
+        localize(
+          language,
+          `Unsupported reasoning effort: ${reasoning}`,
+          `Неподдерживаемый уровень рассуждений: ${reasoning}`,
+        ),
+      );
+    }
+    const supportedReasoning =
+      reasoning && isReasoningEffort(reasoning) ? reasoning : undefined;
     const result = await initializeProject({
       cwd,
       language,
       ...(option("--model") ? { model: option("--model")! } : {}),
-      ...(option("--reasoning")
-        ? { reasoning: option("--reasoning") as "low" | "medium" | "high" | "xhigh" | "max" | "ultra" }
-        : {}),
+      ...(supportedReasoning ? { reasoning: supportedReasoning } : {}),
       ...(retention ? { retentionDays: Number(retention) } : {}),
       yes: has("--yes"),
       advanced: has("--advanced"),
@@ -177,24 +201,35 @@ const main = async (): Promise<number> => {
     );
     return 0;
   }
-  if (command === "doctor") return printDoctor();
+  if (command === "doctor") return printDoctor(language);
   if (command === "skills") {
     const subcommand = positional[1] ?? "list";
     if (subcommand === "install" || subcommand === "update") {
       const changed = await installSkills({
         update: subcommand === "update",
         yes: has("--yes"),
+        language,
       });
       console.log(
-        `${subcommand === "update" ? "Updated" : "Installed"}: ${changed.join(", ") || "nothing"}`,
+        localize(
+          language,
+          `${subcommand === "update" ? "Updated" : "Installed"}: ${changed.join(", ") || "nothing"}`,
+          `${subcommand === "update" ? "Обновлено" : "Установлено"}: ${changed.join(", ") || "ничего"}`,
+        ),
       );
-      console.log(`Pinned mattpocock/skills commit: ${SKILLS_COMMIT}`);
+      console.log(
+        localize(
+          language,
+          `Pinned mattpocock/skills commit: ${SKILLS_COMMIT}`,
+          `Зафиксированный коммит mattpocock/skills: ${SKILLS_COMMIT}`,
+        ),
+      );
       return 0;
     }
     const statuses = await listSkillStatus();
     for (const status of statuses) {
       console.log(
-        `${status.installed && status.hasOpenAiMetadata ? "✓" : "✗"} ${status.name}${status.installed && !status.hasOpenAiMetadata ? " (missing agents/openai.yaml)" : ""}`,
+        `${status.installed && status.hasOpenAiMetadata ? "✓" : "✗"} ${status.name}${status.installed && !status.hasOpenAiMetadata ? localize(language, " (missing agents/openai.yaml)", " (нет agents/openai.yaml)") : ""}`,
       );
     }
     return subcommand === "doctor" &&
@@ -203,28 +238,49 @@ const main = async (): Promise<number> => {
       : 0;
   }
   if (command === "run") {
-    await requireConfig();
+    await requireConfig(language);
     if (has("--dry-run")) {
       const plan = await dryRun(cwd);
-      console.log(`Runnable: ${plan.runnable.map((issue) => `#${issue.number} ${issue.title}`).join("\n") || "none"}`);
-      console.log(`Blocked/excluded: ${plan.blocked.map((issue) => `#${issue.number} ${issue.title}`).join("\n") || "none"}`);
+      console.log(
+        `${localize(language, "Runnable", "Доступны")}: ${plan.runnable.map((issue) => `#${issue.number} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
+      );
+      console.log(
+        `${localize(language, "Blocked/excluded", "Заблокированы/исключены")}: ${plan.blocked.map((issue) => `#${issue.number} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
+      );
       return 0;
     }
     return runLfi(cwd, language);
   }
   if (command === "status") {
-    const state = await readFile(join(cwd, ".lfi", "state", "last-run.json"), "utf8").catch(
+    const stateRoot = join(cwd, ".lfi", "state");
+    const active = await readFile(join(stateRoot, "current-run.json"), "utf8").catch(
       () => "",
     );
-    console.log(state || "No completed LFI runs.");
+    const state =
+      active ||
+      (await readFile(join(stateRoot, "last-run.json"), "utf8").catch(() => ""));
+    console.log(
+      state ||
+        localize(
+          language,
+          "No completed LFI runs.",
+          "Завершённых запусков LFI пока нет.",
+        ),
+    );
     return 0;
   }
   if (command === "logs") {
-    if (positional[1] === "prune") await pruneLogs(has("--all"));
+    if (positional[1] === "prune") await pruneLogs(has("--all"), language);
     else await showLogs(positional[1]);
     return 0;
   }
-  throw new Error(`Unknown command: ${command}`);
+  throw new Error(
+    localize(
+      language,
+      `Unknown command: ${command}`,
+      `Неизвестная команда: ${command}`,
+    ),
+  );
 };
 
 main()

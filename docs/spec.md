@@ -28,7 +28,8 @@ implementation of ready GitHub Issues with Codex.
    `$resolving-merge-conflicts`.
 9. The base branch is pushed and issues are closed only after combined
    validation passes. The stage is atomic from the remote base branch's point
-   of view.
+   of view. A durable local queue retries issue closure if GitHub accepts the
+   push but the close request fails.
 10. Successful worktrees/branches are removed; unfinished ones persist and are
     updated from the latest base before another attempt.
 

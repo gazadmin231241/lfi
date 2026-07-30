@@ -5,6 +5,12 @@ import { createInterface } from "node:readline/promises";
 
 export type Language = "en" | "ru";
 
+export const localize = (
+  language: Language,
+  english: string,
+  russian: string,
+): string => (language === "ru" ? russian : english);
+
 const globalConfigPath = join(
   process.env.XDG_CONFIG_HOME || join(homedir(), ".config"),
   "lfi",
@@ -16,10 +22,10 @@ export const detectLanguage = (): Language =>
 
 export const loadLanguage = async (): Promise<Language | undefined> => {
   try {
-    const parsed = JSON.parse(await readFile(globalConfigPath, "utf8")) as {
-      language?: Language;
-    };
-    return parsed.language;
+    const parsed: unknown = JSON.parse(await readFile(globalConfigPath, "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return undefined;
+    const language = Reflect.get(parsed, "language");
+    return language === "en" || language === "ru" ? language : undefined;
   } catch {
     return undefined;
   }

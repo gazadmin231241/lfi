@@ -1,5 +1,6 @@
-import { requireCommand, runCommand } from "./process.js";
+import { requireCommand } from "./process.js";
 import type { GithubIssue } from "./issues.js";
+import { localize, type Language } from "./i18n.js";
 
 interface GhIssue {
   number: number;
@@ -76,7 +77,7 @@ export const nativeBlockers = async (
   const result = new Map<number, number[]>();
   await Promise.all(
     issueNumbers.map(async (number) => {
-      const response = await runCommand(
+      const response = await requireCommand(
         "gh",
         [
           "api",
@@ -86,7 +87,6 @@ export const nativeBlockers = async (
         ],
         { cwd },
       );
-      if (response.exitCode !== 0) return;
       result.set(
         number,
         response.stdout
@@ -119,13 +119,21 @@ export const closeIssue = async (
 export const commentFinalFailure = async (
   cwd: string,
   number: number,
-  summary: string,
+  language: Language,
 ): Promise<void> => {
-  await runCommand("gh", [
-    "issue",
-    "comment",
-    String(number),
-    "--body",
-    `LFI could not complete this issue after the configured stages.\n\n${summary}`,
-  ], { cwd });
+  await requireCommand(
+    "gh",
+    [
+      "issue",
+      "comment",
+      String(number),
+      "--body",
+      localize(
+        language,
+        "LFI could not complete this issue within the configured number of stages. The worktree and local logs were preserved for inspection.",
+        "LFI не смог завершить эту задачу за настроенное количество этапов. Worktree и локальные логи сохранены для проверки.",
+      ),
+    ],
+    { cwd },
+  );
 };

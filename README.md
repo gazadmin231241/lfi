@@ -102,6 +102,11 @@ only after Codex reports structured completion, creates commits, and leaves the
 worktree clean. The combined integration branch must pass the configured
 validation command before LFI pushes it and closes Issues.
 
+If GitHub accepts the push but temporarily fails to close an Issue, LFI records
+the pending closure and retries it at the beginning of the next run. `lfi
+status` shows the active run while work is in progress and falls back to the
+most recent completed run.
+
 Worker prompts pre-approve required local code, migration, dependency, lockfile,
 and configuration work. They explicitly forbid production deploys, SSH,
 production-data changes, destructive database resets, secret exposure, and

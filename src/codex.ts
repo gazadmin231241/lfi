@@ -144,15 +144,6 @@ export const runCodex = async (options: {
     `${compactLines.join("\n")}\n\nexit=${result.exitCode}\nstatus=${parsed.status ?? "missing"}\n${parsed.summary}\n`,
   );
   await rm(finalPath, { force: true });
-  if (result.exitCode === 0) {
-    await rm(rawPath, { force: true });
-    return {
-      exitCode: result.exitCode,
-      status: parsed.status,
-      summary: parsed.summary,
-      compactLogPath: compactPath,
-    };
-  }
   const rawLogPath = await gzipAndRemove(rawPath).catch(() => undefined);
   return {
     exitCode: result.exitCode,

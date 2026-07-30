@@ -34,35 +34,106 @@ export const DEFAULT_CONFIG: LfiConfig = {
   WORKTREE_SETUP_COMMAND: "",
 };
 
-const numericKeys = new Set<keyof LfiConfig>([
-  "MAX_PARALLEL",
-  "MAX_STAGES",
-  "LOG_RETENTION_DAYS",
-  "IDLE_TIMEOUT_MINUTES",
-]);
-
 export const serializeEnvConfig = (config: LfiConfig): string =>
   `${Object.entries(config)
     .map(([key, value]) => `${key}=${String(value)}`)
     .join("\n")}\n`;
 
 export const parseEnvConfig = (source: string): LfiConfig => {
-  const result: Record<string, string | number> = { ...DEFAULT_CONFIG };
+  const result: LfiConfig = { ...DEFAULT_CONFIG };
   for (const rawLine of source.split(/\r?\n/u)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
     const separator = line.indexOf("=");
     if (separator < 0) continue;
-    const key = line.slice(0, separator) as keyof LfiConfig;
-    if (!(key in DEFAULT_CONFIG)) continue;
+    const key = line.slice(0, separator);
     const value = line.slice(separator + 1);
-    result[key] = numericKeys.has(key) ? Number(value) : value;
+    switch (key) {
+      case "CODEX_MODEL":
+      case "MERGER_MODEL":
+      case "BASE_BRANCH":
+      case "ISSUE_LABEL":
+      case "EXCLUDE_LABELS":
+      case "VALIDATE_COMMAND":
+      case "WORKTREE_SETUP_COMMAND":
+        result[key] = value;
+        break;
+      case "CODEX_REASONING_EFFORT":
+      case "MERGER_REASONING_EFFORT":
+        if (isReasoningEffort(value)) result[key] = value;
+        else {
+          throw new Error(
+            `${key} has an unsupported value / содержит неподдерживаемое значение: ${value}`,
+          );
+        }
+        break;
+      case "MAX_PARALLEL":
+      case "MAX_STAGES":
+      case "LOG_RETENTION_DAYS":
+      case "IDLE_TIMEOUT_MINUTES":
+        result[key] = Number(value);
+        break;
+      default:
+        break;
+    }
   }
-  return result as unknown as LfiConfig;
+  return result;
+};
+
+const reasoningEfforts = new Set<ReasoningEffort>([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+]);
+
+export const isReasoningEffort = (value: string): value is ReasoningEffort =>
+  value === "low" ||
+  value === "medium" ||
+  value === "high" ||
+  value === "xhigh" ||
+  value === "max" ||
+  value === "ultra";
+
+export const validateConfig = (config: LfiConfig): LfiConfig => {
+  for (const key of ["MAX_PARALLEL", "MAX_STAGES"] as const) {
+    if (!Number.isSafeInteger(config[key]) || config[key] < 1) {
+      throw new Error(
+        `${key} must be a positive integer / должен быть положительным целым числом.`,
+      );
+    }
+  }
+  if (
+    !Number.isFinite(config.LOG_RETENTION_DAYS) ||
+    config.LOG_RETENTION_DAYS < 0
+  ) {
+    throw new Error(
+      "LOG_RETENTION_DAYS must be zero or greater / должен быть не меньше нуля.",
+    );
+  }
+  if (
+    !Number.isFinite(config.IDLE_TIMEOUT_MINUTES) ||
+    config.IDLE_TIMEOUT_MINUTES <= 0
+  ) {
+    throw new Error(
+      "IDLE_TIMEOUT_MINUTES must be greater than zero / должен быть больше нуля.",
+    );
+  }
+  if (
+    !reasoningEfforts.has(config.CODEX_REASONING_EFFORT) ||
+    !reasoningEfforts.has(config.MERGER_REASONING_EFFORT)
+  ) {
+    throw new Error(
+      "Reasoning effort must be low, medium, high, xhigh, max, or ultra / уровень рассуждений должен быть одним из перечисленных значений.",
+    );
+  }
+  return config;
 };
 
 export const loadConfig = async (path: string): Promise<LfiConfig> =>
-  parseEnvConfig(await readFile(path, "utf8"));
+  validateConfig(parseEnvConfig(await readFile(path, "utf8")));
 
 export const saveConfig = async (path: string, config: LfiConfig): Promise<void> =>
-  writeFile(path, serializeEnvConfig(config), { flag: "wx" });
+  writeFile(path, serializeEnvConfig(validateConfig(config)), { flag: "wx" });

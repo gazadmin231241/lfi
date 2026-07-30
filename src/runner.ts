@@ -22,7 +22,7 @@ import {
   worktreeClean,
 } from "./git.js";
 import { selectRunnableIssues, type GithubIssue } from "./issues.js";
-import type { Language } from "./i18n.js";
+import { localize, type Language } from "./i18n.js";
 import { pruneExpiredRunLogs } from "./logs.js";
 import { mergerPrompt, renderWorkerPrompt } from "./prompts.js";
 import { isShutdownRequested, runShell } from "./process.js";
@@ -54,6 +54,33 @@ const mapConcurrent = async <T, R>(
   return results;
 };
 
+interface PendingClosure {
+  number: number;
+  sha: string;
+}
+
+const readPendingClosures = async (path: string): Promise<PendingClosure[]> => {
+  const source = await readFile(path, "utf8").catch(() => "[]");
+  const parsed = JSON.parse(source) as unknown;
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (item): item is PendingClosure => {
+      if (typeof item !== "object" || item === null) return false;
+      return (
+        typeof Reflect.get(item, "number") === "number" &&
+        typeof Reflect.get(item, "sha") === "string"
+      );
+    },
+  );
+};
+
+const writePendingClosures = async (
+  path: string,
+  pending: readonly PendingClosure[],
+): Promise<void> => {
+  await writeFile(path, `${JSON.stringify(pending, null, 2)}\n`);
+};
+
 const mergeWithAgent = async (options: {
   cwd: string;
   context: string;
@@ -61,6 +88,7 @@ const mergeWithAgent = async (options: {
   gitDirectory: string;
   logsDirectory: string;
   logName: string;
+  language: Language;
 }): Promise<void> => {
   const result = await runCodex({
     cwd: options.cwd,
@@ -75,8 +103,15 @@ const mergeWithAgent = async (options: {
     prefix: "merge",
   });
   if (result.exitCode !== 0 || !(await worktreeClean(options.cwd))) {
-    throw new Error(`Merger failed: ${result.summary}`);
+    throw new Error(
+      localize(
+        options.language,
+        `Merger failed: ${result.summary}`,
+        `Агент слияния завершился с ошибкой: ${result.summary}`,
+      ),
+    );
   }
+  if (result.rawLogPath) await rm(result.rawLogPath, { force: true });
 };
 
 export const dryRun = async (
@@ -111,14 +146,33 @@ export const runLfi = async (
 ): Promise<number> => {
   const lfiRoot = join(cwd, ".lfi");
   const config = await loadConfig(join(lfiRoot, "config.env"));
+  if (!config.VALIDATE_COMMAND) {
+    throw new Error(
+      localize(
+        language,
+        "VALIDATE_COMMAND is empty. Set it in .lfi/config.env before `lfi run`.",
+        "VALIDATE_COMMAND пуст. Укажите команду в .lfi/config.env перед `lfi run`.",
+      ),
+    );
+  }
   const logsRoot = join(lfiRoot, "logs");
   const worktreesRoot = join(lfiRoot, "worktrees");
   const stateRoot = join(lfiRoot, "state");
   await mkdir(stateRoot, { recursive: true });
+  const currentStatePath = join(stateRoot, "current-run.json");
+  const pendingClosuresPath = join(stateRoot, "pending-closures.json");
   const runId = new Date().toISOString().replaceAll(":", "-").replace(/\.\d{3}Z$/u, "Z");
   const lockPath = join(stateRoot, "run.lock");
   const lock = await open(lockPath, "wx").catch(() => undefined);
-  if (!lock) throw new Error("Another LFI run appears to be active.");
+  if (!lock) {
+    throw new Error(
+      localize(
+        language,
+        "Another LFI run appears to be active.",
+        "Похоже, другой запуск LFI всё ещё активен.",
+      ),
+    );
+  }
   await lock.writeFile(`${JSON.stringify({ pid: process.pid, runId })}\n`);
   const runLogs = join(logsRoot, runId);
   await mkdir(runLogs, { recursive: true });
@@ -131,10 +185,45 @@ export const runLfi = async (
   const repository = await repoInfo(cwd);
   const attempted = new Map<number, string>();
   const completed: number[] = [];
+  let pendingClosures = await readPendingClosures(pendingClosuresPath);
+
+  await writeFile(
+    currentStatePath,
+    `${JSON.stringify({
+      runId,
+      status: "running",
+      stage: 0,
+      activeIssues: [],
+      completed,
+      startedAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
 
   try {
+    if (pendingClosures.length > 0) {
+      const stillPending: PendingClosure[] = [];
+      for (const pending of pendingClosures) {
+        try {
+          await closeIssue(cwd, pending.number, pending.sha, language);
+        } catch (error) {
+          stillPending.push(pending);
+          console.error(
+            localize(
+              language,
+              `Could not close previously published issue #${pending.number}: ${error instanceof Error ? error.message : String(error)}`,
+              `Не удалось закрыть ранее опубликованную задачу #${pending.number}: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+        }
+      }
+      pendingClosures = stillPending;
+      await writePendingClosures(pendingClosuresPath, pendingClosures);
+    }
+
     for (let stage = 1; stage <= config.MAX_STAGES; stage++) {
-      console.log(`\nStage ${stage}/${config.MAX_STAGES}`);
+      console.log(
+        `\n${localize(language, "Stage", "Этап")} ${stage}/${config.MAX_STAGES}`,
+      );
       await git(cwd, ["fetch", "origin", config.BASE_BRANCH]);
       const [issues, allOpen] = await Promise.all([
         listOpenIssues(cwd, config.ISSUE_LABEL),
@@ -149,15 +238,34 @@ export const runLfi = async (
         includeLabel: config.ISSUE_LABEL,
         excludeLabels: config.EXCLUDE_LABELS.split(",").map((label) => label.trim()),
         nativeBlockers: blockers,
-      });
+      }).filter(
+        (issue) =>
+          !completed.includes(issue.number) &&
+          !pendingClosures.some((pending) => pending.number === issue.number),
+      );
+      await writeFile(
+        currentStatePath,
+        `${JSON.stringify({
+          runId,
+          status: "running",
+          stage,
+          activeIssues: runnable.map((issue) => issue.number),
+          completed,
+          updatedAt: new Date().toISOString(),
+        }, null, 2)}\n`,
+      );
       if (runnable.length === 0) break;
-      console.log(`Runnable: ${runnable.map((issue) => `#${issue.number}`).join(", ")}`);
+      console.log(
+        `${localize(language, "Runnable", "Доступны")}: ${runnable.map((issue) => `#${issue.number}`).join(", ")}`,
+      );
 
       const attempts = await mapConcurrent(
         runnable,
         config.MAX_PARALLEL,
         async (issue): Promise<Attempt> => {
-          if (isShutdownRequested()) throw new Error("Interrupted");
+          if (isShutdownRequested()) {
+            throw new Error(localize(language, "Interrupted", "Выполнение прервано"));
+          }
           try {
             const worktree = await ensureIssueWorktree({
               repoRoot: cwd,
@@ -180,6 +288,7 @@ export const runLfi = async (
                   gitDirectory,
                   logsDirectory: runLogs,
                   logName: `issue-${issue.number}-update-stage-${stage}`,
+                  language,
                 });
               }
             }
@@ -203,6 +312,9 @@ export const runLfi = async (
             const summary = evaluation.accepted
               ? codex.summary
               : `${codex.summary}\n${evaluation.reasons.join(", ")}`;
+            if (evaluation.accepted && codex.rawLogPath) {
+              await rm(codex.rawLogPath, { force: true });
+            }
             attempted.set(issue.number, summary);
             return {
               issue,
@@ -224,7 +336,9 @@ export const runLfi = async (
           }
         },
       );
-      if (isShutdownRequested()) throw new Error("Interrupted");
+      if (isShutdownRequested()) {
+        throw new Error(localize(language, "Interrupted", "Выполнение прервано"));
+      }
 
       const accepted = attempts.filter((attempt) => attempt.accepted);
       if (accepted.length === 0) continue;
@@ -250,11 +364,25 @@ export const runLfi = async (
               gitDirectory,
               logsDirectory: runLogs,
               logName: `merge-${attempt.issue.number}-stage-${stage}`,
+              language,
             });
           }
         }
-        if (!config.VALIDATE_COMMAND) {
-          throw new Error("VALIDATE_COMMAND is empty; refusing to push.");
+        if (config.WORKTREE_SETUP_COMMAND) {
+          const setup = await runShell(config.WORKTREE_SETUP_COMMAND, {
+            cwd: integration.path,
+            onStdout: (chunk) => process.stdout.write(`[setup] ${chunk}`),
+            onStderr: (chunk) => process.stderr.write(`[setup] ${chunk}`),
+          });
+          if (setup.exitCode !== 0) {
+            throw new Error(
+              localize(
+                language,
+                `Integration setup failed:\n${setup.stderr || setup.stdout}`,
+                `Подготовка общего worktree завершилась с ошибкой:\n${setup.stderr || setup.stdout}`,
+              ),
+            );
+          }
         }
         let validation = await runShell(config.VALIDATE_COMMAND, {
           cwd: integration.path,
@@ -269,13 +397,20 @@ export const runLfi = async (
             gitDirectory,
             logsDirectory: runLogs,
             logName: `merge-validation-stage-${stage}`,
+            language,
           });
           validation = await runShell(config.VALIDATE_COMMAND, {
             cwd: integration.path,
           });
         }
         if (validation.exitCode !== 0) {
-          throw new Error(`Validation failed:\n${validation.stderr || validation.stdout}`);
+          throw new Error(
+            localize(
+              language,
+              `Validation failed:\n${validation.stderr || validation.stdout}`,
+              `Проверка завершилась с ошибкой:\n${validation.stderr || validation.stdout}`,
+            ),
+          );
         }
         await git(integration.path, [
           "push",
@@ -283,21 +418,72 @@ export const runLfi = async (
           `HEAD:${config.BASE_BRANCH}`,
         ]);
         const sha = (await git(integration.path, ["rev-parse", "HEAD"])).stdout.trim();
+        const published = accepted.map((attempt) => ({
+          number: attempt.issue.number,
+          sha,
+        }));
+        pendingClosures = [
+          ...pendingClosures.filter(
+            (pending) =>
+              !published.some((item) => item.number === pending.number),
+          ),
+          ...published,
+        ];
+        await writePendingClosures(pendingClosuresPath, pendingClosures);
         for (const attempt of accepted) {
-          await closeIssue(cwd, attempt.issue.number, sha, language);
+          try {
+            await closeIssue(cwd, attempt.issue.number, sha, language);
+            pendingClosures = pendingClosures.filter(
+              (pending) => pending.number !== attempt.issue.number,
+            );
+            await writePendingClosures(pendingClosuresPath, pendingClosures);
+          } catch (error) {
+            console.error(
+              localize(
+                language,
+                `Published issue #${attempt.issue.number}, but GitHub did not close it. LFI will retry on the next run.`,
+                `Задача #${attempt.issue.number} опубликована, но GitHub не смог её закрыть. LFI повторит попытку при следующем запуске.`,
+              ),
+            );
+          }
           completed.push(attempt.issue.number);
           await removeWorktreeAndBranch({
             repoRoot: cwd,
             path: attempt.worktreePath,
             branch: attempt.branch,
+          }).catch((error) => {
+            console.error(
+              `${localize(language, "[cleanup]", "[очистка]")} #${attempt.issue.number}: ${error instanceof Error ? error.message : String(error)}`,
+            );
           });
         }
+        await writeFile(
+          currentStatePath,
+          `${JSON.stringify({
+            runId,
+            status: "running",
+            stage,
+            activeIssues: [],
+            completed,
+            pendingClosures: pendingClosures.map((item) => item.number),
+            updatedAt: new Date().toISOString(),
+          }, null, 2)}\n`,
+        );
         integrationSucceeded = true;
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        console.error(`[integration] ${reason}`);
+        console.error(
+          `${localize(language, "[integration]", "[интеграция]")} ${reason}`,
+        );
         for (const attempt of accepted) {
-          attempted.set(attempt.issue.number, `Integration failed: ${reason}`);
+          attempted.set(
+            attempt.issue.number,
+            localize(
+              language,
+              `Integration failed: ${reason}`,
+              `Интеграция завершилась с ошибкой: ${reason}`,
+            ),
+          );
         }
       } finally {
         await removeWorktreeAndBranch({
@@ -312,17 +498,22 @@ export const runLfi = async (
     const unresolved = [...attempted.entries()].filter(
       ([number]) => !completed.includes(number),
     );
-    for (const [number, summary] of unresolved) {
-      await commentFinalFailure(
-        cwd,
-        number,
-        "The worker did not reach a clean, committed completed state within the configured stages.",
-      );
+    for (const [number] of unresolved) {
+      await commentFinalFailure(cwd, number, language).catch((error) => {
+        console.error(
+          localize(
+            language,
+            `Could not post final comment for #${number}: ${error instanceof Error ? error.message : String(error)}`,
+            `Не удалось отправить итоговый комментарий для #${number}: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+      });
     }
     const summary = {
       runId,
       completed,
       unresolved: unresolved.map(([number, reason]) => ({ number, reason })),
+      pendingClosures: pendingClosures.map((item) => item.number),
       finishedAt: new Date().toISOString(),
     };
     await writeFile(join(stateRoot, "last-run.json"), `${JSON.stringify(summary, null, 2)}\n`);
@@ -334,7 +525,21 @@ export const runLfi = async (
       await rm(join(historyRoot, old), { force: true });
     }
     await writeFile(join(runLogs, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
-    return unresolved.length === 0 ? 0 : 1;
+    await rm(currentStatePath, { force: true });
+    return unresolved.length === 0 && pendingClosures.length === 0 ? 0 : 1;
+  } catch (error) {
+    await writeFile(
+      currentStatePath,
+      `${JSON.stringify({
+        runId,
+        status: isShutdownRequested() ? "interrupted" : "failed",
+        completed,
+        pendingClosures: pendingClosures.map((item) => item.number),
+        error: error instanceof Error ? error.message : String(error),
+        updatedAt: new Date().toISOString(),
+      }, null, 2)}\n`,
+    );
+    throw error;
   } finally {
     await lock.close();
     await rm(lockPath, { force: true });
