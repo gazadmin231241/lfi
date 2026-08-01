@@ -102,10 +102,10 @@ test("task rendering keeps readable relationships outside marker lines", () => {
 
 test("tracker validates blockers and cycles and shares one ID sequence", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-tracker-"));
-  const tasks = join(root, "tasks");
-  await mkdir(tasks, { recursive: true });
-  const donePath = join(tasks, "[DONE] LFI-12 — prerequisite.md");
-  const taskPath = join(tasks, "[READY] LFI-15 — parser.md");
+  const scratch = join(root, ".scratch");
+  await mkdir(scratch, { recursive: true });
+  const donePath = join(scratch, "[DONE] LFI-12 — prerequisite.md");
+  const taskPath = join(scratch, "[READY] LFI-15 — parser.md");
   await writeFile(donePath, serializeTrackerDocument(document(12, "task", "Prerequisite", donePath, {
     status: "completed",
   })));
@@ -113,21 +113,21 @@ test("tracker validates blockers and cycles and shares one ID sequence", async (
     blockedBy: ["LFI-12"],
   })));
 
-  const tracker = await loadLocalTracker(root);
+  const tracker = await loadLocalTracker(scratch);
   assert.equal(nextLfiId(tracker.documents), "LFI-16");
 
   await writeFile(donePath, serializeTrackerDocument(document(12, "task", "Prerequisite", donePath, {
     blockedBy: ["LFI-15"],
     status: "completed",
   })));
-  await assert.rejects(loadLocalTracker(root), /cycle/u);
+  await assert.rejects(loadLocalTracker(scratch), /cycle/u);
 });
 
 test("repository ID allocation includes a canonical filename found only in history", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-id-history-"));
-  const tasks = join(root, ".lfi", "tasks");
-  await mkdir(tasks, { recursive: true });
-  const path = join(tasks, "[DONE] LFI-9 — deleted.md");
+  const scratch = join(root, ".scratch");
+  await mkdir(scratch, { recursive: true });
+  const path = join(scratch, "[DONE] LFI-9 — deleted.md");
   await writeFile(path, "Type: task\nBlocked by: None\n\nDeleted.\n");
   const git = async (...args: string[]) => {
     const result = await runCommand("git", args, { cwd: root });
@@ -147,8 +147,8 @@ test("repository ID allocation includes a canonical filename found only in histo
 
 test("status comes from filename and reconciliation keeps status prefixes", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-status-filenames-"));
-  const feature = join(root, "tasks", "feature");
-  const tasks = join(feature, "tasks");
+  const feature = join(root, ".scratch", "feature");
+  const tasks = join(feature, "issues");
   await mkdir(tasks, { recursive: true });
   const specPath = join(feature, "[SPEC] LFI-1 — feature.md");
   const firstPath = join(tasks, "[READY] LFI-2 — first-task.md");
@@ -162,36 +162,36 @@ test("status comes from filename and reconciliation keeps status prefixes", asyn
     spec: "LFI-1",
   })));
 
-  const tracker = await loadLocalTracker(root);
+  const tracker = await loadLocalTracker(join(root, ".scratch"));
   assert.equal(tracker.tasks[0]?.status, "ready");
   await reconcileTrackerFilenames(tracker, new Set(["LFI-2"]));
   assert.deepEqual((await readdir(tasks)).sort(), [
     "[BLOCKED] LFI-3 — second-task.md",
     "[RUNNING] LFI-2 — first-task.md",
   ]);
-  const reloaded = await loadLocalTracker(root);
+  const reloaded = await loadLocalTracker(join(root, ".scratch"));
   assert.equal(reloaded.tasks.find((task) => task.id === "LFI-2")?.status, "ready");
 });
 
 test("feature placement supplies the specification relationship", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-feature-placement-"));
-  const feature = join(root, "tasks", "feature");
-  const tasks = join(feature, "tasks");
+  const feature = join(root, ".scratch", "feature");
+  const tasks = join(feature, "issues");
   await mkdir(tasks, { recursive: true });
   await writeFile(join(feature, "diagram.png"), "not an image");
   await writeFile(join(feature, "[SPEC] LFI-1 — feature.md"), "Type: spec\nBlocked by: None\n\nFeature.\n");
   await writeFile(join(tasks, "[READY] LFI-2 — task.md"), "Type: task\nBlocked by: None\nTier: standard\n\nTask.\n");
 
-  const tracker = await loadLocalTracker(root);
+  const tracker = await loadLocalTracker(join(root, ".scratch"));
   assert.equal(tracker.tasks[0]?.spec, "LFI-1");
   await rm(join(feature, "[SPEC] LFI-1 — feature.md"));
-  await assert.rejects(loadLocalTracker(root), /exactly one specification/u);
+  await assert.rejects(loadLocalTracker(join(root, ".scratch")), /exactly one specification/u);
 });
 
 test("reconciliation follows a specification title change", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-layout-change-"));
-  const feature = join(root, "tasks", "feature");
-  const tasks = join(feature, "tasks");
+  const feature = join(root, ".scratch", "feature");
+  const tasks = join(feature, "issues");
   await mkdir(tasks, { recursive: true });
   const specPath = join(feature, "[SPEC] LFI-1 — feature.md");
   const taskPath = join(tasks, "[READY] LFI-2 — task.md");
@@ -200,12 +200,12 @@ test("reconciliation follows a specification title change", async () => {
     spec: "LFI-1",
   })));
 
-  const tracker = await loadLocalTracker(root);
+  const tracker = await loadLocalTracker(join(root, ".scratch"));
   tracker.specs[0]!.title = "Renamed feature";
   await reconcileTrackerFilenames(tracker, new Set());
-  const reconciled = await loadReconciledLocalTracker(root);
+  const reconciled = await loadReconciledLocalTracker(join(root, ".scratch"));
   assert.equal(reconciled.specs[0]?.title, "Renamed feature");
-  assert.match(reconciled.tasks[0]?.path ?? "", /renamed-feature\/tasks/u);
+  assert.match(reconciled.tasks[0]?.path ?? "", /renamed-feature\/issues/u);
   assert.match(await readFile(reconciled.tasks[0]!.path, "utf8"), /LFI-1 — Renamed feature/u);
 });
 

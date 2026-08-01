@@ -6,12 +6,7 @@ import { localize } from "./i18n.js";
 
 const IGNORE_BEGIN = "# LFI local tracker: begin";
 const IGNORE_END = "# LFI local tracker: end";
-export const LOCAL_IGNORE_BLOCK = `${IGNORE_BEGIN}
-.lfi/*
-!.lfi/tasks/
-!.lfi/tasks/**
-${IGNORE_END}
-`;
+const RUNTIME_IGNORE_RULE = ".lfi/*\n";
 export const TRACKER_CONTRACT_MARKER = "<!-- lfi:tracker-contract -->";
 const TRACKER_CONTRACT_BEGIN = "<!-- lfi:tracker-contract:begin -->";
 const TRACKER_CONTRACT_END = "<!-- lfi:tracker-contract:end -->";
@@ -87,14 +82,12 @@ const updateGitignore = (source: string): string => {
     "u",
   );
   if (managed.test(source)) {
-    return source.replace(managed, LOCAL_IGNORE_BLOCK);
+    return source.replace(managed, RUNTIME_IGNORE_RULE);
   }
   const withoutLegacyRules = source
     .split(/\r?\n/u)
     .filter(
       (line) =>
-        line !== ".lfi/" &&
-        line !== ".lfi/*" &&
         line !== "!.lfi/tasks/" &&
         line !== "!.lfi/tasks/*.md" &&
         line !== "!.lfi/tasks/completed/" &&
@@ -107,7 +100,10 @@ const updateGitignore = (source: string): string => {
     withoutLegacyRules.length > 0 && !withoutLegacyRules.endsWith("\n")
       ? "\n"
       : "";
-  return `${withoutLegacyRules}${separator}${LOCAL_IGNORE_BLOCK}`;
+  const runtimeIgnored = [".lfi/", ".lfi/*"].some((rule) =>
+    withoutLegacyRules.split(/\r?\n/u).includes(rule)
+  );
+  return `${withoutLegacyRules}${separator}${runtimeIgnored ? "" : RUNTIME_IGNORE_RULE}`;
 };
 
 export const configureTrackerContract = async (
@@ -119,9 +115,9 @@ export const configureTrackerContract = async (
   const storage = localize(
     language,
     `Each specification has its own directory at
-\`.lfi/tasks/<specification-slug>/\`. It contains one \`Type: spec\` document
-and a \`tasks/\` subdirectory for its executable \`Type: task\` documents.
-Tasks without a specification are files directly in \`.lfi/tasks/\`. Completed
+\`.scratch/<specification-slug>/\`. It contains one \`Type: spec\` document
+and an \`issues/\` subdirectory for its executable \`Type: task\` documents.
+Tasks without a specification are files directly in \`.scratch/\`. Completed
 tasks stay beside their specification; there is no archive directory. All
 documents share one monotonically increasing \`LFI-N\` ID sequence, including
 IDs found in Git history. The filename carries the only status and the stable
@@ -131,15 +127,15 @@ Only \`Type: task\` is executable; \`spec\`, \`research\`, \`prototype\`, and
 \`grilling\` are not. A missing \`Type:\` is an error. LFI renders clickable
 \`Specification\` and \`Blocked by\` sections and keeps their links current.
 
-\`$to-spec\` creates \`.lfi/tasks/<specification-slug>/\` and publishes one
+\`$to-spec\` creates \`.scratch/<specification-slug>/\` and publishes one
 \`Type: spec\` document there. \`$to-tickets\` publishes one \`Type: task\`
-document per ticket in \`.lfi/tasks/<specification-slug>/tasks/\`; tickets
-without a specification go directly in \`.lfi/tasks/\`. LFI renames files when
+document per ticket in \`.scratch/<specification-slug>/issues/\`; tickets
+without a specification go directly in \`.scratch/\`. LFI renames files when
 their derived status changes.`,
     `Каждая спецификация хранится в собственном каталоге
-\`.lfi/tasks/<specification-slug>/\`. В нём находится один документ \`Type: spec\`
-и подкаталог \`tasks/\` для исполняемых документов \`Type: task\`. Задачи без
-спецификации хранятся непосредственно в \`.lfi/tasks/\`. Завершённые задачи
+\`.scratch/<specification-slug>/\`. В нём находится один документ \`Type: spec\`
+и подкаталог \`issues/\` для исполняемых документов \`Type: task\`. Задачи без
+спецификации хранятся непосредственно в \`.scratch/\`. Завершённые задачи
 остаются рядом со своей спецификацией; каталога архива нет. Все документы
 используют одну монотонно возрастающую последовательность \`LFI-N\`, включая ID
 из истории Git. Единственный статус и стабильный ID находятся в имени файла:
@@ -150,10 +146,10 @@ their derived status changes.`,
 отображает кликабельные разделы \`Specification\` и \`Blocked by\` и обновляет
 их ссылки.
 
-\`$to-spec\` создаёт \`.lfi/tasks/<specification-slug>/\` и публикует один
+\`$to-spec\` создаёт \`.scratch/<specification-slug>/\` и публикует один
 документ \`Type: spec\`. \`$to-tickets\` публикует по одному документу
-\`Type: task\` в \`.lfi/tasks/<specification-slug>/tasks/\`; задачи без
-спецификации идут непосредственно в \`.lfi/tasks/\`. LFI переименовывает файлы
+\`Type: task\` в \`.scratch/<specification-slug>/issues/\`; задачи без
+спецификации идут непосредственно в \`.scratch/\`. LFI переименовывает файлы
 при изменении вычисленного статуса.`,
   );
   const contract = localize(
@@ -217,8 +213,7 @@ export const configureLocalTracker = async (
 export const configureLocalTrackerStorage = async (
   cwd: string,
 ): Promise<void> => {
-  const lfiRoot = join(cwd, ".lfi");
-  await mkdir(join(lfiRoot, "tasks"), { recursive: true });
+  await mkdir(join(cwd, ".scratch"), { recursive: true });
   const gitignorePath = join(cwd, ".gitignore");
   const source = await readFile(gitignorePath, "utf8").catch(() => "");
   const updated = updateGitignore(source);

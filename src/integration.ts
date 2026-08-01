@@ -44,7 +44,7 @@ const verifyCompletionCheckpoint = async (
 ): Promise<void> => {
   const ids = attempts.map((attempt) => attempt.task.id);
   const [trackedTasks, subject] = await Promise.all([
-    git(cwd, ["ls-files", "-z", "--", ".lfi/tasks"]),
+    git(cwd, ["ls-files", "-z", "--", ".scratch"]),
     git(cwd, ["log", "-1", "--format=%s"]),
   ]);
   const trackedPaths = trackedTasks.stdout.split("\0").filter(Boolean);

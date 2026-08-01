@@ -11,7 +11,7 @@ import {
   validateTrackerPlacement,
 } from "./tracker-layout.js";
 
-export { COMPLETED_TASKS_DIRECTORY } from "./tracker-layout.js";
+export { TRACKER_ISSUES_DIRECTORY } from "./tracker-layout.js";
 
 export type TrackerDocumentType =
   | "task"
@@ -222,7 +222,7 @@ const inferSpecificationFromPlacement = (
 };
 
 const validateTracker = (
-  lfiRoot: string,
+  trackerRoot: string,
   documents: readonly TrackerDocument[],
   allowPlacementDrift: boolean,
 ): void => {
@@ -236,7 +236,7 @@ const validateTracker = (
     byId.set(document.id, document);
   }
 
-  if (!allowPlacementDrift) validateTrackerPlacement(lfiRoot, documents);
+  if (!allowPlacementDrift) validateTrackerPlacement(trackerRoot, documents);
   for (const document of documents) {
     if (document.spec) {
       const spec = byId.get(document.spec);
@@ -271,20 +271,17 @@ const validateTracker = (
 };
 
 export const loadLocalTracker = async (
-  lfiRoot: string,
+  trackerRoot: string,
   options: { allowPlacementDrift?: boolean } = {},
 ): Promise<LocalTracker> => {
-  const paths = [
-    ...(await trackerMarkdownFiles(join(lfiRoot, "tasks"), true)),
-    ...(await trackerMarkdownFiles(join(lfiRoot, "specs"))),
-  ];
+  const paths = await trackerMarkdownFiles(trackerRoot, true);
   const documents = await Promise.all(
     paths.map(async (path) => parseTrackerDocument(await readFile(path, "utf8"), path)),
   );
   inferSpecificationFromPlacement(documents);
-  validateTracker(lfiRoot, documents, options.allowPlacementDrift ?? false);
+  validateTracker(trackerRoot, documents, options.allowPlacementDrift ?? false);
   return {
-    root: lfiRoot,
+    root: trackerRoot,
     documents,
     tasks: documents.filter((item) => item.type === "task"),
     specs: documents.filter((item) => item.type === "spec"),
@@ -306,8 +303,7 @@ export const nextRepositoryLfiId = async (
     "-p",
     "--format=",
     "--",
-    ".lfi/tasks",
-    ".lfi/specs",
+    ".scratch",
   ]);
   const historicalNumbers = history.exitCode === 0
     ? [

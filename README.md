@@ -52,18 +52,18 @@ published upstream, so they behave the same in LFI and non-LFI repositories.
 `lfi init` creates the Local Markdown tracker:
 
 ```text
-.lfi/tasks/
+.scratch/
   local-first-workflow/
     [SPEC] LFI-1 — local-first-workflow.md
-    tasks/
+    issues/
       [READY] LFI-2 — implement-parser.md
       [DONE] LFI-3 — publish-release.md
   [READY] LFI-4 — one-off-maintenance.md
 ```
 
 Each specification has its own directory: its specification document is at the
-root and its tasks are in `tasks/`. Tasks without a specification sit directly
-at `.lfi/tasks/`. Completed tasks remain beside their specification; there is
+root and its tasks are in `issues/`. Tasks without a specification sit directly
+at `.scratch/`. Completed tasks remain beside their specification; there is
 no archive directory. These files are versioned; `.lfi/logs`, `.lfi/state`, and
 `.lfi/worktrees` remain local. Documents use plain Markdown marker lines and one
 shared `LFI-N` ID sequence. Status is derived only from the filename;

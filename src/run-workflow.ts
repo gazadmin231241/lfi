@@ -39,7 +39,7 @@ export const runLfi = async (
   }
   const startupErrors: string[] = [];
   await configureLocalTrackerStorage(cwd);
-  await loadReconciledLocalTracker(lfiRoot);
+  await loadReconciledLocalTracker(join(cwd, ".scratch"));
   await checkpointTracker(cwd, "docs(lfi): update local task tracker");
   await git(cwd, ["fetch", "origin", config.BASE_BRANCH]);
   await git(cwd, [
@@ -48,7 +48,7 @@ export const runLfi = async (
     "--no-edit",
   ]);
   if (selectedIds.length > 0) {
-    const tracker = await loadLocalTracker(lfiRoot);
+    const tracker = await loadLocalTracker(join(cwd, ".scratch"));
     const blocked = runnableLocalTasks(tracker, selectedIds).blocked;
     for (const task of blocked) {
       const unfinished = task.blockedBy.filter(
@@ -235,7 +235,7 @@ export const runLfi = async (
           beforeDelivery: (integrationPath) =>
             recordLocalCompletion(integrationPath, accepted),
           beforeHostUpdate: async () => {
-            await loadReconciledLocalTracker(lfiRoot, new Set());
+            await loadReconciledLocalTracker(join(cwd, ".scratch"), new Set());
           },
         });
         printIntegrationCompleted(output, language, branch);
@@ -264,7 +264,7 @@ export const runLfi = async (
       }
     }
     if (selectedIds.length > 0) {
-      const tracker = await loadLocalTracker(lfiRoot);
+      const tracker = await loadLocalTracker(join(cwd, ".scratch"));
       for (const task of runnableLocalTasks(tracker, selectedIds).blocked) {
         const unfinished = task.blockedBy.filter(
           (id) =>
@@ -299,7 +299,7 @@ export const runLfi = async (
       logsRoot,
     );
     await rm(currentStatePath, { force: true });
-    await loadReconciledLocalTracker(lfiRoot);
+    await loadReconciledLocalTracker(join(cwd, ".scratch"));
     return unresolved.length === 0 ? 0 : 1;
   } catch (error) {
     await writeFile(

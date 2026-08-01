@@ -7,9 +7,9 @@ implementation of local Markdown tasks with Codex.
 
 1. Install/link `lfi`, select English or Russian once, and run `lfi init` in a
    Git repository. Tasks live only in the local Markdown tracker.
-2. Local tracker documents are versioned under `.lfi/tasks/`: each
+2. Local tracker documents are versioned under `.scratch/`: each
    specification has a directory containing its specification document and
-   `tasks/` subdirectory, while tasks without a specification are at the root.
+   `issues/` subdirectory, while tasks without a specification are at the root.
    Completed tasks stay in place; there is no archive directory. All documents
    share one stable `LFI-N` namespace. Transient state remains ignored. Status
    exists only in the filename; `Type:`, `Blocked by:`, and `Tier:` are plain

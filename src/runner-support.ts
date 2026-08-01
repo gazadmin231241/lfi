@@ -19,7 +19,7 @@ export const checkpointTracker = async (
   cwd: string,
   message: string,
 ): Promise<boolean> => {
-  const paths = [".lfi/tasks"];
+  const paths = [".scratch"];
   const status = await gitResult(cwd, ["status", "--porcelain", "--", ...paths]);
   if (!status.stdout.trim()) return false;
   const changedPaths = paths.filter((path) => status.stdout.includes(`${path}/`));

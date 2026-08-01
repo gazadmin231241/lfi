@@ -193,7 +193,9 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
   assert.equal(config.LOG_RETENTION_DAYS, 7);
   assert.equal(config.VALIDATE_COMMAND, "pnpm validate:all");
   assert.equal(config.WORKTREE_SETUP_COMMAND, "pnpm install --frozen-lockfile");
-  assert.match(await readFile(join(root, ".gitignore"), "utf8"), /!\.lfi\/tasks\/\*\*/u);
+  const gitignore = await readFile(join(root, ".gitignore"), "utf8");
+  assert.match(gitignore, /^\.lfi\/\*$/mu);
+  assert.doesNotMatch(gitignore, /!\.lfi\/tasks/u);
   assert.match(
     await readFile(join(root, ".lfi", "task-prompt.md"), "utf8"),
     /Use \$implement/u,
@@ -241,7 +243,7 @@ User appendix.
   assert.doesNotMatch(agents, /Tasks and specs use GitHub Issues/u);
 });
 
-test("tracker contract replaces a previous managed block with the spec-scoped layout", async () => {
+test("tracker contract replaces a previous managed block with the scratch-hosted layout", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-guide-managed-upgrade-"));
   const directory = join(root, "docs", "agents");
   await mkdir(directory, { recursive: true });
@@ -265,10 +267,10 @@ User appendix.
 
   const guide = await readFile(join(directory, "issue-tracker.md"), "utf8");
   assert.equal((guide.match(/lfi:tracker-contract:begin/gu) ?? []).length, 1);
-  assert.match(guide, /\.lfi\/tasks\/<specification-slug>\//u);
-  assert.match(guide, /\.lfi\/tasks\/<specification-slug>\/tasks\//u);
-  assert.match(guide, /without a specification.*\.lfi\/tasks\//su);
-  assert.doesNotMatch(guide, /\.lfi\/(?:specs|tasks\/completed)/u);
+  assert.match(guide, /\.scratch\/<specification-slug>\//u);
+  assert.match(guide, /\.scratch\/<specification-slug>\/issues\//u);
+  assert.match(guide, /without a specification.*\.scratch\//su);
+  assert.doesNotMatch(guide, /\.lfi\/(?:specs|tasks)/u);
   assert.match(guide, /^User preface\./u);
   assert.match(guide, /User appendix\.\s*$/u);
 });
@@ -314,15 +316,13 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"main"
   assert.equal(config.LIGHT_MODEL, "");
   assert.equal(config.STANDARD_MODEL, "");
   assert.equal(config.DEEP_MODEL, "");
-  assert.equal(await stat(join(root, ".lfi", "tasks")).then((item) => item.isDirectory()), true);
-  await assert.rejects(stat(join(root, ".lfi", "tasks", "completed")));
+  assert.equal(await stat(join(root, ".scratch")).then((item) => item.isDirectory()), true);
+  await assert.rejects(stat(join(root, ".lfi", "tasks")));
   await assert.rejects(stat(join(root, ".lfi", "specs")));
   const gitignore = await readFile(join(root, ".gitignore"), "utf8");
   assert.match(gitignore, /^# custom\n\nbuild\//u);
   assert.match(gitignore, /\.lfi\/\*/u);
-  assert.match(gitignore, /!\.lfi\/tasks\//u);
-  assert.match(gitignore, /!\.lfi\/tasks\/\*\*/u);
-  assert.doesNotMatch(gitignore, /\.lfi\/(?:specs|tasks\/completed)/u);
+  assert.doesNotMatch(gitignore, /!\.lfi\/(?:specs|tasks)/u);
 
   await writeFile(
     join(root, ".gitignore"),
@@ -350,18 +350,18 @@ build/
     "exists",
   );
   const upgradedGitignore = await readFile(join(root, ".gitignore"), "utf8");
-  assert.match(upgradedGitignore, /!\.lfi\/tasks\/\*\*/u);
-  assert.doesNotMatch(upgradedGitignore, /\.lfi\/(?:specs|tasks\/completed)/u);
+  assert.match(upgradedGitignore, /\.lfi\/\*/u);
+  assert.doesNotMatch(upgradedGitignore, /!\.lfi\/(?:specs|tasks)/u);
   const localGuide = await readFile(
     join(root, "docs", "agents", "issue-tracker.md"),
     "utf8",
   );
   assert.match(localGuide, /^custom tracker guide/mu);
-  assert.match(localGuide, /\.lfi\/tasks\/<specification-slug>\//u);
-  assert.doesNotMatch(localGuide, /\.lfi\/(?:specs|tasks\/completed)/u);
+  assert.match(localGuide, /\.scratch\/<specification-slug>\//u);
+  assert.doesNotMatch(localGuide, /\.lfi\/(?:specs|tasks)/u);
   assert.doesNotMatch(localGuide, /GitHub Issues|lfi:(?:spec|task|tier)/u);
   assert.match(localGuide, /Tier: standard/u);
-  assert.doesNotMatch(localGuide, /ready-for-agent|model:sol|\.scratch/u);
+  assert.doesNotMatch(localGuide, /ready-for-agent|model:sol/u);
   assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /Трекер задач/u);
   assert.match(await readFile(ghMarker, "utf8"), /repo view/u);
 });

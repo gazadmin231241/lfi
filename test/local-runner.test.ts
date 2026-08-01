@@ -33,9 +33,9 @@ const addOrigin = async (
 test("local dry-run selects the dependency frontier without GitHub", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-plan-"));
   const lfiRoot = join(root, ".lfi");
-  const tasks = join(lfiRoot, "tasks");
+  const tasks = join(root, ".scratch");
   await mkdir(tasks, { recursive: true });
-  await mkdir(join(lfiRoot, "specs"));
+  await mkdir(lfiRoot, { recursive: true });
   await writeFile(
     join(lfiRoot, "config.env"),
     serializeEnvConfig(DEFAULT_CONFIG),
@@ -80,12 +80,12 @@ test("local dry-run selects the dependency frontier without GitHub", async () =>
 test("local run does not repeat accepted work after integration fails", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-baseline-failure-"));
   const lfiRoot = join(root, ".lfi");
-  const tasks = join(lfiRoot, "tasks");
+  const tasks = join(root, ".scratch");
   const tools = join(root, "test-tools");
   const taskPath = join(tasks, "[READY] LFI-1 — fix-validation.md");
   const codexCalls = join(root, "codex-calls");
   await mkdir(tasks, { recursive: true });
-  await mkdir(join(lfiRoot, "specs"));
+  await mkdir(lfiRoot, { recursive: true });
   await mkdir(tools);
   await writeFile(
     join(root, ".gitignore"),
@@ -163,16 +163,16 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
 test("local task run commits worker changes, pushes code, and completes the task", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-run-"));
   const lfiRoot = join(root, ".lfi");
-  const tasks = join(lfiRoot, "tasks");
+  const tasks = join(root, ".scratch");
   const tools = join(root, "test-tools");
   const taskPath = join(tasks, "[READY] LFI-1 — implement-local-run.md");
   const ghCalls = join(root, "gh-calls");
   await mkdir(tasks, { recursive: true });
-  await mkdir(join(lfiRoot, "specs"));
+  await mkdir(lfiRoot, { recursive: true });
   await mkdir(tools);
   await writeFile(
     join(root, ".gitignore"),
-    ".lfi/*\n!.lfi/tasks/\n!.lfi/tasks/**\n!.lfi/specs/\n!.lfi/specs/**\n",
+    ".lfi/*\n",
   );
   await writeFile(
     join(lfiRoot, "config.env"),
@@ -308,7 +308,7 @@ exit 97
     "git",
     [
       "show",
-      "origin/main:.lfi/tasks/[DONE] LFI-1 — implement-local-run.md",
+      "origin/main:.scratch/[DONE] LFI-1 — implement-local-run.md",
     ],
     { cwd: root },
   );
@@ -323,7 +323,7 @@ exit 97
       "ls-files",
       "--error-unmatch",
       "--",
-      ".lfi/tasks/[DONE] LFI-1 — implement-local-run.md",
+      ".scratch/[DONE] LFI-1 — implement-local-run.md",
     ],
     { cwd: root },
   );

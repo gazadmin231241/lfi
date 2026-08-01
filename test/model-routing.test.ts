@@ -23,15 +23,15 @@ const initializeRoutingRepository = async (options: {
 }): Promise<{ root: string; calls: string; tools: string }> => {
   const root = await mkdtemp(join(tmpdir(), "lfi-routing-"));
   const lfiRoot = join(root, ".lfi");
-  const tasksRoot = join(lfiRoot, "tasks");
+  const tasksRoot = join(root, ".scratch");
   const tools = join(root, "tools");
   const calls = join(root, "codex-calls");
   await mkdir(tasksRoot, { recursive: true });
-  await mkdir(join(lfiRoot, "specs"));
+  await mkdir(lfiRoot, { recursive: true });
   await mkdir(tools);
   await writeFile(
     join(root, ".gitignore"),
-    ".lfi/*\n!.lfi/tasks/\n!.lfi/tasks/**\n!.lfi/specs/\n!.lfi/specs/**\n",
+    ".lfi/*\n",
   );
   await writeFile(
     join(lfiRoot, "config.env"),

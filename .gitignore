@@ -3,8 +3,4 @@ dist/
 *.tgz
 .DS_Store
 docs/research
-# LFI local tracker: begin
 .lfi/*
-!.lfi/tasks/
-!.lfi/tasks/**
-# LFI local tracker: end

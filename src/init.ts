@@ -245,7 +245,6 @@ export const initializeProject = async (
     mkdir(join(lfiRoot, "logs"), { recursive: true }),
     mkdir(join(lfiRoot, "state"), { recursive: true }),
     mkdir(join(lfiRoot, "worktrees"), { recursive: true }),
-    mkdir(join(lfiRoot, "tasks"), { recursive: true }),
   ]);
   await saveConfig(configPath, config);
   await writeFile(

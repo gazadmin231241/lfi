@@ -175,9 +175,9 @@ test("integration refuses delivery when accepted work was not recorded as done",
   await git("init", "-b", "main");
   await git("config", "user.name", "LFI Test");
   await git("config", "user.email", "lfi@example.test");
-  await mkdir(join(root, ".lfi", "tasks"), { recursive: true });
+  await mkdir(join(root, ".scratch"), { recursive: true });
   await writeFile(
-    join(root, ".lfi", "tasks", "[READY] LFI-1 — task.md"),
+    join(root, ".scratch", "[READY] LFI-1 — task.md"),
     "Type: task\nBlocked by: None\nTier: light\n\nDo the work.\n",
   );
   await git("add", ".");
@@ -207,7 +207,7 @@ test("integration refuses delivery when accepted work was not recorded as done",
             id: "LFI-1",
             number: 1,
             title: "Task",
-            sourcePath: join(root, ".lfi", "tasks", "[READY] LFI-1 — task.md"),
+            sourcePath: join(root, ".scratch", "[READY] LFI-1 — task.md"),
             body: "Do the work.",
           },
           accepted: true,
@@ -279,12 +279,12 @@ test("Russian delivery failure explains how to recover the preserved work", asyn
       gitDirectory: join(root, ".git"),
       language: "ru",
       beforeDelivery: async (integrationPath) => {
-        await mkdir(join(integrationPath, ".lfi", "tasks"), { recursive: true });
+        await mkdir(join(integrationPath, ".scratch"), { recursive: true });
         await writeFile(
-          join(integrationPath, ".lfi", "tasks", "[DONE] LFI-1 — task.md"),
+          join(integrationPath, ".scratch", "[DONE] LFI-1 — task.md"),
           "Type: task\nBlocked by: None\nTier: light\n\nDone.\n",
         );
-        const add = await runCommand("git", ["add", ".lfi/tasks"], {
+        const add = await runCommand("git", ["add", ".scratch"], {
           cwd: integrationPath,
         });
         assert.equal(add.exitCode, 0, add.stderr);

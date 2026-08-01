@@ -10,7 +10,7 @@ export const dryRun = async (
   cwd: string,
   selectedIds: readonly string[] = [],
 ): Promise<{ runnable: WorkItem[]; blocked: WorkItem[] }> => {
-  const tracker = await loadReconciledLocalTracker(join(cwd, ".lfi"));
+  const tracker = await loadReconciledLocalTracker(join(cwd, ".scratch"));
   const plan = runnableLocalTasks(tracker, selectedIds);
   return {
     runnable: plan.runnable.map((task) => trackerDocumentToWorkItem(task)),

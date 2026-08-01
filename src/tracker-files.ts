@@ -7,7 +7,7 @@ import {
   type LocalTracker,
   type TrackerDocument,
 } from "./local-tracker.js";
-import { COMPLETED_TASKS_DIRECTORY } from "./tracker-layout.js";
+import { TRACKER_ISSUES_DIRECTORY } from "./tracker-layout.js";
 import { withLocalRelationships } from "./local-relationships.js";
 import {
   trackerDisplayState,
@@ -39,7 +39,7 @@ const exists = (path: string): Promise<boolean> =>
   );
 
 const featureDirectories = (tracker: LocalTracker): Map<string, string> => {
-  const used = new Set([COMPLETED_TASKS_DIRECTORY]);
+  const used = new Set([TRACKER_ISSUES_DIRECTORY]);
   const directories = new Map<string, string>();
   for (const specification of [...tracker.specs].sort(
     (left, right) => left.number - right.number || left.id.localeCompare(right.id),
@@ -64,20 +64,19 @@ export const trackerTargetPath = (
       "Tracker root is required for reconciliation / для сверки требуется корень трекера",
     );
   }
-  const tasksRoot = join(tracker.root, "tasks");
   const directories = featureDirectories(tracker);
   const filename = trackerFilename(document, tracker, active);
   if (document.type === "spec") {
-    return join(tasksRoot, directories.get(document.id)!, filename);
+    return join(tracker.root, directories.get(document.id)!, filename);
   }
-  if (document.spec === undefined) return join(tasksRoot, filename);
+  if (document.spec === undefined) return join(tracker.root, filename);
   const feature = directories.get(document.spec);
   if (feature === undefined) {
     throw new Error(
       `${document.id}: missing spec / отсутствует спецификация ${document.spec}`,
     );
   }
-  return join(tasksRoot, feature, "tasks", filename);
+  return join(tracker.root, feature, TRACKER_ISSUES_DIRECTORY, filename);
 };
 
 export const reconcileTrackerFilenames = async (
@@ -105,12 +104,12 @@ export const reconcileTrackerFilenames = async (
 };
 
 export const loadReconciledLocalTracker = async (
-  lfiRoot: string,
+  trackerRoot: string,
   active: ReadonlySet<string> = new Set(),
 ): Promise<LocalTracker> => {
-  const tracker = await loadLocalTracker(lfiRoot, {
+  const tracker = await loadLocalTracker(trackerRoot, {
     allowPlacementDrift: true,
   });
   await reconcileTrackerFilenames(tracker, active);
-  return loadLocalTracker(lfiRoot);
+  return loadLocalTracker(trackerRoot);
 };

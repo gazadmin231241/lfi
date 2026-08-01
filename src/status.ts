@@ -123,6 +123,6 @@ export const localStatusLines = async (
   const lfiRoot = join(cwd, ".lfi");
   await configureLocalTrackerStorage(cwd);
   const active = await readActiveTaskIds(lfiRoot);
-  const tracker = await loadReconciledLocalTracker(lfiRoot, active);
+  const tracker = await loadReconciledLocalTracker(join(cwd, ".scratch"), active);
   return formatLocalStatus(tracker, active, options);
 };

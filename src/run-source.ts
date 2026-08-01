@@ -30,7 +30,7 @@ export const listWork = async (
 ): Promise<WorkItem[]> => {
   const lfiRoot = join(cwd, ".lfi");
   const tracker = await loadReconciledLocalTracker(
-    lfiRoot,
+    join(cwd, ".scratch"),
     await readActiveTaskIds(lfiRoot),
   );
   return runnableLocalTasks(tracker, selectedIds).runnable
