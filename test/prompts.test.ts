@@ -8,7 +8,7 @@ const task: WorkItem = {
   id: "LFI-3",
   number: 3,
   title: "Bound autonomous review convergence",
-  url: ".lfi/tasks/review/tasks/[READY] LFI-3 — convergence.md",
+  sourcePath: ".lfi/tasks/review/tasks/[READY] LFI-3 — convergence.md",
   body: "Implement the review-convergence contract.",
 };
 

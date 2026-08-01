@@ -152,8 +152,8 @@ export const reportUnavailableModelSkip = (
 ): string => {
   const summary = localize(
     language,
-    `${id} was skipped because the configured ${tier} tier model ${model} is unavailable.`,
-    `${id} пропущена: настроенная модель ${model} уровня ${tier} недоступна.`,
+    `${id} was skipped because model ${model}, configured through the ${tier} tier mapping, is unavailable.`,
+    `${id} пропущена: модель ${model}, настроенная маршрутизацией уровня ${tier}, недоступна.`,
   );
   if (!reportedIds.has(id)) {
     output.error(summary);

@@ -262,7 +262,10 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
     "utf8",
   );
   assert.match(runLog, /luna-unavailable.+unavailable/isu);
-  assert.match(runLog, /light tier model luna-unavailable/iu);
+  assert.match(
+    runLog,
+    /model luna-unavailable configured through the light tier mapping/iu,
+  );
   assert.match(runLog, /LFI-2.+skipped/isu);
   assert.match(runLog, /Completed: LFI-3/u);
 });
@@ -360,6 +363,6 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
   );
   assert.match(
     runLog,
-    /модель luna-unavailable уровня light недоступна/u,
+    /модель luna-unavailable, настроенная маршрутизацией уровня light, недоступна/u,
   );
 });

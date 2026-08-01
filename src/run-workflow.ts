@@ -192,8 +192,8 @@ export const runLfi = async (
             output.error(
               localize(
                 language,
-                `${task.id}: configured ${task.executionTier ?? "standard"} tier model ${attempt.unavailableModel} is unavailable; LFI will not fall back and will skip other tasks using it for this run.`,
-                `${task.id}: настроенная модель ${attempt.unavailableModel} уровня ${task.executionTier ?? "standard"} недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этой моделью в текущем запуске.`,
+                `${task.id}: model ${attempt.unavailableModel} configured through the ${task.executionTier ?? "standard"} tier mapping is unavailable; LFI will not fall back and will skip other tasks using it for this run.`,
+                `${task.id}: модель ${attempt.unavailableModel}, настроенная маршрутизацией уровня ${task.executionTier ?? "standard"}, недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этой моделью в текущем запуске.`,
               ),
             );
           }

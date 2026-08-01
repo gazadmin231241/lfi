@@ -4,11 +4,10 @@ export interface WorkItem {
   id: string;
   number: number;
   title: string;
-  url: string;
+  sourcePath: string;
   body: string;
   blockedBy?: string[];
   executionTier?: ExecutionTier;
-  localPath?: string;
 }
 
 export interface Attempt {

@@ -133,7 +133,21 @@ export const integrateAttempts = async (options: {
       `HEAD:${options.baseBranch}`,
     ]);
     await options.beforeHostUpdate?.();
-    await git(options.cwd, ["merge", integration.branch, "--ff-only"]);
+    const hostUpdate = await gitResult(options.cwd, [
+      "merge",
+      integration.branch,
+      "--ff-only",
+    ]);
+    if (hostUpdate.exitCode !== 0) {
+      preserveIntegration = true;
+      throw new Error(
+        localize(
+          options.language,
+          `Could not fast-forward the current branch to the validated result. The work was delivered to origin/${options.baseBranch}, and ${integration.branch} was preserved at ${integration.path}. Reconcile or relocate the divergent local commits, then retry: git merge --ff-only ${integration.branch}`,
+          `Не удалось обновить текущую ветку до проверенного результата без создания merge-коммита. Работа доставлена в origin/${options.baseBranch}, а ${integration.branch} сохранена в ${integration.path}. Согласуйте или перенесите расходящиеся локальные коммиты, затем повторите: git merge --ff-only ${integration.branch}`,
+        ),
+      );
+    }
     return {
       sha: (await git(integration.path, ["rev-parse", "HEAD"])).stdout.trim(),
       preserveIntegration,

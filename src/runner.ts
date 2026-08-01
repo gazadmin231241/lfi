@@ -1,24 +1,10 @@
 import { join } from "node:path";
 
-import {
-  runnableLocalTasks,
-  type TrackerDocument,
-} from "./local-tracker.js";
+import { runnableLocalTasks } from "./local-tracker.js";
 import { runLfi } from "./run-workflow.js";
 import type { WorkItem } from "./runner-types.js";
+import { trackerDocumentToWorkItem } from "./run-source.js";
 import { loadReconciledLocalTracker } from "./tracker-files.js";
-
-const localWorkItem = (
-  task: TrackerDocument,
-  blockedBy: readonly string[] = [],
-): WorkItem => ({
-  id: task.id,
-  number: task.number,
-  title: task.title,
-  url: task.path,
-  body: task.body,
-  ...(blockedBy.length > 0 ? { blockedBy: [...blockedBy] } : {}),
-});
 
 export const dryRun = async (
   cwd: string,
@@ -27,9 +13,9 @@ export const dryRun = async (
   const tracker = await loadReconciledLocalTracker(join(cwd, ".lfi"));
   const plan = runnableLocalTasks(tracker, selectedIds);
   return {
-    runnable: plan.runnable.map((task) => localWorkItem(task)),
+    runnable: plan.runnable.map((task) => trackerDocumentToWorkItem(task)),
     blocked: plan.blocked.map((task) =>
-      localWorkItem(
+      trackerDocumentToWorkItem(
         task,
         task.blockedBy.filter(
           (id) =>

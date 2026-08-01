@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { DEFAULT_CONFIG } from "../src/config.js";
+import { integrateAttempts } from "../src/integration.js";
 import { runCommand } from "../src/process.js";
 import { mergeWithAgent } from "../src/runner-support.js";
 
@@ -159,4 +160,67 @@ test("repair cannot modify a path outside its allowlist", async () => {
     cwd: fixture.root,
   });
   assert.equal(subject.stdout.trim(), "fix: change conflict file");
+});
+
+test("Russian delivery failure explains how to recover the preserved work", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-host-update-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const logs = join(root, ".lfi", "logs");
+  await mkdir(worktreesRoot, { recursive: true });
+  await mkdir(logs, { recursive: true });
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "base.txt"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  const remote = await mkdtemp(join(tmpdir(), "lfi-host-update-origin-"));
+  const initialized = await runCommand("git", ["init", "--bare", remote]);
+  assert.equal(initialized.exitCode, 0, initialized.stderr);
+  await git("remote", "add", "origin", remote);
+  await git("push", "-u", "origin", "main");
+  await git("switch", "-c", "lfi/lfi-1");
+  await writeFile(join(root, "worker.txt"), "worker\n");
+  await git("add", "worker.txt");
+  await git("commit", "-m", "feat: worker result");
+  await git("switch", "main");
+
+  await assert.rejects(
+    integrateAttempts({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      baseBranch: "main",
+      runId: "localized-host-update",
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      attempts: [
+        {
+          task: {
+            id: "LFI-1",
+            number: 1,
+            title: "Deliver worker result",
+            sourcePath: join(root, "task.md"),
+            body: "Deliver the result.",
+          },
+          accepted: true,
+          summary: "implemented",
+          worktreePath: root,
+          branch: "lfi/lfi-1",
+        },
+      ],
+      config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
+      gitDirectory: join(root, ".git"),
+      language: "ru",
+      beforeHostUpdate: async () => {
+        await writeFile(join(root, "host.txt"), "host\n");
+        await git("add", "host.txt");
+        await git("commit", "-m", "test: advance host branch");
+      },
+    }),
+    /Не удалось обновить текущую ветку до проверенного результата[\s\S]*git merge --ff-only/u,
+  );
 });

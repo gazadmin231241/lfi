@@ -100,15 +100,15 @@ const askAdvanced = async (
       config.CODEX_MODEL,
     ),
     LIGHT_MODEL: await ask(
-      label("Light tier model", "Модель уровня light"),
+      label("Model for light tier mapping", "Модель для маршрутизации light"),
       config.LIGHT_MODEL,
     ),
     STANDARD_MODEL: await ask(
-      label("Standard tier model", "Модель уровня standard"),
+      label("Model for standard tier mapping", "Модель для маршрутизации standard"),
       config.STANDARD_MODEL,
     ),
     DEEP_MODEL: await ask(
-      label("Deep tier model", "Модель уровня deep"),
+      label("Model for deep tier mapping", "Модель для маршрутизации deep"),
       config.DEEP_MODEL,
     ),
     CODEX_REASONING_EFFORT: codexReasoning,

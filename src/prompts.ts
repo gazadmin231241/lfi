@@ -17,7 +17,7 @@ export const renderWorkerPrompt = (
   const constraintsHeading =
     language === "ru" ? "Ограничения LFI" : "LFI constraints";
   return `${template
-  .replaceAll("{{ISSUE_URL}}", task.url)
+  .replaceAll("{{ISSUE_URL}}", task.sourcePath)
   .replaceAll("{{ISSUE_NUMBER}}", String(task.number))
   .replaceAll("{{ISSUE_TITLE}}", task.title)
   .replaceAll("{{TASK_ID}}", identifier)}

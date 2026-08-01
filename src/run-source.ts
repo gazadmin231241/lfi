@@ -1,9 +1,27 @@
 import { join } from "node:path";
 
-import { runnableLocalTasks } from "./local-tracker.js";
+import {
+  runnableLocalTasks,
+  type TrackerDocument,
+} from "./local-tracker.js";
 import { loadReconciledLocalTracker } from "./tracker-files.js";
 import type { WorkItem } from "./runner-types.js";
 import { readActiveTaskIds } from "./tracker-state.js";
+
+export const trackerDocumentToWorkItem = (
+  task: TrackerDocument,
+  blockedBy: readonly string[] = [],
+): WorkItem => ({
+  id: task.id,
+  number: task.number,
+  title: task.title,
+  sourcePath: task.path,
+  body: task.body,
+  ...(blockedBy.length > 0 ? { blockedBy: [...blockedBy] } : {}),
+  ...(task.executionTier === undefined
+    ? {}
+    : { executionTier: task.executionTier }),
+});
 
 export const listWork = async (
   cwd: string,
@@ -17,15 +35,5 @@ export const listWork = async (
   );
   return runnableLocalTasks(tracker, selectedIds).runnable
     .filter((task) => !completed.has(task.id))
-    .map((task) => ({
-      id: task.id,
-      number: task.number,
-      title: task.title,
-      url: task.id,
-      body: task.body,
-      ...(task.executionTier === undefined
-        ? {}
-        : { executionTier: task.executionTier }),
-      localPath: task.path,
-    }));
+    .map((task) => trackerDocumentToWorkItem(task));
 };
