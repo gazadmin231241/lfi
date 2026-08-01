@@ -112,77 +112,92 @@ export const configureTrackerContract = async (
 ): Promise<void> => {
   await mkdir(join(cwd, "docs", "agents"), { recursive: true });
   const guidePath = join(cwd, "docs", "agents", "issue-tracker.md");
-  const storage = localize(
-    language,
-    `Each specification has its own directory at
-\`.scratch/<specification-slug>/\`. It contains one \`Type: spec\` document
-and an \`issues/\` subdirectory for its executable \`Type: task\` documents.
-Tasks without a specification are files directly in \`.scratch/\`. Completed
-tasks stay beside their specification; there is no archive directory. All
-documents share one monotonically increasing \`LFI-N\` ID sequence, including
-IDs found in Git history. The filename carries the only status and the stable
-ID: \`[READY] LFI-N — slug.md\`. The body declares \`Type:\`, \`Blocked by:\`,
-and, for executable tasks, \`Tier: light\`, \`Tier: standard\`, or \`Tier: deep\`.
-Only \`Type: task\` is executable; \`spec\`, \`research\`, \`prototype\`, and
-\`grilling\` are not. A missing \`Type:\` is an error. LFI renders clickable
-\`Specification\` and \`Blocked by\` sections and keeps their links current.
-
-\`$to-spec\` creates \`.scratch/<specification-slug>/\` and publishes one
-\`Type: spec\` document there. \`$to-tickets\` publishes one \`Type: task\`
-document per ticket in \`.scratch/<specification-slug>/issues/\`; tickets
-without a specification go directly in \`.scratch/\`. LFI renames files when
-their derived status changes.`,
-    `Каждая спецификация хранится в собственном каталоге
-\`.scratch/<specification-slug>/\`. В нём находится один документ \`Type: spec\`
-и подкаталог \`issues/\` для исполняемых документов \`Type: task\`. Задачи без
-спецификации хранятся непосредственно в \`.scratch/\`. Завершённые задачи
-остаются рядом со своей спецификацией; каталога архива нет. Все документы
-используют одну монотонно возрастающую последовательность \`LFI-N\`, включая ID
-из истории Git. Единственный статус и стабильный ID находятся в имени файла:
-\`[READY] LFI-N — slug.md\`. В теле объявляются \`Type:\`, \`Blocked by:\` и,
-для исполняемых задач, \`Tier: light\`, \`Tier: standard\` или \`Tier: deep\`.
-Исполняется только \`Type: task\`; типы \`spec\`, \`research\`, \`prototype\` и
-\`grilling\` не исполняются. Отсутствующий \`Type:\` считается ошибкой. LFI
-отображает кликабельные разделы \`Specification\` и \`Blocked by\` и обновляет
-их ссылки.
-
-\`$to-spec\` создаёт \`.scratch/<specification-slug>/\` и публикует один
-документ \`Type: spec\`. \`$to-tickets\` публикует по одному документу
-\`Type: task\` в \`.scratch/<specification-slug>/issues/\`; задачи без
-спецификации идут непосредственно в \`.scratch/\`. LFI переименовывает файлы
-при изменении вычисленного статуса.`,
-  );
   const contract = localize(
-      language,
-      `${TRACKER_CONTRACT_BEGIN}
+    language,
+    `${TRACKER_CONTRACT_BEGIN}
 ${TRACKER_CONTRACT_MARKER}
 # Issue tracker: LFI
 
-${storage}
+## Documents
 
-Task creation assigns an abstract execution tier from required judgment and
-cost of error; it never chooses a concrete model. LFI configuration maps tiers
-to models.
+Tracker documents live in \`.scratch/\`. A feature has one \`Type: spec\` document in
+\`.scratch/<feature-slug>/\` and its tasks in
+\`.scratch/<feature-slug>/issues/\`; a task without a specification is directly
+in \`.scratch/\`. Completed documents stay in place; there is no archive.
 
-Use \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\`, and \`[DONE]\` for
-local filenames and status output. Specifications are never executable.
+Every tracker document uses the filename
+\`[STATUS] LFI-N — <slug>.md\`. \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`,
+\`[BLOCKED]\`, and \`[DONE]\` are the status values; this filename is the only
+place status is recorded. \`LFI-N\` is the stable, repository-wide identifier,
+allocated monotonically even across identifiers found only in Git history. LFI
+renames a document when its status changes.
+
+## Marker lines
+
+Every document has a mandatory \`Type:\` line: \`spec\`, \`task\`, \`research\`,
+\`prototype\`, or \`grilling\`. Only \`Type: task\` is executable; every other
+type is non-executable. A missing \`Type:\` line is an error.
+
+\`Blocked by:\` lists comma-separated blocking \`LFI-N\` identifiers, or \`None\`
+when there are none. A \`Type: task\` document also has \`Tier: light\`,
+\`Tier: standard\`, or \`Tier: deep\`; the tier expresses required judgment and
+cost of error, and LFI configuration maps it to a model.
+
+## Wayfinding operations
+
+Used by \`$wayfinder\`. A wayfinding map is a tracker document at
+\`.scratch/<effort-slug>/[STATUS] LFI-N — map-<slug>.md\`; its decision tickets
+are tracker documents at
+\`.scratch/<effort-slug>/issues/[STATUS] LFI-N — <slug>.md\`. The map uses a
+non-task \`Type:\`; a decision ticket uses \`Type: research\`, \`prototype\`,
+\`grilling\`, or \`task\`. A ticket changed to \`Type: task\` becomes executable
+without moving it. Blocking and the frontier use the \`Blocked by:\` and status
+rules above.
 ${TRACKER_CONTRACT_END}
 `,
-      `${TRACKER_CONTRACT_BEGIN}
+    `${TRACKER_CONTRACT_BEGIN}
 ${TRACKER_CONTRACT_MARKER}
 # Трекер задач: LFI
 
-${storage}
+## Документы
 
-При создании задачи назначается абстрактный уровень выполнения по требуемому
-качеству суждения и цене ошибки; конкретная модель не выбирается. Конфигурация
-LFI сопоставляет уровни моделям.
+Документы трекера находятся в \`.scratch/\`. У функции один документ \`Type: spec\` в
+\`.scratch/<feature-slug>/\`, а её задачи — в
+\`.scratch/<feature-slug>/issues/\`; задача без спецификации находится прямо в
+\`.scratch/\`. Завершённые документы остаются на месте; каталога архива нет.
 
-Используйте \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`, \`[BLOCKED]\` и \`[DONE]\`
-в именах локальных файлов и выводе статуса. Спецификации никогда не исполняются.
+Каждый документ трекера использует имя
+\`[STATUS] LFI-N — <slug>.md\`. \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`,
+\`[BLOCKED]\` и \`[DONE]\` — значения статуса; статус записывается только в имени
+файла. \`LFI-N\` — стабильный идентификатор в масштабе репозитория, который
+монотонно выделяется с учётом ID, встречающихся только в истории Git. При
+смене статуса LFI переименовывает документ.
+
+## Строки-маркеры
+
+В каждом документе обязательна строка \`Type:\`: \`spec\`, \`task\`,
+\`research\`, \`prototype\` или \`grilling\`. Исполняется только \`Type: task\`;
+все остальные типы неисполнимы. Отсутствующая строка \`Type:\` — ошибка.
+
+\`Blocked by:\` содержит разделённые запятыми идентификаторы блокирующих
+\`LFI-N\` или \`None\`, если их нет. Документ \`Type: task\` также содержит
+\`Tier: light\`, \`Tier: standard\` или \`Tier: deep\`; уровень выражает
+требуемое качество суждения и цену ошибки, а конфигурация LFI сопоставляет его
+с моделью.
+
+## Операции wayfinding
+
+Используются \`$wayfinder\`. Карта wayfinding — это документ трекера в
+\`.scratch/<effort-slug>/[STATUS] LFI-N — map-<slug>.md\`; её билеты-решения —
+документы трекера в
+\`.scratch/<effort-slug>/issues/[STATUS] LFI-N — <slug>.md\`. У карты
+неисполняемый \`Type:\`; билет-решение использует \`Type: research\`,
+\`prototype\`, \`grilling\` или \`task\`. Билет, изменённый на \`Type: task\`,
+становится исполняемым без перемещения. Блокировки и frontier используют
+указанные выше правила \`Blocked by:\` и статуса.
 ${TRACKER_CONTRACT_END}
 `,
-    );
+  );
   const source = await readFile(guidePath, "utf8").catch(() => "");
   const managed = new RegExp(
     `${TRACKER_CONTRACT_BEGIN}[\\s\\S]*?${TRACKER_CONTRACT_END}\\r?\\n?`,

@@ -207,11 +207,16 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
   assert.match(trackerGuide, /Type: spec/u);
   assert.match(trackerGuide, /Type: task/u);
   assert.match(trackerGuide, /Tier: light/u);
-  assert.match(trackerGuide, /missing `Type:` is an error/u);
+  assert.match(trackerGuide, /missing `Type:` line is an error/u);
+  assert.match(trackerGuide, /## Wayfinding operations/u);
+  assert.match(trackerGuide, /\.scratch\/<effort-slug>\/\[STATUS\] LFI-N — map-<slug>\.md/u);
+  assert.match(trackerGuide, /\.scratch\/<effort-slug>\/issues\/\[STATUS\] LFI-N — <slug>\.md/u);
+  assert.match(trackerGuide, /<!-- lfi:tracker-contract -->/u);
   assert.doesNotMatch(trackerGuide, /GitHub Issues|lfi:(?:spec|task|tier)/u);
   assert.match(await readFile(ghMarker, "utf8"), /repo view/u);
   const agentInstructions = await readFile(join(root, "AGENTS.md"), "utf8");
   assert.match(agentInstructions, /LFI Local Markdown/u);
+  assert.equal((agentInstructions.match(/lfi:agent-tracker:begin/gu) ?? []).length, 1);
 });
 
 test("tracker contract upgrades preserve text around the legacy marker", async () => {
@@ -230,6 +235,7 @@ Old managed contract. Specifications are never executable.
 User appendix.
 `,
   );
+  await writeFile(join(root, "AGENTS.md"), "User agent instructions.\n");
 
   await configureTrackerContract(root, "en");
   const guide = await readFile(join(directory, "issue-tracker.md"), "utf8");
@@ -239,7 +245,9 @@ User appendix.
 
   await configureTrackerContract(root, "en");
   const agents = await readFile(join(root, "AGENTS.md"), "utf8");
+  assert.match(agents, /^User agent instructions\./u);
   assert.match(agents, /LFI Local Markdown/u);
+  assert.equal((agents.match(/lfi:agent-tracker:begin/gu) ?? []).length, 1);
   assert.doesNotMatch(agents, /Tasks and specs use GitHub Issues/u);
 });
 
@@ -267,8 +275,8 @@ User appendix.
 
   const guide = await readFile(join(directory, "issue-tracker.md"), "utf8");
   assert.equal((guide.match(/lfi:tracker-contract:begin/gu) ?? []).length, 1);
-  assert.match(guide, /\.scratch\/<specification-slug>\//u);
-  assert.match(guide, /\.scratch\/<specification-slug>\/issues\//u);
+  assert.match(guide, /\.scratch\/<feature-slug>\//u);
+  assert.match(guide, /\.scratch\/<feature-slug>\/issues\//u);
   assert.match(guide, /without a specification.*\.scratch\//su);
   assert.doesNotMatch(guide, /\.lfi\/(?:specs|tasks)/u);
   assert.match(guide, /^User preface\./u);
@@ -357,7 +365,7 @@ build/
     "utf8",
   );
   assert.match(localGuide, /^custom tracker guide/mu);
-  assert.match(localGuide, /\.scratch\/<specification-slug>\//u);
+  assert.match(localGuide, /\.scratch\/<feature-slug>\//u);
   assert.doesNotMatch(localGuide, /\.lfi\/(?:specs|tasks)/u);
   assert.doesNotMatch(localGuide, /GitHub Issues|lfi:(?:spec|task|tier)/u);
   assert.match(localGuide, /Tier: standard/u);

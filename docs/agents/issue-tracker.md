@@ -2,29 +2,39 @@
 <!-- lfi:tracker-contract -->
 # Issue tracker: LFI
 
-Each specification has its own directory at
-`.scratch/<specification-slug>/`. It contains one `Type: spec` document
-and an `issues/` subdirectory for its executable `Type: task` documents.
-Tasks without a specification are files directly in `.scratch/`. Completed
-tasks stay beside their specification; there is no archive directory. All
-documents share one monotonically increasing `LFI-N` ID sequence, including
-IDs found in Git history. The filename carries the only status and the stable
-ID: `[READY] LFI-N — slug.md`. The body declares `Type:`, `Blocked by:`,
-and, for executable tasks, `Tier: light`, `Tier: standard`, or `Tier: deep`.
-Only `Type: task` is executable; `spec`, `research`, `prototype`, and
-`grilling` are not. A missing `Type:` is an error. LFI renders clickable
-`Specification` and `Blocked by` sections and keeps their links current.
+## Documents
 
-`$to-spec` creates `.scratch/<specification-slug>/` and publishes one
-`Type: spec` document there. `$to-tickets` publishes one `Type: task`
-document per ticket in `.scratch/<specification-slug>/issues/`; tickets
-without a specification go directly in `.scratch/`. LFI renames files when
-their derived status changes.
+Tracker documents live in `.scratch/`. A feature has one `Type: spec` document in
+`.scratch/<feature-slug>/` and its tasks in
+`.scratch/<feature-slug>/issues/`; a task without a specification is directly
+in `.scratch/`. Completed documents stay in place; there is no archive.
 
-Task creation assigns an abstract execution tier from required judgment and
-cost of error; it never chooses a concrete model. LFI configuration maps tiers
-to models.
+Every tracker document uses the filename
+`[STATUS] LFI-N — <slug>.md`. `[SPEC]`, `[READY]`, `[RUNNING]`,
+`[BLOCKED]`, and `[DONE]` are the status values; this filename is the only
+place status is recorded. `LFI-N` is the stable, repository-wide identifier,
+allocated monotonically even across identifiers found only in Git history. LFI
+renames a document when its status changes.
 
-Use `[SPEC]`, `[READY]`, `[RUNNING]`, `[BLOCKED]`, and `[DONE]` for
-local filenames and status output. Specifications are never executable.
+## Marker lines
+
+Every document has a mandatory `Type:` line: `spec`, `task`, `research`,
+`prototype`, or `grilling`. Only `Type: task` is executable; every other
+type is non-executable. A missing `Type:` line is an error.
+
+`Blocked by:` lists comma-separated blocking `LFI-N` identifiers, or `None`
+when there are none. A `Type: task` document also has `Tier: light`,
+`Tier: standard`, or `Tier: deep`; the tier expresses required judgment and
+cost of error, and LFI configuration maps it to a model.
+
+## Wayfinding operations
+
+Used by `$wayfinder`. A wayfinding map is a tracker document at
+`.scratch/<effort-slug>/[STATUS] LFI-N — map-<slug>.md`; its decision tickets
+are tracker documents at
+`.scratch/<effort-slug>/issues/[STATUS] LFI-N — <slug>.md`. The map uses a
+non-task `Type:`; a decision ticket uses `Type: research`, `prototype`,
+`grilling`, or `task`. A ticket changed to `Type: task` becomes executable
+without moving it. Blocking and the frontier use the `Blocked by:` and status
+rules above.
 <!-- lfi:tracker-contract:end -->
