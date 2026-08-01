@@ -278,6 +278,23 @@ test("Russian delivery failure explains how to recover the preserved work", asyn
       config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
       gitDirectory: join(root, ".git"),
       language: "ru",
+      beforeDelivery: async (integrationPath) => {
+        await mkdir(join(integrationPath, ".lfi", "tasks"), { recursive: true });
+        await writeFile(
+          join(integrationPath, ".lfi", "tasks", "[DONE] LFI-1 — task.md"),
+          "Type: task\nBlocked by: None\nTier: light\n\nDone.\n",
+        );
+        const add = await runCommand("git", ["add", ".lfi/tasks"], {
+          cwd: integrationPath,
+        });
+        assert.equal(add.exitCode, 0, add.stderr);
+        const commit = await runCommand(
+          "git",
+          ["commit", "-m", "chore(lfi): complete LFI-1"],
+          { cwd: integrationPath },
+        );
+        assert.equal(commit.exitCode, 0, commit.stderr);
+      },
       beforeHostUpdate: async () => {
         await writeFile(join(root, "host.txt"), "host\n");
         await git("add", "host.txt");

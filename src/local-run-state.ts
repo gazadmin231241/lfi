@@ -17,6 +17,15 @@ const completeChecklist = (body: string): string =>
     "$1[x]",
   );
 
+export const localCompletionCommitSubject = (
+  taskIds: readonly string[],
+): string => `chore(lfi): complete ${taskIds.join(", ")}`;
+
+export const isCompletedLocalTaskPath = (
+  path: string,
+  taskId: string,
+): boolean => path.includes(`/[DONE] ${taskId} — `);
+
 export const recordLocalCompletion = async (
   cwd: string,
   attempts: readonly Attempt[],
@@ -34,6 +43,6 @@ export const recordLocalCompletion = async (
   await reconcileTrackerFilenames(tracker, new Set());
   await checkpointTracker(
     cwd,
-    `chore(lfi): complete ${[...completed].join(", ")}`,
+    localCompletionCommitSubject([...completed]),
   );
 };

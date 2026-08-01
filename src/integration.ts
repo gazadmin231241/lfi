@@ -7,6 +7,10 @@ import {
 } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
+import {
+  isCompletedLocalTaskPath,
+  localCompletionCommitSubject,
+} from "./local-run-state.js";
 import type { RunLogContext } from "./logs.js";
 import type { Attempt } from "./runner-types.js";
 import {
@@ -45,9 +49,9 @@ const verifyCompletionCheckpoint = async (
   ]);
   const trackedPaths = trackedTasks.stdout.split("\0").filter(Boolean);
   const missing = ids.filter(
-    (id) => !trackedPaths.some((path) => path.includes(`/[DONE] ${id} — `)),
+    (id) => !trackedPaths.some((path) => isCompletedLocalTaskPath(path, id)),
   );
-  const expectedSubject = `chore(lfi): complete ${ids.join(", ")}`;
+  const expectedSubject = localCompletionCommitSubject(ids);
   if (missing.length === 0 && subject.stdout.trim() === expectedSubject) return;
   const affected = missing.length > 0 ? missing : ids;
   throw new Error(
@@ -71,7 +75,7 @@ export const integrateAttempts = async (options: {
   gitDirectory: string;
   language: Language;
   onValidationStarted?: () => void;
-  beforeDelivery?: (cwd: string) => Promise<void>;
+  beforeDelivery: (cwd: string) => Promise<void>;
   beforeHostUpdate?: () => Promise<void>;
 }): Promise<{ sha: string; preserveIntegration: boolean }> => {
   const integration = await createIntegrationWorktree({
@@ -152,14 +156,12 @@ export const integrateAttempts = async (options: {
         });
       },
     });
-    await options.beforeDelivery?.(integration.path);
-    if (options.beforeDelivery) {
-      await verifyCompletionCheckpoint(
-        integration.path,
-        options.attempts,
-        options.language,
-      );
-    }
+    await options.beforeDelivery(integration.path);
+    await verifyCompletionCheckpoint(
+      integration.path,
+      options.attempts,
+      options.language,
+    );
     await git(integration.path, [
       "push",
       "origin",
