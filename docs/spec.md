@@ -8,8 +8,11 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
 1. Install/link `lfi`, select English or Russian once, and run `lfi init` in a
    Git repository. Choose Local Markdown or GitHub Issues; new projects default
    to local.
-2. Local tasks and specs are versioned flat Markdown collections under `.lfi`,
-   with one shared stable `LFI-N` namespace. Transient state remains ignored.
+2. Local tracker documents are versioned under `.lfi/tasks/`: each
+   specification has a directory containing its specification document and
+   `tasks/` subdirectory, while tasks without a specification are at the root.
+   Completed tasks stay in place; there is no archive directory. All documents
+   share one stable `LFI-N` namespace. Transient state remains ignored.
    Completed tasks record an ISO-8601 `completed_at` timestamp for recent
    completion ordering.
 3. `lfi run --dry-run` reports eligible and blocked work without mutations.

@@ -55,16 +55,24 @@ assigns an abstract execution tier instead of choosing a concrete model.
 Local Markdown:
 
 ```text
-.lfi/tasks/[READY] LFI-2 — implement-parser.md
-.lfi/specs/[SPEC] LFI-1 — local-first-workflow.md
+.lfi/tasks/
+  local-first-workflow/
+    [SPEC] LFI-1 — local-first-workflow.md
+    tasks/
+      [READY] LFI-2 — implement-parser.md
+      [DONE] LFI-3 — publish-release.md
+  [READY] LFI-4 — one-off-maintenance.md
 ```
 
-These files are versioned; `.lfi/logs`, `.lfi/state`, and `.lfi/worktrees`
-remain local. Tasks use Markdown with YAML frontmatter and one shared `LFI-N`
-ID sequence. Persisted statuses are `ready`, `completed`, and `cancelled`;
-in-progress and blocked display states are derived. LFI records `completed_at`
-after integration so the ten recent completions are ordered by completion
-time, not by ID.
+Each specification has its own directory: its specification document is at the
+root and its tasks are in `tasks/`. Tasks without a specification sit directly
+at `.lfi/tasks/`. Completed tasks remain beside their specification; there is
+no archive directory. These files are versioned; `.lfi/logs`, `.lfi/state`, and
+`.lfi/worktrees` remain local. Tasks use Markdown with YAML frontmatter and one
+shared `LFI-N` ID sequence. Persisted statuses are `ready`, `completed`, and
+`cancelled`; in-progress and blocked display states are derived. LFI records
+`completed_at` after integration so the ten recent completions are ordered by
+completion time, not by ID.
 
 Each local task ends with clickable `Specification` and `Blocked by` sections.
 LFI updates their exact relative file links whenever a status rename occurs.

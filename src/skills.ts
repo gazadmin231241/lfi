@@ -52,14 +52,32 @@ contains \`lfi:tracker-contract\`, these rules take precedence over every later
 tracker, path, and label instruction in this skill:
 
 - In Local Markdown mode, allocate the next shared \`LFI-N\` and publish one
-  \`type: spec\` document in \`.lfi/specs/\`, named
-  \`[SPEC] LFI-N — informative-slug.md\`.
+  \`type: spec\` document in a new \`.lfi/tasks/informative-slug/\` directory,
+  named \`[SPEC] LFI-N — informative-slug.md\`.
 - In GitHub mode, publish an Issue labelled only with the LFI-managed type
   label \`lfi:spec\`, with a stable \`LFI-N — title\`; never add \`lfi:task\`,
   \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
 - A specification is not executable.
 
 If the marker is absent, follow the original process below unchanged.
+
+## Переопределение LFI для трекера
+
+Перед выполнением процесса ниже прочитайте \`docs/agents/issue-tracker.md\`. Если
+он содержит \`lfi:tracker-contract\`, эти правила имеют приоритет над всеми
+последующими инструкциями навыка о трекере, путях и метках:
+
+- В режиме Local Markdown выделите следующий общий \`LFI-N\` и опубликуйте один
+  документ \`type: spec\` в новом каталоге
+  \`.lfi/tasks/informative-slug/\` с именем
+  \`[SPEC] LFI-N — informative-slug.md\`.
+- В режиме GitHub опубликуйте Issue только с управляемой LFI меткой типа
+  \`lfi:spec\` и стабильным \`LFI-N — название\`; никогда не добавляйте
+  \`lfi:task\`, \`ready-for-agent\`, Sandcastle, model, module, wayfinder или
+  PRD-метки.
+- Спецификация не исполняется.
+
+Если маркер отсутствует, без изменений следуйте исходному процессу ниже.
 
 `
     : `${SKILL_OVERRIDE_MARKER}
@@ -70,9 +88,11 @@ contains \`lfi:tracker-contract\`, these rules take precedence over every later
 tracker, path, label, and execution-model instruction in this skill:
 
 - In Local Markdown mode, publish one \`type: task\` document per ticket in
-  \`.lfi/tasks/\`, using the shared \`LFI-N\` sequence and \`spec: LFI-N\`.
-  Assign exactly one \`execution_tier: light|standard|deep\` in frontmatter.
-  Prefix each filename with its derived status, for example
+  its specification's \`.lfi/tasks/specification-slug/tasks/\` directory,
+  using the shared \`LFI-N\` sequence and \`spec: LFI-N\`. Publish a ticket
+  without a specification directly in \`.lfi/tasks/\`. Assign exactly one
+  \`execution_tier: light|standard|deep\` in frontmatter. Prefix each filename
+  with its derived status, for example
   \`[READY] LFI-N — informative-slug.md\` or
   \`[BLOCKED] LFI-N — informative-slug.md\`.
 - In GitHub mode, publish Issues with \`lfi:task\`, a stable
@@ -90,6 +110,38 @@ tracker, path, label, and execution-model instruction in this skill:
 - Do not publish LFI tracker documents under \`.scratch/\`.
 
 If the marker is absent, follow the original process below unchanged.
+
+## Переопределение LFI для трекера
+
+Перед выполнением процесса ниже прочитайте \`docs/agents/issue-tracker.md\`. Если
+он содержит \`lfi:tracker-contract\`, эти правила имеют приоритет над всеми
+последующими инструкциями навыка о трекере, путях, метках и модели выполнения:
+
+- В режиме Local Markdown опубликуйте по одному документу \`type: task\` на
+  задачу в каталоге \`.lfi/tasks/specification-slug/tasks/\` её спецификации,
+  используя общую последовательность \`LFI-N\` и \`spec: LFI-N\`. Задачу без
+  спецификации публикуйте непосредственно в \`.lfi/tasks/\`. В frontmatter
+  укажите ровно один \`execution_tier: light|standard|deep\`. Имя каждого файла
+  начинается с вычисленного статуса, например
+  \`[READY] LFI-N — informative-slug.md\` или
+  \`[BLOCKED] LFI-N — informative-slug.md\`.
+- В режиме GitHub публикуйте Issues с \`lfi:task\`, стабильным
+  \`LFI-N — название\`, ровно одной меткой \`lfi:tier:light\`,
+  \`lfi:tier:standard\` или \`lfi:tier:deep\`, а также нативными родительскими
+  связями и зависимостями. Никогда не добавляйте \`ready-for-agent\`,
+  Sandcastle, model, module, wayfinder или PRD-метки.
+- Автоматически назначайте уровень выполнения по требуемому качеству суждения и
+  цене ошибки: ограниченная механическая низкорисковая работа — \`light\`;
+  обычная работа над функциями, сопровождением и ошибками — \`standard\`;
+  неоднозначная, межсистемная, чувствительная к безопасности, конкурентности
+  или данным работа — \`deep\`. Количество файлов не определяет уровень.
+  При настоящем сомнении выбирайте более высокий уровень. Пользователь может
+  изменить уровень до выполнения.
+- Навык не должен спрашивать модель выполнения или назначать метки конкретных
+  моделей.
+- Не публикуйте документы трекера LFI в \`.scratch/\`.
+
+Если маркер отсутствует, без изменений следуйте исходному процессу ниже.
 
 `;
 

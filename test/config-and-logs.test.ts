@@ -259,6 +259,38 @@ User appendix.
   assert.doesNotMatch(agents, /Tasks and specs use GitHub Issues/u);
 });
 
+test("tracker contract replaces a previous managed block with the spec-scoped layout", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-guide-managed-upgrade-"));
+  const directory = join(root, "docs", "agents");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "issue-tracker.md"),
+    `User preface.
+
+<!-- lfi:tracker-contract:begin -->
+<!-- lfi:tracker-contract -->
+# Issue tracker: LFI
+
+Specifications are flat files in \`.lfi/specs/\`; completed tasks move to
+\`.lfi/tasks/completed/\`.
+<!-- lfi:tracker-contract:end -->
+
+User appendix.
+`,
+  );
+
+  await configureTrackerContract(root, "en", "local");
+
+  const guide = await readFile(join(directory, "issue-tracker.md"), "utf8");
+  assert.equal((guide.match(/lfi:tracker-contract:begin/gu) ?? []).length, 1);
+  assert.match(guide, /\.lfi\/tasks\/<specification-slug>\//u);
+  assert.match(guide, /\.lfi\/tasks\/<specification-slug>\/tasks\//u);
+  assert.match(guide, /without a specification.*\.lfi\/tasks\//su);
+  assert.doesNotMatch(guide, /\.lfi\/(?:specs|tasks\/completed)/u);
+  assert.match(guide, /^User preface\./u);
+  assert.match(guide, /User appendix\.\s*$/u);
+});
+
 test("local init works without gh or a remote and tracks only task documents", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-init-"));
   const bin = join(root, "bin");
@@ -346,8 +378,8 @@ build/
     "utf8",
   );
   assert.match(localGuide, /^custom tracker guide/mu);
-  assert.match(localGuide, /\.lfi\/specs/u);
-  assert.match(localGuide, /\.lfi\/tasks/u);
+  assert.match(localGuide, /\.lfi\/tasks\/<specification-slug>\//u);
+  assert.doesNotMatch(localGuide, /\.lfi\/(?:specs|tasks\/completed)/u);
   assert.match(localGuide, /lfi:spec/u);
   assert.match(localGuide, /lfi:task/u);
   assert.match(localGuide, /execution_tier/u);
