@@ -44,10 +44,8 @@ lfi run
 `lfi skills install` installs a pinned minimal bundle from
 [`mattpocock/skills`](https://github.com/mattpocock/skills). Open Codex in the
 target repository and use `to-spec`/`to-tickets`; local initialization writes
-their tracker contract automatically. LFI conditionally adapts the installed
-`to-spec` and `to-tickets` instructions for LFI projects: specs and tasks go to
-the local `.lfi` tracker, and ticket creation assigns an abstract execution
-tier instead of choosing a concrete model.
+the project's tracker contract automatically. Skills are installed exactly as
+published upstream, so they behave the same in LFI and non-LFI repositories.
 
 ## Task storage
 
