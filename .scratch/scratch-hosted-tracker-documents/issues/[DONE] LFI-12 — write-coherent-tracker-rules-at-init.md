@@ -31,25 +31,25 @@ with no skill edited and nothing else configured.
 
 ## Acceptance criteria
 
-- [ ] Initialization writes the project's tracker document describing the
+- [x] Initialization writes the project's tracker document describing the
       current layout, retaining the contract marker.
-- [ ] The document describes each rule once; no statement in it is contradicted
+- [x] The document describes each rule once; no statement in it is contradicted
       by another.
-- [ ] The document covers locations, filename status and identity, every marker
+- [x] The document covers locations, filename status and identity, every marker
       line, the kind vocabulary, which kinds are executable, and the malformed
       case.
-- [ ] The document covers wayfinding locations and naming, using the same naming
+- [x] The document covers wayfinding locations and naming, using the same naming
       rules as the rest of the tracker.
-- [ ] The pointer block in the project's agent instructions file is written as it
+- [x] The pointer block in the project's agent instructions file is written as it
       is today, and re-initializing does not duplicate it.
-- [ ] Re-initializing an already configured project does not damage a user's
+- [x] Re-initializing an already configured project does not damage a user's
       edits to surrounding content.
-- [ ] This repository's own tracker document is regenerated and matches the
+- [x] This repository's own tracker document is regenerated and matches the
       current layout.
-- [ ] Tests assert on the text written into the project — the contract marker,
+- [x] Tests assert on the text written into the project — the contract marker,
       the wayfinding coverage, and the pointer block — and on re-initialization
       being safe.
-- [ ] User-facing output remains available in English and Russian.
+- [x] User-facing output remains available in English and Russian.
 
 ## Specification
 
