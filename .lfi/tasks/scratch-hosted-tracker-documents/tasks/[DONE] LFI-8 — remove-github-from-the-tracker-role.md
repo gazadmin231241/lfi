@@ -1,13 +1,6 @@
----
-id: LFI-8
-type: task
-title: "Remove GitHub from the tracker role"
-status: completed
-execution_tier: deep
-spec: LFI-7
-blocked_by:
-completed_at: 2026-08-01T19:46:15.332Z
----
+Type: task
+Blocked by: None
+Tier: deep
 
 > **Task complexity:** `deep`
 

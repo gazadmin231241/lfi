@@ -35,11 +35,7 @@ export const formatLocalStatus = (
   });
   const completed = tracker.tasks
     .filter((task) => states.get(task.id) === "done")
-    .sort(
-      (a, b) =>
-        Date.parse(b.completedAt ?? "") - Date.parse(a.completedAt ?? "") ||
-        b.number - a.number,
-    );
+    .sort((a, b) => b.number - a.number);
   const cancelled = tracker.tasks.filter(
     (task) => states.get(task.id) === "cancelled",
   );

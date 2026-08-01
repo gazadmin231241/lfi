@@ -1,10 +1,5 @@
----
-id: LFI-7
-type: spec
-title: "Scratch-hosted tracker documents"
-status: ready
-blocked_by:
----
+Type: spec
+Blocked by: None
 
 ## Problem Statement
 

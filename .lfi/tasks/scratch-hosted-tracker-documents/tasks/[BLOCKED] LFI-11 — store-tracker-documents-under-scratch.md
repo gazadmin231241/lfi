@@ -1,13 +1,6 @@
----
-id: LFI-11
-type: task
-title: "Store tracker documents under scratch"
-status: ready
-execution_tier: standard
-spec: LFI-7
-blocked_by:
-  - LFI-10
----
+Type: task
+Blocked by: LFI-10
+Tier: standard
 
 > **Task complexity:** `standard`
 

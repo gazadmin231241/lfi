@@ -1,13 +1,6 @@
----
-id: LFI-12
-type: task
-title: "Write coherent tracker rules at init"
-status: ready
-execution_tier: standard
-spec: LFI-7
-blocked_by:
-  - LFI-11
----
+Type: task
+Blocked by: LFI-11
+Tier: standard
 
 > **Task complexity:** `standard`
 

@@ -202,9 +202,10 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
     join(root, "docs", "agents", "issue-tracker.md"),
     "utf8",
   );
-  assert.match(trackerGuide, /type: spec/u);
-  assert.match(trackerGuide, /type: task/u);
-  assert.match(trackerGuide, /execution_tier/u);
+  assert.match(trackerGuide, /Type: spec/u);
+  assert.match(trackerGuide, /Type: task/u);
+  assert.match(trackerGuide, /Tier: light/u);
+  assert.match(trackerGuide, /missing `Type:` is an error/u);
   assert.doesNotMatch(trackerGuide, /GitHub Issues|lfi:(?:spec|task|tier)/u);
   assert.match(await readFile(ghMarker, "utf8"), /repo view/u);
   const agentInstructions = await readFile(join(root, "AGENTS.md"), "utf8");
@@ -359,7 +360,7 @@ build/
   assert.match(localGuide, /\.lfi\/tasks\/<specification-slug>\//u);
   assert.doesNotMatch(localGuide, /\.lfi\/(?:specs|tasks\/completed)/u);
   assert.doesNotMatch(localGuide, /GitHub Issues|lfi:(?:spec|task|tier)/u);
-  assert.match(localGuide, /execution_tier/u);
+  assert.match(localGuide, /Tier: standard/u);
   assert.doesNotMatch(localGuide, /ready-for-agent|model:sol|\.scratch/u);
   assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /Трекер задач/u);
   assert.match(await readFile(ghMarker, "utf8"), /repo view/u);

@@ -1,13 +1,6 @@
----
-id: LFI-9
-type: task
-title: "Install upstream skills verbatim"
-status: completed
-execution_tier: light
-spec: LFI-7
-blocked_by:
-completed_at: 2026-08-01T19:46:15.332Z
----
+Type: task
+Blocked by: None
+Tier: light
 
 > **Task complexity:** `light`
 

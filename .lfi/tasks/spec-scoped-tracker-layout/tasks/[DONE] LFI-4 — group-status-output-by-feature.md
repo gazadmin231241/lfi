@@ -1,14 +1,6 @@
----
-id: LFI-4
-type: task
-title: "Group status output by feature"
-status: completed
-execution_tier: standard
-spec: LFI-1
-blocked_by:
-  - LFI-3
-completed_at: 2026-08-01T16:18:08.375Z
----
+Type: task
+Blocked by: LFI-3
+Tier: standard
 
 > **Task complexity:** `standard`
 

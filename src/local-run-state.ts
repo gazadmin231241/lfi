@@ -6,7 +6,10 @@ import {
 import { configureLocalTrackerStorage } from "./local-setup.js";
 import type { Attempt } from "./runner-types.js";
 import { checkpointTracker } from "./runner-support.js";
-import { loadReconciledLocalTracker } from "./tracker-files.js";
+import {
+  loadReconciledLocalTracker,
+  reconcileTrackerFilenames,
+} from "./tracker-files.js";
 
 const completeChecklist = (body: string): string =>
   body.replace(
@@ -21,18 +24,14 @@ export const recordLocalCompletion = async (
   await configureLocalTrackerStorage(cwd);
   const tracker = await loadReconciledLocalTracker(join(cwd, ".lfi"));
   const completed = new Set(attempts.map((attempt) => attempt.task.id));
-  const completedAt = new Date().toISOString();
   for (const task of tracker.tasks) {
     if (completed.has(task.id)) {
-      await saveTrackerDocument({
-        ...task,
-        status: "completed",
-        completedAt,
-        body: completeChecklist(task.body),
-      });
+      task.status = "completed";
+      task.body = completeChecklist(task.body);
+      await saveTrackerDocument(task);
     }
   }
-  await loadReconciledLocalTracker(join(cwd, ".lfi"));
+  await reconcileTrackerFilenames(tracker, new Set());
   await checkpointTracker(
     cwd,
     `chore(lfi): complete ${[...completed].join(", ")}`,

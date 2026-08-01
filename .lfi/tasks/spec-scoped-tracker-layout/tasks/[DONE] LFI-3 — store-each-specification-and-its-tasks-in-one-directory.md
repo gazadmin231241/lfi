@@ -1,14 +1,6 @@
----
-id: LFI-3
-type: task
-title: "Store each specification and its tasks in one directory"
-status: completed
-execution_tier: deep
-spec: LFI-1
-blocked_by:
-  - LFI-2
-completed_at: 2026-08-01T16:04:16.216Z
----
+Type: task
+Blocked by: LFI-2
+Tier: deep
 
 > **Task complexity:** `deep`
 

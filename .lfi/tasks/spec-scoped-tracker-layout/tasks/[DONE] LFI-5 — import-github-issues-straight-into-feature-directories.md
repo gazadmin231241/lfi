@@ -1,14 +1,6 @@
----
-id: LFI-5
-type: task
-title: "Import GitHub Issues straight into feature directories"
-status: completed
-execution_tier: light
-spec: LFI-1
-blocked_by:
-  - LFI-3
-completed_at: 2026-08-01T16:18:08.375Z
----
+Type: task
+Blocked by: LFI-3
+Tier: light
 
 > **Task complexity:** `light`
 

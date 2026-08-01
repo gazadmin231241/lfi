@@ -1,13 +1,6 @@
----
-id: LFI-10
-type: task
-title: "Record document fields as marker lines"
-status: ready
-execution_tier: deep
-spec: LFI-7
-blocked_by:
-  - LFI-8
----
+Type: task
+Blocked by: LFI-8
+Tier: deep
 
 > **Task complexity:** `deep`
 

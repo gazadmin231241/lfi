@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { gitResult } from "./git.js";
 import {
@@ -13,7 +13,12 @@ import {
 
 export { COMPLETED_TASKS_DIRECTORY } from "./tracker-layout.js";
 
-export type TrackerDocumentType = "task" | "spec";
+export type TrackerDocumentType =
+  | "task"
+  | "spec"
+  | "research"
+  | "prototype"
+  | "grilling";
 export type TrackerStatus = "ready" | "completed" | "cancelled";
 
 export interface TrackerDocument {
@@ -25,7 +30,6 @@ export interface TrackerDocument {
   executionTier?: ExecutionTier;
   spec?: string;
   blockedBy: string[];
-  completedAt?: string;
   body: string;
   path: string;
 }
@@ -37,113 +41,145 @@ export interface LocalTracker {
   specs: TrackerDocument[];
 }
 
-const idPattern = /^LFI-(\d+)$/u;
+const documentTypes: readonly TrackerDocumentType[] = [
+  "task",
+  "spec",
+  "research",
+  "prototype",
+  "grilling",
+];
+const trackerStatusPrefixes = [
+  "SPEC",
+  "READY",
+  "RUNNING",
+  "BLOCKED",
+  "DONE",
+  "CANCELLED",
+] as const;
+type TrackerStatusPrefix = (typeof trackerStatusPrefixes)[number];
+const statusPrefixPattern = trackerStatusPrefixes.join("|");
+const filenamePattern = new RegExp(
+  `^\\[(${statusPrefixPattern})\\] (LFI-(\\d+)) — ([\\p{L}\\p{N}]+(?:-[\\p{L}\\p{N}]+)*)\\.md$`,
+  "u",
+);
+const historicalFilenamePattern = new RegExp(
+  `\\[(?:${statusPrefixPattern})\\] LFI-(\\d+) —`,
+  "gu",
+);
+const markerPattern = /^(Type|Blocked by|Tier):[ \t]*(.*)$/u;
 
-const scalar = (value: string): string => {
-  const trimmed = value.trim();
-  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-    const parsed: unknown = JSON.parse(trimmed);
-    if (typeof parsed === "string") return parsed;
-  }
-  return trimmed;
+const statusByPrefix = {
+  SPEC: "ready",
+  READY: "ready",
+  RUNNING: "ready",
+  BLOCKED: "ready",
+  DONE: "completed",
+  CANCELLED: "cancelled",
+} as const satisfies Record<TrackerStatusPrefix, TrackerStatus>;
+
+const isTrackerStatusPrefix = (value: string): value is TrackerStatusPrefix =>
+  trackerStatusPrefixes.some((prefix) => prefix === value);
+
+const isTrackerDocumentType = (value: string): value is TrackerDocumentType =>
+  documentTypes.some((type) => type === value);
+
+const titleFromSlug = (slug: string): string => {
+  const title = slug.replaceAll("-", " ");
+  return `${title.slice(0, 1).toLocaleUpperCase("en")}${title.slice(1)}`;
 };
 
-const required = (
-  fields: ReadonlyMap<string, string>,
-  name: string,
+const filenameFields = (
   path: string,
-): string => {
-  const value = fields.get(name);
-  if (!value) {
-    throw new Error(`${path}: missing ${name} / отсутствует поле ${name}`);
+): { id: string; number: number; title: string; status: TrackerStatus } => {
+  const match = filenamePattern.exec(basename(path));
+  if (!match) {
+    throw new Error(
+      `${path}: filename must be [STATUS] LFI-N — informative-slug.md / имя файла должно быть [СТАТУС] LFI-N — информативное-название.md`,
+    );
   }
-  return value;
+  const prefix = match[1]!;
+  if (!isTrackerStatusPrefix(prefix)) {
+    throw new Error(`${path}: invalid status prefix / некорректный префикс статуса`);
+  }
+  return {
+    id: match[2]!,
+    number: Number(match[3]),
+    title: titleFromSlug(match[4]!),
+    status: statusByPrefix[prefix],
+  };
 };
+
+const markerValues = (source: string, path: string): Map<string, string> => {
+  const markers = new Map<string, string>();
+  for (const line of source.split(/\r?\n/u)) {
+    const match = markerPattern.exec(line);
+    if (!match) continue;
+    if (markers.has(match[1]!)) {
+      throw new Error(
+        `${path}: duplicate ${match[1]}: marker / повторяющийся маркер ${match[1]}:`,
+      );
+    }
+    markers.set(match[1]!, match[2]!.trim());
+  }
+  return markers;
+};
+
+const contentWithoutMarkers = (source: string): string =>
+  source
+    .split(/\r?\n/u)
+    .filter((line) => !markerPattern.test(line))
+    .join("\n")
+    .replace(/^\n+/u, "");
+
+const specificationFromBody = (body: string): string | undefined =>
+  /^## Specification\s+\[?(LFI-\d+)\b/mu.exec(body)?.[1];
 
 export const parseTrackerDocument = (
   source: string,
   path: string,
 ): TrackerDocument => {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/u.exec(source);
-  if (!match) {
+  const identity = filenameFields(path);
+  const markers = markerValues(source, path);
+  const type = markers.get("Type");
+  if (!type) {
+    throw new Error(`${path}: missing Type: / отсутствует Type:`);
+  }
+  if (!isTrackerDocumentType(type)) {
     throw new Error(
-      `${path}: missing YAML frontmatter / отсутствует YAML frontmatter`,
+      `${path}: invalid Type: / некорректный Type:: ${type}`,
     );
   }
-  const fields = new Map<string, string>();
-  const blockedBy: string[] = [];
-  let list: "blocked_by" | undefined;
-  for (const rawLine of match[1]!.split(/\r?\n/u)) {
-    const item = /^\s*-\s+(.+)\s*$/u.exec(rawLine);
-    if (item && list === "blocked_by") {
-      blockedBy.push(scalar(item[1]!));
-      continue;
-    }
-    const entry = /^([a-z_]+):(?:\s*(.*))?$/u.exec(rawLine);
-    if (!entry) {
-      if (rawLine.trim()) {
-        throw new Error(
-          `${path}: invalid frontmatter line / некорректная строка frontmatter`,
-        );
-      }
-      continue;
-    }
-    list = entry[1] === "blocked_by" ? "blocked_by" : undefined;
-    if (entry[2]) fields.set(entry[1]!, scalar(entry[2]));
+  const tier = markers.get("Tier");
+  if (tier !== undefined && !isExecutionTier(tier)) {
+    throw new Error(`${path}: invalid Tier: / некорректный Tier:: ${tier}`);
   }
-  const id = required(fields, "id", path);
-  const idMatch = idPattern.exec(id);
-  if (!idMatch) {
-    throw new Error(`${path}: invalid LFI id / некорректный LFI ID: ${id}`);
-  }
-  const type = required(fields, "type", path);
-  if (type !== "task" && type !== "spec") {
+  if (type !== "task" && tier !== undefined) {
     throw new Error(
-      `${path}: invalid document type / некорректный тип документа: ${type}`,
+      `${path}: only tasks can have Tier: / только задачи могут иметь Tier:`,
     );
   }
-  const status = required(fields, "status", path);
-  if (status !== "ready" && status !== "completed" && status !== "cancelled") {
-    throw new Error(
-      `${path}: invalid status / некорректный статус: ${status}`,
-    );
-  }
-  const completedAt = fields.get("completed_at");
-  const executionTier = fields.get("execution_tier");
-  if (executionTier !== undefined && !isExecutionTier(executionTier)) {
-    throw new Error(
-      `${path}: invalid execution_tier / некорректный execution_tier: ${executionTier}`,
-    );
-  }
-  if (type === "spec" && executionTier !== undefined) {
-    throw new Error(
-      `${path}: specifications cannot have execution_tier / у спецификаций не может быть execution_tier`,
-    );
-  }
+  const blockedByMarker = markers.get("Blocked by") ?? "";
   if (
-    completedAt !== undefined &&
-    !Number.isFinite(Date.parse(completedAt))
+    blockedByMarker !== "" &&
+    blockedByMarker !== "None" &&
+    !/^LFI-\d+(?:\s*,\s*LFI-\d+)*$/u.test(blockedByMarker)
   ) {
     throw new Error(
-      `${path}: invalid completed_at / некорректный completed_at: ${completedAt}`,
+      `${path}: invalid Blocked by: / некорректный Blocked by:: ${blockedByMarker}`,
     );
   }
-  if (status === "completed" && completedAt === undefined) {
-    throw new Error(
-      `${path}: completed documents require completed_at / для завершённых документов требуется completed_at`,
-    );
-  }
+  const blockedBy = [...blockedByMarker.matchAll(/\bLFI-(\d+)\b/gu)].map(
+    (match) => `LFI-${match[1]}`,
+  );
+  const body = contentWithoutMarkers(source);
+  const spec = specificationFromBody(body);
   return {
-    id,
-    number: Number(idMatch[1]),
+    ...identity,
     type,
-    title: required(fields, "title", path),
-    status,
-    ...(executionTier === undefined ? {} : { executionTier }),
-    ...(fields.get("spec") ? { spec: fields.get("spec")! } : {}),
+    ...(tier === undefined ? {} : { executionTier: tier }),
+    ...(spec === undefined ? {} : { spec }),
     blockedBy,
-    ...(completedAt === undefined ? {} : { completedAt }),
-    body: match[2]!.replace(/^\r?\n/u, ""),
+    body,
     path,
   };
 };
@@ -151,33 +187,38 @@ export const parseTrackerDocument = (
 export const serializeTrackerDocument = (
   document: TrackerDocument,
 ): string => {
-  if (document.status === "completed" && document.completedAt === undefined) {
+  if (
+    document.executionTier !== undefined &&
+    document.type !== "task"
+  ) {
     throw new Error(
-      `${document.path}: completed documents require completed_at / для завершённых документов требуется completed_at`,
+      `${document.path}: only tasks can have Tier: / только задачи могут иметь Tier:`,
     );
   }
-  const lines = [
-    "---",
-    `id: ${document.id}`,
-    `type: ${document.type}`,
-    `title: ${JSON.stringify(document.title)}`,
-    `status: ${document.status}`,
+  const markers = [
+    `Type: ${document.type}`,
+    `Blocked by: ${document.blockedBy.length > 0 ? document.blockedBy.join(", ") : "None"}`,
   ];
   if (document.executionTier !== undefined) {
-    if (document.type !== "task") {
-      throw new Error(
-        `${document.path}: specifications cannot have execution_tier / у спецификаций не может быть execution_tier`,
-      );
-    }
-    lines.push(`execution_tier: ${document.executionTier}`);
+    markers.push(`Tier: ${document.executionTier}`);
   }
-  if (document.spec) lines.push(`spec: ${document.spec}`);
-  lines.push("blocked_by:");
-  for (const blocker of document.blockedBy) lines.push(`  - ${blocker}`);
-  if (document.completedAt !== undefined) {
-    lines.push(`completed_at: ${document.completedAt}`);
+  const body = contentWithoutMarkers(document.body);
+  return `${markers.join("\n")}\n${body ? `\n${body}` : ""}`;
+};
+
+const inferSpecificationFromPlacement = (
+  documents: readonly TrackerDocument[],
+): void => {
+  const specificationsByDirectory = new Map(
+    documents
+      .filter((document) => document.type === "spec")
+      .map((document) => [dirname(document.path), document.id]),
+  );
+  for (const document of documents) {
+    if (document.type === "spec" || document.spec !== undefined) continue;
+    const specification = specificationsByDirectory.get(dirname(dirname(document.path)));
+    if (specification !== undefined) document.spec = specification;
   }
-  return `${lines.join("\n")}\n---\n\n${document.body}`;
 };
 
 const validateTracker = (
@@ -187,23 +228,6 @@ const validateTracker = (
 ): void => {
   const byId = new Map<string, TrackerDocument>();
   for (const document of documents) {
-    const filename = basename(document.path);
-    const legacy = new RegExp(
-      `^${document.id}-([\\p{L}\\p{N}]+(?:-[\\p{L}\\p{N}]+)*)\\.md$`,
-      "u",
-    ).exec(filename);
-    const canonical =
-      /^\[(?:SPEC|READY|RUNNING|BLOCKED|DONE|CANCELLED)\] (LFI-\d+) — ([\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.md$/u.exec(
-        filename,
-      );
-    const validFilename =
-      legacy !== null ||
-      (canonical !== null && canonical[1] === document.id);
-    if (!validFilename) {
-      throw new Error(
-        `${document.path}: filename must be [STATUS] ${document.id} — informative-slug.md / имя файла должно быть [СТАТУС] ${document.id} — информативное-название.md`,
-      );
-    }
     if (byId.has(document.id)) {
       throw new Error(
         `Duplicate tracker id / повторяющийся ID трекера: ${document.id}`,
@@ -235,9 +259,7 @@ const validateTracker = (
   const visited = new Set<string>();
   const visit = (id: string): void => {
     if (visiting.has(id)) {
-      throw new Error(
-        `Dependency cycle / цикл зависимостей обнаружен у ${id}`,
-      );
+      throw new Error(`Dependency cycle / цикл зависимостей обнаружен у ${id}`);
     }
     if (visited.has(id)) return;
     visiting.add(id);
@@ -245,9 +267,7 @@ const validateTracker = (
     visiting.delete(id);
     visited.add(id);
   };
-  for (const document of documents.filter((item) => item.type === "task")) {
-    visit(document.id);
-  }
+  for (const document of documents) visit(document.id);
 };
 
 export const loadLocalTracker = async (
@@ -259,14 +279,9 @@ export const loadLocalTracker = async (
     ...(await trackerMarkdownFiles(join(lfiRoot, "specs"))),
   ];
   const documents = await Promise.all(
-    paths.map(async (path) => ({ path, source: await readFile(path, "utf8") })),
-  ).then((files) =>
-    files
-      .filter(({ source }) =>
-        /^---\r?\n[\s\S]*?^type:\s*(?:task|spec)\s*$/mu.test(source),
-      )
-      .map(({ path, source }) => parseTrackerDocument(source, path)),
+    paths.map(async (path) => parseTrackerDocument(await readFile(path, "utf8"), path)),
   );
+  inferSpecificationFromPlacement(documents);
   validateTracker(lfiRoot, documents, options.allowPlacementDrift ?? false);
   return {
     root: lfiRoot,
@@ -284,6 +299,8 @@ export const nextRepositoryLfiId = async (
   documents: readonly TrackerDocument[],
 ): Promise<string> => {
   const history = await gitResult(cwd, [
+    "-c",
+    "core.quotepath=false",
     "log",
     "--all",
     "-p",
@@ -292,19 +309,13 @@ export const nextRepositoryLfiId = async (
     ".lfi/tasks",
     ".lfi/specs",
   ]);
-  const historicalNumbers =
-    history.exitCode === 0
-      ? [...history.stdout.matchAll(/^[ +\-]?id:\s*LFI-(\d+)\s*$/gmu)].map(
-          (match) => Number(match[1]),
-        )
-      : [];
-  return `LFI-${
-    Math.max(
-      0,
-      ...historicalNumbers,
-      ...documents.map((document) => document.number),
-    ) + 1
-  }`;
+  const historicalNumbers = history.exitCode === 0
+    ? [
+        ...history.stdout.matchAll(/^[ +\-]?id:\s*LFI-(\d+)\s*$/gmu),
+        ...history.stdout.matchAll(historicalFilenamePattern),
+      ].map((match) => Number(match[1]))
+    : [];
+  return `LFI-${Math.max(0, ...historicalNumbers, ...documents.map((document) => document.number)) + 1}`;
 };
 
 export const saveTrackerDocument = async (
@@ -324,9 +335,7 @@ export const runnableLocalTasks = (
   );
   const selected = new Set(selectedIds);
   const candidates = tracker.tasks.filter(
-    (task) =>
-      task.status === "ready" &&
-      (selected.size === 0 || selected.has(task.id)),
+    (task) => task.status === "ready" && (selected.size === 0 || selected.has(task.id)),
   );
   const runnable = candidates.filter((task) =>
     task.blockedBy.every((id) => completed.has(id)),

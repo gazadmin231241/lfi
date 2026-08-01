@@ -65,19 +65,18 @@ Each specification has its own directory: its specification document is at the
 root and its tasks are in `tasks/`. Tasks without a specification sit directly
 at `.lfi/tasks/`. Completed tasks remain beside their specification; there is
 no archive directory. These files are versioned; `.lfi/logs`, `.lfi/state`, and
-`.lfi/worktrees` remain local. Tasks use Markdown with YAML frontmatter and one
-shared `LFI-N` ID sequence. Persisted statuses are `ready`, `completed`, and
-`cancelled`; in-progress and blocked display states are derived. LFI records
-`completed_at` after integration so the ten recent completions are ordered by
-completion time, not by ID.
+`.lfi/worktrees` remain local. Documents use plain Markdown marker lines and one
+shared `LFI-N` ID sequence. Status is derived only from the filename;
+in-progress and blocked display states are derived from run state and blockers.
 
 Each local task ends with clickable `Specification` and `Blocked by` sections.
 LFI updates their exact relative file links whenever a status rename occurs.
 
 Task status output uses `[READY]`, `[RUNNING]`, `[BLOCKED]`, and `[DONE]`.
-Specifications are never executable. Tasks support local dependencies. Every
-executable task may declare `execution_tier: light`, `standard`, or `deep` in
-its document. Missing tier metadata runs as `standard` with a warning.
+Only documents declaring `Type: task` are executable; `spec`, `research`,
+`prototype`, and `grilling` are not. `Blocked by:` declares local dependencies,
+and `Tier:` accepts `light`, `standard`, or `deep`. A missing tier runs as
+`standard` with a warning; a missing `Type:` is malformed.
 
 ## Commands
 

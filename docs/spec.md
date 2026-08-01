@@ -11,14 +11,15 @@ implementation of local Markdown tasks with Codex.
    specification has a directory containing its specification document and
    `tasks/` subdirectory, while tasks without a specification are at the root.
    Completed tasks stay in place; there is no archive directory. All documents
-   share one stable `LFI-N` namespace. Transient state remains ignored.
-   Completed tasks record an ISO-8601 `completed_at` timestamp for recent
-   completion ordering.
+   share one stable `LFI-N` namespace. Transient state remains ignored. Status
+   exists only in the filename; `Type:`, `Blocked by:`, and `Tier:` are plain
+   marker lines in the Markdown body.
 3. `lfi run --dry-run` reports eligible and blocked work without mutations.
 4. `lfi run` performs at most ten stages, with at most three workers in
    parallel. Each task runs in `.lfi/worktrees/lfi-N`.
-5. Specifications are never executable. Unfinished local dependencies declared
-   by the task document block execution.
+5. Only documents declaring `Type: task` are executable. Specifications and
+   wayfinding documents are not. Unfinished local dependencies declared by the
+   task document block execution.
 6. Workers invoke Codex with the configured model/reasoning, the editable
    `task-prompt.md`, and `$implement`. Local implementation changes are
    pre-approved; deploy, SSH, production changes, force-push, destructive

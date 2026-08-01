@@ -44,23 +44,25 @@ test("local dry-run selects the dependency frontier without GitHub", async () =>
     number: number,
     status: "ready" | "completed",
     blockedBy: string[],
-  ) =>
-    writeFile(
-      join(tasks, `LFI-${number}-task.md`),
+  ) => {
+    const path = join(
+      tasks,
+      `[${status === "completed" ? "DONE" : "READY"}] LFI-${number} — task.md`,
+    );
+    return writeFile(
+      path,
       serializeTrackerDocument({
         id: `LFI-${number}`,
         number,
         type: "task",
         title: `Task ${number}`,
         status,
-        ...(status === "completed"
-          ? { completedAt: "2026-01-01T00:00:00.000Z" }
-          : {}),
         blockedBy,
         body: `Build task ${number}.\n`,
-        path: join(tasks, `LFI-${number}-task.md`),
+        path,
       }),
     );
+  };
   await create(1, "completed", []);
   await create(2, "ready", ["LFI-1"]);
   await create(3, "ready", ["LFI-2"]);
@@ -80,7 +82,7 @@ test("local run does not repeat accepted work after integration fails", async ()
   const lfiRoot = join(root, ".lfi");
   const tasks = join(lfiRoot, "tasks");
   const tools = join(root, "test-tools");
-  const taskPath = join(tasks, "LFI-1-fix-validation.md");
+  const taskPath = join(tasks, "[READY] LFI-1 — fix-validation.md");
   const codexCalls = join(root, "codex-calls");
   await mkdir(tasks, { recursive: true });
   await mkdir(join(lfiRoot, "specs"));
@@ -163,7 +165,7 @@ test("local task run commits worker changes, pushes code, and completes the task
   const lfiRoot = join(root, ".lfi");
   const tasks = join(lfiRoot, "tasks");
   const tools = join(root, "test-tools");
-  const taskPath = join(tasks, "LFI-1-implement-local-run.md");
+  const taskPath = join(tasks, "[READY] LFI-1 — implement-local-run.md");
   const ghCalls = join(root, "gh-calls");
   await mkdir(tasks, { recursive: true });
   await mkdir(join(lfiRoot, "specs"));
@@ -338,8 +340,8 @@ exit 97
   assert.match(deliveredLog.stdout, /feat\(lfi\): implement LFI-1/u);
   await assert.rejects(readFile(ghCalls, "utf8"));
 
-  const blockedPath = join(tasks, "LFI-2-blocked.md");
-  const blockerPath = join(tasks, "LFI-3-blocker.md");
+  const blockedPath = join(tasks, "[READY] LFI-2 — blocked.md");
+  const blockerPath = join(tasks, "[READY] LFI-3 — blocker.md");
   await writeFile(
     blockedPath,
     serializeTrackerDocument({
@@ -369,16 +371,16 @@ exit 97
   assert.equal(await runLfi(root, "ru", ["LFI-2"]), 1);
   assert.equal(
     await readFile(
-      join(tasks, "[BLOCKED] LFI-2 — blocked-task.md"),
+      join(tasks, "[BLOCKED] LFI-2 — blocked.md"),
       "utf8",
-    ).then((source) => source.includes("status: ready")),
+    ).then((source) => source.includes("Type: task")),
     true,
   );
   assert.equal(
     await readFile(
       join(tasks, "[READY] LFI-3 — blocker.md"),
       "utf8",
-    ).then((source) => source.includes("status: ready")),
+    ).then((source) => source.includes("Type: task")),
     true,
   );
   assert.match(
@@ -386,7 +388,7 @@ exit 97
     /LFI-2 заблокирована задачами LFI-3\./u,
   );
 
-  const failingPath = join(tasks, "LFI-4-failing.md");
+  const failingPath = join(tasks, "[READY] LFI-4 — failing.md");
   await writeFile(
     failingPath,
     serializeTrackerDocument({
@@ -444,7 +446,7 @@ printf '%s\\n' '{"status":"incomplete","summary":"blocked"}' > "$output"
   assert.match(failureOutput, /Log: \.lfi\/logs\/LFI-4\.log/u);
   assert.doesNotMatch(failureOutput, /Diagnostics:/u);
 
-  const validationTaskPath = join(tasks, "LFI-5-validation-failure.md");
+  const validationTaskPath = join(tasks, "[READY] LFI-5 — validation-failure.md");
   const validationCodexCalls = join(root, "validation-codex-calls");
   await writeFile(
     validationTaskPath,

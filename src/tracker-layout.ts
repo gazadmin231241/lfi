@@ -51,10 +51,10 @@ export const validateTrackerPlacement = (
     const parts = pathParts(lfiRoot, document.path);
     const legacySpec = document.type === "spec" &&
       parts.length === 2 && parts[0] === "specs";
-    const legacyCompletedTask = document.type === "task" &&
+    const legacyCompletedTask = document.type !== "spec" &&
       parts.length === 3 && parts[0] === "tasks" &&
       parts[1] === COMPLETED_TASKS_DIRECTORY;
-    const rootTask = document.type === "task" &&
+    const rootTask = document.type !== "spec" &&
       parts.length === 2 && parts[0] === "tasks";
     const legacyRootTask = rootTask && document.spec !== undefined &&
       legacySpecs.has(document.spec);
@@ -62,7 +62,7 @@ export const validateTrackerPlacement = (
     const featureSpec = document.type === "spec" &&
       parts.length === 3 && parts[0] === "tasks" &&
       parts[1] !== COMPLETED_TASKS_DIRECTORY;
-    const featureTask = document.type === "task" &&
+    const featureTask = document.type !== "spec" &&
       parts.length === 4 && parts[0] === "tasks" &&
       parts[1] !== COMPLETED_TASKS_DIRECTORY && parts[2] === "tasks";
     if (

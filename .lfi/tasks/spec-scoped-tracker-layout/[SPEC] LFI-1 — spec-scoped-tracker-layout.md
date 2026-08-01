@@ -1,10 +1,5 @@
----
-id: LFI-1
-type: spec
-title: "Spec-scoped tracker layout"
-status: ready
-blocked_by:
----
+Type: spec
+Blocked by: None
 
 ## Problem Statement
 

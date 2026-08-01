@@ -46,7 +46,7 @@ const initializeRoutingRepository = async (options: {
   await writeFile(join(lfiRoot, "task-prompt.md"), "Implement the task.\n");
   for (const task of options.tasks) {
     const id = `LFI-${task.id}`;
-    const path = join(tasksRoot, `${id}-routing-task.md`);
+    const path = join(tasksRoot, `[READY] ${id} — routing-task.md`);
     await writeFile(
       path,
       serializeTrackerDocument({

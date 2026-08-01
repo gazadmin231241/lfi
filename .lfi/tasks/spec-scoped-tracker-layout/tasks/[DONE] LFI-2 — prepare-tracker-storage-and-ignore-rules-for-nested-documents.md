@@ -1,13 +1,6 @@
----
-id: LFI-2
-type: task
-title: "Prepare tracker storage and ignore rules for nested documents"
-status: completed
-execution_tier: standard
-spec: LFI-1
-blocked_by:
-completed_at: 2026-08-01T15:49:34.971Z
----
+Type: task
+Blocked by: None
+Tier: standard
 
 > **Task complexity:** `standard`
 

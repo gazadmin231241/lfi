@@ -4,10 +4,10 @@ status: accepted
 
 # Route task workers by execution tier
 
-LFI assigns every executable task a model-independent `execution_tier` of
+LFI assigns every executable task a model-independent execution tier of
 `light`, `standard`, or `deep`. The task-creation agent proposes the tier from
 an explicit rubric, and a user may override it before execution. Tasks store
-the tier in local YAML frontmatter. Missing legacy metadata resolves to
+the tier on a visible `Tier:` marker line. Missing tier metadata resolves to
 `standard` with a warning.
 
 Each tier resolves through `LIGHT_MODEL`, `STANDARD_MODEL`, or `DEEP_MODEL`.
