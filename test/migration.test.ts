@@ -160,6 +160,6 @@ LFI-20
   assert.equal(checkpoint.stdout.trim(), "docs(lfi): import GitHub tracker");
   assert.match(
     await readFile(join(root, "docs", "agents", "issue-tracker.md"), "utf8"),
-    /\.lfi\/specs[\s\S]*lfi:spec/u,
+    /\.lfi\/tasks\/<specification-slug>\/[\s\S]*lfi:spec/u,
   );
 });

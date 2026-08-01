@@ -54,16 +54,24 @@ lfi run
 по умолчанию используется Local Markdown:
 
 ```text
-.lfi/tasks/[READY] LFI-2 — implement-parser.md
-.lfi/specs/[SPEC] LFI-1 — local-first-workflow.md
+.lfi/tasks/
+  local-first-workflow/
+    [SPEC] LFI-1 — local-first-workflow.md
+    tasks/
+      [READY] LFI-2 — implement-parser.md
+      [DONE] LFI-3 — publish-release.md
+  [READY] LFI-4 — one-off-maintenance.md
 ```
 
-Эти файлы версионируются, а `.lfi/logs`, `.lfi/state` и `.lfi/worktrees`
-игнорируются. Tasks и specs используют общую последовательность `LFI-N`.
-Сохраняются статусы `ready`, `completed`, `cancelled`; состояния выполнения и
-блокировки вычисляются. После интеграции LFI записывает `completed_at`, поэтому
-десять последних выполненных задач сортируются по времени завершения, а не по
-ID.
+У каждой спецификации свой каталог: документ спецификации находится в его
+корне, а задачи — в `tasks/`. Задачи без спецификации лежат непосредственно в
+`.lfi/tasks/`. Завершённые задачи остаются рядом со своей спецификацией; каталога
+архива нет. Эти файлы версионируются, а `.lfi/logs`, `.lfi/state` и
+`.lfi/worktrees` игнорируются. Tasks и specs используют общую последовательность
+`LFI-N`. Сохраняются статусы `ready`, `completed`, `cancelled`; состояния
+выполнения и блокировки вычисляются. После интеграции LFI записывает
+`completed_at`, поэтому десять последних выполненных задач сортируются по
+времени завершения, а не по ID.
 
 В конце каждой локальной задачи находятся кликабельные разделы `Specification`
 и `Blocked by`. LFI обновляет точные относительные ссылки при переименовании

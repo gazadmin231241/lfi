@@ -129,37 +129,43 @@ export const configureTrackerContract = async (
     taskSource === "local"
       ? localize(
           language,
-          `Specifications are flat files in \`.lfi/specs/\`; executable tasks are
-files in \`.lfi/tasks/\`. Completed tasks move immediately to
-\`.lfi/tasks/completed/\`. Both collections share one monotonically
-increasing \`LFI-N\` ID sequence, including IDs found in Git history. A task
-links to its specification with \`spec: LFI-N\` and to blockers with
-\`blocked_by\`. Executable tasks store exactly one \`execution_tier\` value:
-\`light\`, \`standard\`, or \`deep\`. LFI also renders clickable
-\`Specification\` and \`Blocked by\`
-sections at the end of each task and keeps their file links current. Approved
-tasks use \`status: ready\`.
+          `Each specification has its own directory at
+\`.lfi/tasks/<specification-slug>/\`. It contains one \`type: spec\` document
+and a \`tasks/\` subdirectory for its executable \`type: task\` documents.
+Tasks without a specification are files directly in \`.lfi/tasks/\`. Completed
+tasks stay beside their specification; there is no archive directory. All
+documents share one monotonically increasing \`LFI-N\` ID sequence, including
+IDs found in Git history. A task links to its specification with \`spec: LFI-N\`
+and to blockers with \`blocked_by\`. Executable tasks store exactly one
+\`execution_tier\` value: \`light\`, \`standard\`, or \`deep\`. LFI also renders
+clickable \`Specification\` and \`Blocked by\` sections at the end of each task
+and keeps their file links current. Approved tasks use \`status: ready\`.
 
-\`$to-spec\` publishes one \`type: spec\` document in \`.lfi/specs/\`.
-\`$to-tickets\` publishes one \`type: task\` document per ticket in
-\`.lfi/tasks/\` and records its \`spec\` relationship. Filenames start with
-the derived status, then the stable ID: \`[READY] LFI-N — slug.md\`. LFI
-renames them when status changes.`,
-          `Спецификации хранятся плоскими файлами в \`.lfi/specs/\`, исполняемые
-задачи — в \`.lfi/tasks/\`. Завершённые задачи сразу перемещаются в
-\`.lfi/tasks/completed/\`. Обе коллекции используют одну монотонно
-возрастающую последовательность \`LFI-N\`, включая ID из истории Git. Задача
-ссылается на спецификацию через \`spec: LFI-N\`, а на блокеры — через
-\`blocked_by\`. Исполняемая задача хранит ровно один \`execution_tier\`:
-\`light\`, \`standard\` или \`deep\`. В конце каждой задачи LFI также
-отображает кликабельные разделы
-\`Specification\` и \`Blocked by\` и обновляет ссылки при переименовании файлов.
-Утверждённые задачи используют \`status: ready\`.
+\`$to-spec\` creates \`.lfi/tasks/<specification-slug>/\` and publishes one
+\`type: spec\` document there. \`$to-tickets\` publishes one \`type: task\`
+document per ticket in \`.lfi/tasks/<specification-slug>/tasks/\` and records
+its \`spec\` relationship; tickets without a specification go directly in
+\`.lfi/tasks/\`. Filenames start with the derived status, then the stable ID:
+\`[READY] LFI-N — slug.md\`. LFI renames them when status changes.`,
+          `Каждая спецификация хранится в собственном каталоге
+\`.lfi/tasks/<specification-slug>/\`. В нём находится один документ \`type: spec\`
+и подкаталог \`tasks/\` для её исполняемых документов \`type: task\`. Задачи без
+спецификации хранятся файлами непосредственно в \`.lfi/tasks/\`. Завершённые
+задачи остаются рядом со своей спецификацией; каталога архива нет. Все документы
+используют одну монотонно возрастающую последовательность \`LFI-N\`, включая ID
+из истории Git. Задача ссылается на спецификацию через \`spec: LFI-N\`, а на
+блокеры — через \`blocked_by\`. Исполняемая задача хранит ровно один
+\`execution_tier\`: \`light\`, \`standard\` или \`deep\`. В конце каждой задачи
+LFI также отображает кликабельные разделы \`Specification\` и \`Blocked by\` и
+обновляет ссылки при переименовании файлов. Утверждённые задачи используют
+\`status: ready\`.
 
-\`$to-spec\` публикует один документ \`type: spec\` в \`.lfi/specs/\`.
-\`$to-tickets\` публикует по одному документу \`type: task\` на задачу в
-\`.lfi/tasks/\` и записывает связь \`spec\`. Имя файла начинается с
-вычисленного статуса, затем идёт стабильный ID:
+\`$to-spec\` создаёт \`.lfi/tasks/<specification-slug>/\` и публикует в нём один
+документ \`type: spec\`. \`$to-tickets\` публикует по одному документу
+\`type: task\` на задачу в \`.lfi/tasks/<specification-slug>/tasks/\` и
+записывает связь \`spec\`; задачи без спецификации идут непосредственно в
+\`.lfi/tasks/\`.
+Имя файла начинается с вычисленного статуса, затем идёт стабильный ID:
 \`[READY] LFI-N — slug.md\`. При изменении статуса LFI переименовывает файл.`,
         )
       : localize(

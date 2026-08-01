@@ -46,7 +46,10 @@ name: example
     `${frontmatter}Apply the \`ready-for-agent\` triage label.\n`,
   );
   assert.match(spec, /lfi:tracker-contract/u);
-  assert.match(spec, /\.lfi\/specs/u);
+  assert.match(spec, /\.lfi\/tasks\/informative-slug\//u);
+  assert.match(spec, /\[SPEC\] LFI-N — informative-slug\.md/u);
+  assert.match(spec, /Переопределение LFI для трекера/u);
+  assert.match(spec, /В режиме Local Markdown[\s\S]*\.lfi\/tasks\/informative-slug\//u);
   assert.match(spec, /lfi:spec/u);
   assert.match(spec, /\[SPEC\]/u);
   assert.match(spec, /take precedence/u);
@@ -55,7 +58,10 @@ name: example
     "to-tickets",
     `${frontmatter}- \`.scratch/<feature-slug>/issues/\`\nApply the \`ready-for-agent\` triage label.\n`,
   );
-  assert.match(tickets, /\.lfi\/tasks/u);
+  assert.match(tickets, /\.lfi\/tasks\/specification-slug\/tasks\//u);
+  assert.match(tickets, /without a specification.*\.lfi\/tasks\//su);
+  assert.match(tickets, /Задачу без[\s\S]*\.lfi\/tasks\//u);
+  assert.match(tickets, /\.lfi\/tasks\/specification-slug\/tasks\//u);
   assert.match(tickets, /lfi:task/u);
   assert.match(tickets, /\[READY\].*\[BLOCKED\]/su);
   assert.match(tickets, /must not ask for an execution model/u);
