@@ -2,11 +2,12 @@
 id: LFI-5
 type: task
 title: "Import GitHub Issues straight into feature directories"
-status: ready
+status: completed
 execution_tier: light
 spec: LFI-1
 blocked_by:
   - LFI-3
+completed_at: 2026-08-01T16:18:08.375Z
 ---
 
 > **Task complexity:** `light`
@@ -24,17 +25,17 @@ as they do today.
 
 ## Acceptance criteria
 
-- [ ] Imported specifications and tasks are written directly into the
+- [x] Imported specifications and tasks are written directly into the
       spec-scoped layout.
-- [ ] Imported tasks with no parent specification land at the tasks root.
-- [ ] Identifier allocation, relationships, execution tiers, and the checkpoint
+- [x] Imported tasks with no parent specification land at the tasks root.
+- [x] Identifier allocation, relationships, execution tiers, and the checkpoint
       commit are unaffected.
-- [ ] The import test suite asserts on the resulting file locations.
+- [x] The import test suite asserts on the resulting file locations.
 
 ## Specification
 
-[LFI-1 — Spec-scoped tracker layout](<../specs/[SPEC] LFI-1 — spec-scoped-tracker-layout.md>)
+[LFI-1 — Spec-scoped tracker layout](<../../specs/[SPEC] LFI-1 — spec-scoped-tracker-layout.md>)
 
 ## Blocked by
 
-- [LFI-3 — Store each specification and its tasks in one directory](<completed/[DONE] LFI-3 — store-each-specification-and-its-tasks-in-one-directory.md>)
+- [LFI-3 — Store each specification and its tasks in one directory](<[DONE] LFI-3 — store-each-specification-and-its-tasks-in-one-directory.md>)
