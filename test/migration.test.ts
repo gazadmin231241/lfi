@@ -79,13 +79,20 @@ LFI-20
           body: "Do not import.\n",
           labels: ["ready-for-agent"],
         },
+        {
+          number: 14,
+          title: "Standalone task",
+          url: "https://github.test/14",
+          body: "Build independently.\n",
+          labels: ["lfi:task", "lfi:tier:standard"],
+        },
       ],
       parents: async () => new Map([[11, 10], [12, 10]]),
       blockers: async () => new Map([[12, [11]]]),
     },
   });
 
-  assert.deepEqual(result, ["LFI-1", "LFI-2", "LFI-3"]);
+  assert.deepEqual(result, ["LFI-1", "LFI-2", "LFI-3", "LFI-4"]);
   assert.match(
     await readFile(
       join(
@@ -127,11 +134,30 @@ LFI-20
     ),
     /- #11/u,
   );
+  const standalone = await readFile(
+    join(root, ".lfi", "tasks", "[READY] LFI-4 — standalone-task.md"),
+    "utf8",
+  );
+  assert.match(
+    standalone,
+    /type: task[\s\S]*execution_tier: standard[\s\S]*github_issue: 14/u,
+  );
+  assert.doesNotMatch(standalone, /\nspec:/u);
+  await assert.rejects(
+    readFile(
+      join(root, ".lfi", "tasks", "feature-specification", "tasks", "[READY] LFI-4 — standalone-task.md"),
+      "utf8",
+    ),
+  );
   assert.equal(
     parseEnvConfig(await readFile(join(root, ".lfi", "config.env"), "utf8"))
       .TASK_SOURCE,
     "local",
   );
+  const checkpoint = await runCommand("git", ["log", "-1", "--pretty=%s"], {
+    cwd: root,
+  });
+  assert.equal(checkpoint.stdout.trim(), "docs(lfi): import GitHub tracker");
   assert.match(
     await readFile(join(root, "docs", "agents", "issue-tracker.md"), "utf8"),
     /\.lfi\/specs[\s\S]*lfi:spec/u,
