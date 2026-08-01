@@ -11,19 +11,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import {
-  loadLocalTracker,
-  nextLfiId,
-  nextRepositoryLfiId,
-  parseTrackerDocument,
-  serializeTrackerDocument,
-} from "../src/local-tracker.js";
+import { loadLocalTracker, nextLfiId, nextRepositoryLfiId, parseTrackerDocument, serializeTrackerDocument } from "../src/local-tracker.js";
 import { formatLocalStatus } from "../src/status.js";
 import { runCommand } from "../src/process.js";
-import {
-  loadReconciledLocalTracker,
-  reconcileTrackerFilenames,
-} from "../src/tracker-files.js";
+import { loadReconciledLocalTracker, reconcileTrackerFilenames } from "../src/tracker-files.js";
 import {
   withLocalRelationships,
   withoutLocalRelationships,
@@ -220,9 +211,72 @@ test("local status derives explicit display prefixes", () => {
   ];
   const tracker = { documents: [spec, ...tasks], tasks, specs: [spec] };
   assert.deepEqual(formatLocalStatus(tracker, new Set(["LFI-15"])), [
+    "Feature: LFI-14 — Implement task parser",
     "[SPEC] LFI-14 — Implement task parser",
     "[RUNNING] LFI-15 — Implement task parser",
     "[DONE] LFI-16 — Implement task parser",
+  ]);
+});
+
+test("local status groups feature documents and trailing standalone tasks", () => {
+  const document = (
+    id: string,
+    type: "task" | "spec",
+    title: string,
+    options: {
+      completedAt?: string;
+      spec?: string;
+    } = {},
+  ) =>
+    parseTrackerDocument(
+      serializeTrackerDocument({
+        id,
+        number: Number(id.slice(4)),
+        type,
+        title,
+        status: options.completedAt ? "completed" : "ready",
+        ...(type === "task" ? { executionTier: "standard" as const } : {}),
+        ...(options.spec ? { spec: options.spec } : {}),
+        blockedBy: [],
+        ...(options.completedAt ? { completedAt: options.completedAt } : {}),
+        body: "Document.\n",
+        path: `${id}.md`,
+      }),
+      `${id}.md`,
+    );
+  const firstSpec = document("LFI-1", "spec", "First feature");
+  const firstTask = document("LFI-2", "task", "First task", { spec: "LFI-1" });
+  const secondSpec = document("LFI-3", "spec", "Second feature");
+  const secondTask = document("LFI-4", "task", "Second task", {
+    completedAt: "2026-02-01T00:00:00.000Z",
+    spec: "LFI-3",
+  });
+  const standalone = document("LFI-5", "task", "Standalone task");
+  const tracker = {
+    documents: [firstSpec, firstTask, secondSpec, secondTask, standalone],
+    tasks: [firstTask, secondTask, standalone],
+    specs: [firstSpec, secondSpec],
+  };
+
+  assert.deepEqual(formatLocalStatus(tracker, new Set()), [
+    "Feature: LFI-1 — First feature",
+    "[SPEC] LFI-1 — First feature",
+    "[READY] LFI-2 — First task",
+    "Feature: LFI-3 — Second feature",
+    "[SPEC] LFI-3 — Second feature",
+    "[DONE] LFI-4 — Second task",
+    "Standalone tasks",
+    "[READY] LFI-5 — Standalone task",
+  ]);
+  assert.deepEqual(formatLocalStatus(tracker, new Set(), { language: "ru" }), [
+    "Функция: LFI-1 — First feature",
+    "[SPEC] LFI-1 — First feature",
+    "[READY] LFI-2 — First task",
+    "Функция: LFI-3 — Second feature",
+    "[SPEC] LFI-3 — Second feature",
+    "[DONE] LFI-4 — Second task",
+    "Задачи без спецификации",
+    "[READY] LFI-5 — Standalone task",
   ]);
 });
 
@@ -539,7 +593,7 @@ test("local status orders completions by time and localizes blockers", () => {
   const lines = formatLocalStatus(tracker, new Set(), {
     language: "ru",
   });
-  assert.match(lines[0]!, /заблокирована задачами LFI-12/u);
+  assert.match(lines[1]!, /заблокирована задачами LFI-12/u);
   assert.ok(lines.indexOf("[DONE] LFI-2 — Implement task parser") <
     lines.indexOf("[DONE] LFI-20 — Implement task parser"));
 });

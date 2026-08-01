@@ -46,9 +46,10 @@ export const formatLocalStatus = (
   const visibleTasks = options.all
     ? [...activeTasks, ...completed, ...cancelled]
     : [...activeTasks, ...completed.slice(0, 10)];
-  const visible = [...tracker.specs, ...visibleTasks];
-  return visible
-    .filter((document) => {
+  const specificationIds = new Set(
+    tracker.specs.map((specification) => specification.id),
+  );
+  const isVisible = (document: LocalTracker["documents"][number]): boolean => {
       const state =
         document.type === "spec"
           ? trackerDisplayState(document, tracker, active)
@@ -59,8 +60,8 @@ export const formatLocalStatus = (
         state === options.filter ||
         (options.filter === "ready" && state === "running")
       );
-    })
-    .map((task) => {
+    };
+  const formatDocument = (task: LocalTracker["documents"][number]): string => {
       const state = trackerDisplayState(task, tracker, active);
       const blockers =
         state === "blocked"
@@ -87,7 +88,32 @@ export const formatLocalStatus = (
       const marker = trackerStatusPrefix(state);
       const prefix = marker ? `${marker} ` : "";
       return `${prefix}${task.id} — ${task.title}${blockers}${cancelledSuffix}`;
-    });
+    };
+  const featureLines = tracker.specs.flatMap((specification) => {
+    const documents = [
+      specification,
+      ...visibleTasks.filter((task) => task.spec === specification.id),
+    ].filter(isVisible);
+    if (documents.length === 0) return [];
+    const heading = localize(
+      options.language ?? "en",
+      `Feature: ${specification.id} — ${specification.title}`,
+      `Функция: ${specification.id} — ${specification.title}`,
+    );
+    return [heading, ...documents.map(formatDocument)];
+  });
+  const standaloneTasks = visibleTasks.filter(
+    (task) =>
+      (task.spec === undefined ||
+        !specificationIds.has(task.spec)) &&
+      isVisible(task),
+  );
+  if (standaloneTasks.length === 0) return featureLines;
+  return [
+    ...featureLines,
+    localize(options.language ?? "en", "Standalone tasks", "Задачи без спецификации"),
+    ...standaloneTasks.map(formatDocument),
+  ];
 };
 
 export const localStatusLines = async (
