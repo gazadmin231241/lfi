@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { attemptWork } from "./attempt-work.js";
-import { mapConcurrentAfterDistinctKeyProbes } from "./concurrency.js";
+import { mapConcurrent } from "./concurrency.js";
 import { loadConfig, resolveWorkerModel } from "./config.js";
 import { git, gitCommonDirectory, removeWorktreeAndBranch } from "./git.js";
 import { localize, type Language } from "./i18n.js";
@@ -153,11 +153,9 @@ export const runLfi = async (
         output,
       };
       printIteration(output, language, stage, runnable.map((item) => item.id));
-      const attempts = await mapConcurrentAfterDistinctKeyProbes(
+      const attempts = await mapConcurrent(
         runnable,
         config.MAX_PARALLEL,
-        (task) =>
-          resolveWorkerModel(config, task.executionTier ?? "standard"),
         async (task) => {
           const model = resolveWorkerModel(config, task.executionTier ?? "standard");
           if (model && unavailableModels.has(model)) {

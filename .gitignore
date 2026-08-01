@@ -6,9 +6,5 @@ docs/research
 # LFI local tracker: begin
 .lfi/*
 !.lfi/tasks/
-!.lfi/tasks/*.md
-!.lfi/tasks/completed/
-!.lfi/tasks/completed/*.md
-!.lfi/specs/
-!.lfi/specs/*.md
+!.lfi/tasks/**
 # LFI local tracker: end
