@@ -2,11 +2,12 @@
 id: LFI-3
 type: task
 title: "Store each specification and its tasks in one directory"
-status: ready
+status: completed
 execution_tier: deep
 spec: LFI-1
 blocked_by:
   - LFI-2
+completed_at: 2026-08-01T16:04:16.216Z
 ---
 
 > **Task complexity:** `deep`
@@ -50,34 +51,34 @@ behaves as before.
 
 ## Acceptance criteria
 
-- [ ] A specification and its tasks are stored in one directory named from the
+- [x] A specification and its tasks are stored in one directory named from the
       specification's title, with tasks in a subdirectory; a task with no
       specification is stored at the tasks root.
-- [ ] The loader reads both the old and the new layout; only the new layout is
+- [x] The loader reads both the old and the new layout; only the new layout is
       written.
-- [ ] A project in the old layout is fully converted by the first command that
+- [x] A project in the old layout is fully converted by the first command that
       loads the tracker, with identifiers, relationships, statuses, and
       completion timestamps unchanged.
-- [ ] Renaming a specification moves its directory and its tasks, and the
+- [x] Renaming a specification moves its directory and its tasks, and the
       generated specification and blocker links in every affected task still
       resolve.
-- [ ] Changing or clearing a task's specification reference moves the task to
+- [x] Changing or clearing a task's specification reference moves the task to
       the matching location.
-- [ ] Two specifications with colliding slugs produce distinct directories via a
+- [x] Two specifications with colliding slugs produce distinct directories via a
       numeric suffix, and the reserved archive name is never used as a feature
       directory name.
-- [ ] Completed tasks remain in their feature directory.
-- [ ] Validation rejects a feature directory with no specification or more than
+- [x] Completed tasks remain in their feature directory.
+- [x] Validation rejects a feature directory with no specification or more than
       one, and a task placed under a specification it does not reference;
       non-document files anywhere in the subtree are ignored.
-- [ ] Tests exercise the loader and the reconciliation pass against real
+- [x] Tests exercise the loader and the reconciliation pass against real
       directories, covering the new layout, migration from the old one, renames,
       re-pointing, and collisions.
 
 ## Specification
 
-[LFI-1 — Spec-scoped tracker layout](<../specs/[SPEC] LFI-1 — spec-scoped-tracker-layout.md>)
+[LFI-1 — Spec-scoped tracker layout](<../../specs/[SPEC] LFI-1 — spec-scoped-tracker-layout.md>)
 
 ## Blocked by
 
-- [LFI-2 — Prepare tracker storage and ignore rules for nested documents](<completed/[DONE] LFI-2 — prepare-tracker-storage-and-ignore-rules-for-nested-documents.md>)
+- [LFI-2 — Prepare tracker storage and ignore rules for nested documents](<[DONE] LFI-2 — prepare-tracker-storage-and-ignore-rules-for-nested-documents.md>)
