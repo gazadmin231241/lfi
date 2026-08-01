@@ -162,6 +162,69 @@ test("repair cannot modify a path outside its allowlist", async () => {
   assert.equal(subject.stdout.trim(), "fix: change conflict file");
 });
 
+test("integration refuses delivery when accepted work was not recorded as done", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-missing-completion-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const logs = join(root, ".lfi", "logs");
+  await mkdir(worktreesRoot, { recursive: true });
+  await mkdir(logs, { recursive: true });
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await mkdir(join(root, ".lfi", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".lfi", "tasks", "[READY] LFI-1 — task.md"),
+    "Type: task\nBlocked by: None\nTier: light\n\nDo the work.\n",
+  );
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  const remote = await mkdtemp(join(tmpdir(), "lfi-missing-completion-origin-"));
+  const initialized = await runCommand("git", ["init", "--bare", remote]);
+  assert.equal(initialized.exitCode, 0, initialized.stderr);
+  await git("remote", "add", "origin", remote);
+  await git("push", "-u", "origin", "main");
+  await git("switch", "-c", "lfi/lfi-1");
+  await writeFile(join(root, "implemented.txt"), "implemented\n");
+  await git("add", "implemented.txt");
+  await git("commit", "-m", "feat: implement LFI-1");
+  await git("switch", "main");
+
+  await assert.rejects(
+    integrateAttempts({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      baseBranch: "main",
+      runId: "missing-completion",
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      attempts: [
+        {
+          task: {
+            id: "LFI-1",
+            number: 1,
+            title: "Task",
+            sourcePath: join(root, ".lfi", "tasks", "[READY] LFI-1 — task.md"),
+            body: "Do the work.",
+          },
+          accepted: true,
+          summary: "implemented",
+          worktreePath: root,
+          branch: "lfi/lfi-1",
+        },
+      ],
+      config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
+      gitDirectory: join(root, ".git"),
+      language: "en",
+      beforeDelivery: async () => undefined,
+    }),
+    /Completion checkpoint is missing for LFI-1/u,
+  );
+});
+
 test("Russian delivery failure explains how to recover the preserved work", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-host-update-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");

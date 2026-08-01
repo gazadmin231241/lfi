@@ -48,7 +48,7 @@ place instead of two.
 
 ## Specification
 
-[LFI-7 — Scratch-hosted tracker documents](<../[SPEC] LFI-7 — scratch-hosted-tracker-documents.md>)
+[LFI-7 — Scratch hosted tracker documents](<../[SPEC] LFI-7 — scratch-hosted-tracker-documents.md>)
 
 ## Blocked by
 

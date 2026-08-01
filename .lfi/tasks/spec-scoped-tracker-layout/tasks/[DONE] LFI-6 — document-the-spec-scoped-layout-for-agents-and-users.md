@@ -37,7 +37,7 @@ second copy.
 
 ## Specification
 
-[LFI-1 — Spec-scoped tracker layout](<../[SPEC] LFI-1 — spec-scoped-tracker-layout.md>)
+[LFI-1 — Spec scoped tracker layout](<../[SPEC] LFI-1 — spec-scoped-tracker-layout.md>)
 
 ## Blocked by
 

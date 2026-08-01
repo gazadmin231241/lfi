@@ -53,8 +53,8 @@ with no skill edited and nothing else configured.
 
 ## Specification
 
-[LFI-7 — Scratch-hosted tracker documents](<../[SPEC] LFI-7 — scratch-hosted-tracker-documents.md>)
+[LFI-7 — Scratch hosted tracker documents](<../[SPEC] LFI-7 — scratch-hosted-tracker-documents.md>)
 
 ## Blocked by
 
-- [LFI-11 — Store tracker documents under scratch](<[BLOCKED] LFI-11 — store-tracker-documents-under-scratch.md>)
+- [LFI-11 — Store tracker documents under scratch](<[READY] LFI-11 — store-tracker-documents-under-scratch.md>)

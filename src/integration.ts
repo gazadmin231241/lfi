@@ -33,6 +33,32 @@ const formatValidationDiagnostic = (
     diagnostic.stderr || "(empty)",
   ].join("\n");
 
+const verifyCompletionCheckpoint = async (
+  cwd: string,
+  attempts: readonly Attempt[],
+  language: Language,
+): Promise<void> => {
+  const ids = attempts.map((attempt) => attempt.task.id);
+  const [trackedTasks, subject] = await Promise.all([
+    git(cwd, ["ls-files", "-z", "--", ".lfi/tasks"]),
+    git(cwd, ["log", "-1", "--format=%s"]),
+  ]);
+  const trackedPaths = trackedTasks.stdout.split("\0").filter(Boolean);
+  const missing = ids.filter(
+    (id) => !trackedPaths.some((path) => path.includes(`/[DONE] ${id} — `)),
+  );
+  const expectedSubject = `chore(lfi): complete ${ids.join(", ")}`;
+  if (missing.length === 0 && subject.stdout.trim() === expectedSubject) return;
+  const affected = missing.length > 0 ? missing : ids;
+  throw new Error(
+    localize(
+      language,
+      `Completion checkpoint is missing for ${affected.join(", ")}.`,
+      `Отсутствует checkpoint завершения для ${affected.join(", ")}.`,
+    ),
+  );
+};
+
 export const integrateAttempts = async (options: {
   cwd: string;
   worktreesRoot: string;
@@ -127,6 +153,13 @@ export const integrateAttempts = async (options: {
       },
     });
     await options.beforeDelivery?.(integration.path);
+    if (options.beforeDelivery) {
+      await verifyCompletionCheckpoint(
+        integration.path,
+        options.attempts,
+        options.language,
+      );
+    }
     await git(integration.path, [
       "push",
       "origin",

@@ -33,34 +33,34 @@ Their location does not move yet.
 
 ## Acceptance criteria
 
-- [ ] A tracker document carries no machine-readable header; `Type:`,
+- [x] A tracker document carries no machine-readable header; `Type:`,
       `Blocked by:`, and `Tier:` are read from marker lines in the body.
-- [ ] Status is derived from the filename alone, and the status prefixes and
+- [x] Status is derived from the filename alone, and the status prefixes and
       renaming behaviour are unchanged.
-- [ ] Only documents declaring the task kind are offered for execution;
+- [x] Only documents declaring the task kind are offered for execution;
       specifications and the wayfinding kinds are never handed to an agent.
-- [ ] A document with no `Type:` line is reported as malformed, naming the file,
+- [x] A document with no `Type:` line is reported as malformed, naming the file,
       and is not executed.
-- [ ] A wayfinding document whose kind is changed to task becomes executable
+- [x] A wayfinding document whose kind is changed to task becomes executable
       without any other edit.
-- [ ] Blocking relationships and the derived blocked status behave as they do
+- [x] Blocking relationships and the derived blocked status behave as they do
       today.
-- [ ] Identifier allocation still counts past identifiers found only in Git
+- [x] Identifier allocation still counts past identifiers found only in Git
       history.
-- [ ] Execution tier routes each tier to the same model as before, read from the
+- [x] Execution tier routes each tier to the same model as before, read from the
       `Tier:` line.
-- [ ] Branch names and log file names are unchanged.
-- [ ] The tracker documents in this repository are rewritten into the new shape
+- [x] Branch names and log file names are unchanged.
+- [x] The tracker documents in this repository are rewritten into the new shape
       and load without error.
-- [ ] Tests build a document tree on disk and assert on the loaded model:
+- [x] Tests build a document tree on disk and assert on the loaded model:
       parsing of each marker line, status from filename, the malformed-document
       report, and which kinds are executable.
-- [ ] User-facing output remains available in English and Russian.
+- [x] User-facing output remains available in English and Russian.
 
 ## Specification
 
-[LFI-7 — Scratch-hosted tracker documents](<../[SPEC] LFI-7 — scratch-hosted-tracker-documents.md>)
+[LFI-7 — Scratch hosted tracker documents](<../[SPEC] LFI-7 — scratch-hosted-tracker-documents.md>)
 
 ## Blocked by
 
-- [LFI-8 — Remove GitHub from the tracker role](<[DONE] LFI-8 — remove-github-from-the-tracker-role.md>)
+- [LFI-8 — Remove github from the tracker role](<[DONE] LFI-8 — remove-github-from-the-tracker-role.md>)

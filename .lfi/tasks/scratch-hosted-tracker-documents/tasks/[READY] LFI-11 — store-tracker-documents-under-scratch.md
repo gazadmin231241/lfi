@@ -47,8 +47,8 @@ This feature's own specification and tasks move as part of the change.
 
 ## Specification
 
-[LFI-7 — Scratch-hosted tracker documents](<../[SPEC] LFI-7 — scratch-hosted-tracker-documents.md>)
+[LFI-7 — Scratch hosted tracker documents](<../[SPEC] LFI-7 — scratch-hosted-tracker-documents.md>)
 
 ## Blocked by
 
-- [LFI-10 — Record document fields as marker lines](<[READY] LFI-10 — record-document-fields-as-marker-lines.md>)
+- [LFI-10 — Record document fields as marker lines](<[DONE] LFI-10 — record-document-fields-as-marker-lines.md>)
