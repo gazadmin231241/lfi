@@ -26,6 +26,16 @@ const exists = async (path: string) =>
     () => false,
   );
 
+const requireSkillMetadata = async (name: string, skillRoot: string): Promise<string> => {
+  const metadata = join(skillRoot, "agents", "openai.yaml");
+  if (!(await exists(metadata))) {
+    throw new Error(
+      `${name} is missing agents/openai.yaml at pinned commit / в закреплённом коммите отсутствует agents/openai.yaml`,
+    );
+  }
+  return metadata;
+};
+
 const directoriesDiffer = async (
   destination: string,
   source: string,
@@ -96,12 +106,7 @@ export const installSkills = async (
       const name = basename(path);
       const source = join(bundle, path);
       const destination = join(destinationRoot, name);
-      const sourceMetadata = join(source, "agents", "openai.yaml");
-      if (!(await exists(sourceMetadata))) {
-        throw new Error(
-          `${name} is missing agents/openai.yaml at pinned commit / в закреплённом коммите отсутствует agents/openai.yaml`,
-        );
-      }
+      const sourceMetadata = await requireSkillMetadata(name, source);
       if (!(await exists(destination))) {
         candidates.push({ name, source, destination });
         continue;
@@ -156,12 +161,7 @@ export const installSkills = async (
         await rm(destination, { recursive: true, force: true });
       }
       await cp(source, destination, { recursive: true });
-      const metadata = join(destination, "agents", "openai.yaml");
-      if (!(await exists(metadata))) {
-        throw new Error(
-          `${name} is missing agents/openai.yaml at pinned commit / в закреплённом коммите отсутствует agents/openai.yaml`,
-        );
-      }
+      await requireSkillMetadata(name, destination);
       changed.push(name);
     }
   } finally {

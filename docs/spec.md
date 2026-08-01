@@ -58,9 +58,9 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
   failed attempts, with timestamped iteration sections.
 - Log sections and legacy run directories expire by age (three days by
   default); active logs are preserved.
-- The pinned `lfi skills` bundle installs eight Matt Pocock skills, including
-  their `agents/openai.yaml`. LFI conditionally adapts `to-spec` and
-  `to-tickets` for projects carrying the generated LFI tracker contract.
+- The pinned `lfi skills` bundle installs eight Matt Pocock skills verbatim,
+  including their `agents/openai.yaml`; LFI does not modify upstream skill
+  instructions.
 - GitHub auth is provided by `gh auth login`; Codex auth by `codex login`.
 - `lfi sync` explicitly and resumably mirrors local specs, tasks, parents,
   blockers, and completion state to GitHub.

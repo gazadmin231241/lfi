@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
@@ -25,6 +25,20 @@ const writeBundle = async (root: string): Promise<void> => {
   }
 };
 
+const filesUnder = async (root: string, directory = root): Promise<string[]> => {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await filesUnder(root, path)));
+    } else {
+      files.push(path.slice(root.length + 1));
+    }
+  }
+  return files;
+};
+
 test("skill installation copies every upstream skill byte-for-byte", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
   const sourceRoot = join(root, "source");
@@ -36,19 +50,26 @@ test("skill installation copies every upstream skill byte-for-byte", async () =>
   assert.deepEqual(installed, SKILL_PATHS.map(skillName));
   for (const path of SKILL_PATHS) {
     const name = skillName(path);
-    for (const relativePath of ["SKILL.md", "agents/openai.yaml"]) {
+    const sourceDirectory = join(sourceRoot, path);
+    const destinationDirectory = join(destinationRoot, name);
+    const relativePaths = await filesUnder(sourceDirectory);
+    assert.deepEqual(
+      await filesUnder(destinationDirectory),
+      relativePaths,
+    );
+    for (const relativePath of relativePaths) {
       assert.equal(
         Buffer.compare(
-          await readFile(join(destinationRoot, name, relativePath)),
-          await readFile(join(sourceRoot, path, relativePath)),
+          await readFile(join(destinationDirectory, relativePath)),
+          await readFile(join(sourceDirectory, relativePath)),
         ),
         0,
       );
+      assert.doesNotMatch(
+        await readFile(join(destinationDirectory, relativePath), "utf8"),
+        /lfi:skill-override|LFI tracker override|Переопределение LFI/u,
+      );
     }
-    assert.doesNotMatch(
-      await readFile(join(destinationRoot, name, "SKILL.md"), "utf8"),
-      /lfi:skill-override|LFI tracker override|Переопределение LFI/u,
-    );
   }
 });
 
