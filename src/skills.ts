@@ -1,12 +1,4 @@
-import {
-  access,
-  cp,
-  mkdtemp,
-  mkdir,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { access, cp, mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -26,138 +18,6 @@ export const SKILL_PATHS = [
   "skills/engineering/code-review",
   "skills/engineering/resolving-merge-conflicts",
 ] as const;
-
-const SKILL_OVERRIDE_MARKER = "<!-- lfi:skill-override -->";
-
-type AdaptableSkill = "to-spec" | "to-tickets";
-
-const skillAnchors: Readonly<Record<AdaptableSkill, readonly string[]>> = {
-  "to-spec": ["Apply the `ready-for-agent` triage label"],
-  "to-tickets": [
-    ".scratch/<feature-slug>/issues/",
-    "Apply the `ready-for-agent` triage label",
-  ],
-};
-
-const isAdaptableSkill = (name: string): name is AdaptableSkill =>
-  name === "to-spec" || name === "to-tickets";
-
-const skillOverride = (name: "to-spec" | "to-tickets"): string =>
-  name === "to-spec"
-    ? `${SKILL_OVERRIDE_MARKER}
-## LFI tracker override
-
-Before following the process below, read \`docs/agents/issue-tracker.md\`. If it
-contains \`lfi:tracker-contract\`, these rules take precedence over every later
-tracker, path, and label instruction in this skill:
-
-- In Local Markdown mode, allocate the next shared \`LFI-N\` and publish one
-  \`type: spec\` document in a new \`.lfi/tasks/informative-slug/\` directory,
-  named \`[SPEC] LFI-N — informative-slug.md\`.
-- In GitHub mode, publish an Issue labelled only with the LFI-managed type
-  label \`lfi:spec\`, with a stable \`LFI-N — title\`; never add \`lfi:task\`,
-  \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
-- A specification is not executable.
-
-If the marker is absent, follow the original process below unchanged.
-
-## Переопределение LFI для трекера
-
-Перед выполнением процесса ниже прочитайте \`docs/agents/issue-tracker.md\`. Если
-он содержит \`lfi:tracker-contract\`, эти правила имеют приоритет над всеми
-последующими инструкциями навыка о трекере, путях и метках:
-
-- В режиме Local Markdown выделите следующий общий \`LFI-N\` и опубликуйте один
-  документ \`type: spec\` в новом каталоге
-  \`.lfi/tasks/informative-slug/\` с именем
-  \`[SPEC] LFI-N — informative-slug.md\`.
-- В режиме GitHub опубликуйте Issue только с управляемой LFI меткой типа
-  \`lfi:spec\` и стабильным \`LFI-N — название\`; никогда не добавляйте
-  \`lfi:task\`, \`ready-for-agent\`, Sandcastle, model, module, wayfinder или
-  PRD-метки.
-- Спецификация не исполняется.
-
-Если маркер отсутствует, без изменений следуйте исходному процессу ниже.
-
-`
-    : `${SKILL_OVERRIDE_MARKER}
-## LFI tracker override
-
-Before following the process below, read \`docs/agents/issue-tracker.md\`. If it
-contains \`lfi:tracker-contract\`, these rules take precedence over every later
-tracker, path, label, and execution-model instruction in this skill:
-
-- In Local Markdown mode, publish one \`type: task\` document per ticket in
-  its specification's \`.lfi/tasks/specification-slug/tasks/\` directory,
-  using the shared \`LFI-N\` sequence and \`spec: LFI-N\`. Publish a ticket
-  without a specification directly in \`.lfi/tasks/\`. Assign exactly one
-  \`execution_tier: light|standard|deep\` in frontmatter. Prefix each filename
-  with its derived status, for example
-  \`[READY] LFI-N — informative-slug.md\` or
-  \`[BLOCKED] LFI-N — informative-slug.md\`.
-- In GitHub mode, publish Issues with \`lfi:task\`, a stable
-  \`LFI-N — title\`, exactly one \`lfi:tier:light\`,
-  \`lfi:tier:standard\`, or \`lfi:tier:deep\` label, and native parent and
-  dependency relationships. Never
-  add \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
-- Assign the execution tier automatically from required judgment and cost of
-  error: bounded low-risk mechanical work is \`light\`; ordinary feature,
-  maintenance, and bug work is \`standard\`; ambiguous, cross-boundary,
-  security-, concurrency-, or data-sensitive work is \`deep\`. File count is
-  not authoritative. Resolve genuine doubt upward. The user may override the
-  tier before execution.
-- The skill must not ask for an execution model or assign concrete model labels.
-- Do not publish LFI tracker documents under \`.scratch/\`.
-
-If the marker is absent, follow the original process below unchanged.
-
-## Переопределение LFI для трекера
-
-Перед выполнением процесса ниже прочитайте \`docs/agents/issue-tracker.md\`. Если
-он содержит \`lfi:tracker-contract\`, эти правила имеют приоритет над всеми
-последующими инструкциями навыка о трекере, путях, метках и модели выполнения:
-
-- В режиме Local Markdown опубликуйте по одному документу \`type: task\` на
-  задачу в каталоге \`.lfi/tasks/specification-slug/tasks/\` её спецификации,
-  используя общую последовательность \`LFI-N\` и \`spec: LFI-N\`. Задачу без
-  спецификации публикуйте непосредственно в \`.lfi/tasks/\`. В frontmatter
-  укажите ровно один \`execution_tier: light|standard|deep\`. Имя каждого файла
-  начинается с вычисленного статуса, например
-  \`[READY] LFI-N — informative-slug.md\` или
-  \`[BLOCKED] LFI-N — informative-slug.md\`.
-- В режиме GitHub публикуйте Issues с \`lfi:task\`, стабильным
-  \`LFI-N — название\`, ровно одной меткой \`lfi:tier:light\`,
-  \`lfi:tier:standard\` или \`lfi:tier:deep\`, а также нативными родительскими
-  связями и зависимостями. Никогда не добавляйте \`ready-for-agent\`,
-  Sandcastle, model, module, wayfinder или PRD-метки.
-- Автоматически назначайте уровень выполнения по требуемому качеству суждения и
-  цене ошибки: ограниченная механическая низкорисковая работа — \`light\`;
-  обычная работа над функциями, сопровождением и ошибками — \`standard\`;
-  неоднозначная, межсистемная, чувствительная к безопасности, конкурентности
-  или данным работа — \`deep\`. Количество файлов не определяет уровень.
-  При настоящем сомнении выбирайте более высокий уровень. Пользователь может
-  изменить уровень до выполнения.
-- Навык не должен спрашивать модель выполнения или назначать метки конкретных
-  моделей.
-- Не публикуйте документы трекера LFI в \`.scratch/\`.
-
-Если маркер отсутствует, без изменений следуйте исходному процессу ниже.
-
-`;
-
-export const adaptLfiSkill = (name: string, source: string): string => {
-  if (!isAdaptableSkill(name)) return source;
-  if (source.includes(SKILL_OVERRIDE_MARKER)) return source;
-  const missing = skillAnchors[name].filter((anchor) => !source.includes(anchor));
-  const frontmatterEnd = source.indexOf("\n---\n", 4);
-  if (!source.startsWith("---\n") || frontmatterEnd < 0 || missing.length > 0) {
-    throw new Error(
-      `LFI cannot adapt ${name} at the pinned skill commit; upstream instructions changed / LFI не может адаптировать ${name}: инструкции закреплённой версии изменились`,
-    );
-  }
-  const insertion = frontmatterEnd + "\n---\n".length;
-  return `${source.slice(0, insertion)}\n${skillOverride(name)}${source.slice(insertion)}`;
-};
 
 const defaultSkillRoot = join(homedir(), ".agents", "skills");
 const exists = async (path: string) =>
@@ -199,15 +59,6 @@ const fetchBundle = async (): Promise<string> => {
   return temp;
 };
 
-const adaptBundle = async (bundle: string): Promise<void> => {
-  for (const name of ["to-spec", "to-tickets"] as const) {
-    const path = join(bundle, "skills", "engineering", name, "SKILL.md");
-    const source = await readFile(path, "utf8");
-    const adapted = adaptLfiSkill(name, source);
-    if (adapted !== source) await writeFile(path, adapted);
-  }
-};
-
 export const listSkillStatus = async (): Promise<
   Array<{ name: string; installed: boolean; hasOpenAiMetadata: boolean }>
 > =>
@@ -239,13 +90,18 @@ export const installSkills = async (
   const destinationRoot = options.destinationRoot ?? defaultSkillRoot;
   const changed: string[] = [];
   try {
-    await adaptBundle(bundle);
     await mkdir(destinationRoot, { recursive: true });
     const candidates: Array<{ name: string; source: string; destination: string }> = [];
     for (const path of SKILL_PATHS) {
       const name = basename(path);
       const source = join(bundle, path);
       const destination = join(destinationRoot, name);
+      const sourceMetadata = join(source, "agents", "openai.yaml");
+      if (!(await exists(sourceMetadata))) {
+        throw new Error(
+          `${name} is missing agents/openai.yaml at pinned commit / в закреплённом коммите отсутствует agents/openai.yaml`,
+        );
+      }
       if (!(await exists(destination))) {
         candidates.push({ name, source, destination });
         continue;
@@ -258,13 +114,7 @@ export const installSkills = async (
       }
       if (!options.update) {
         const installedMetadata = join(destination, "agents", "openai.yaml");
-        const sourceMetadata = join(source, "agents", "openai.yaml");
         if (!(await exists(installedMetadata))) {
-          if (!(await exists(sourceMetadata))) {
-            throw new Error(
-              `${name} is missing agents/openai.yaml at pinned commit / в закреплённом коммите отсутствует agents/openai.yaml`,
-            );
-          }
           await mkdir(join(destination, "agents"), { recursive: true });
           await cp(sourceMetadata, installedMetadata);
           changed.push(name);

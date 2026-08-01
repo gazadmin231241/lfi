@@ -1,33 +1,23 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 
-import {
-  adaptLfiSkill,
-  installSkills,
-  SKILL_PATHS,
-} from "../src/skills.js";
+import { installSkills, SKILL_PATHS } from "../src/skills.js";
 
-const upstreamSkill = (name: string): string => {
-  const header = `---
+const skillName = (path: string): string => basename(path);
+
+const upstreamSkill = (name: string): string => `---
 name: ${name}
 ---
 
+Upstream instructions for ${name}.
 `;
-  if (name === "to-spec") {
-    return `${header}Apply the \`ready-for-agent\` triage label.\n`;
-  }
-  if (name === "to-tickets") {
-    return `${header}- \`.scratch/<feature-slug>/issues/\`\nApply the \`ready-for-agent\` triage label.\n`;
-  }
-  return `${header}Original instructions.\n`;
-};
 
 const writeBundle = async (root: string): Promise<void> => {
   for (const path of SKILL_PATHS) {
-    const name = path.split("/").at(-1)!;
+    const name = skillName(path);
     const directory = join(root, path);
     await mkdir(join(directory, "agents"), { recursive: true });
     await writeFile(join(directory, "SKILL.md"), upstreamSkill(name));
@@ -35,91 +25,104 @@ const writeBundle = async (root: string): Promise<void> => {
   }
 };
 
-test("LFI adapts the installed spec and ticket skills conditionally", () => {
-  const frontmatter = `---
-name: example
----
-
-`;
-  const spec = adaptLfiSkill(
-    "to-spec",
-    `${frontmatter}Apply the \`ready-for-agent\` triage label.\n`,
-  );
-  assert.match(spec, /lfi:tracker-contract/u);
-  assert.match(spec, /\.lfi\/tasks\/informative-slug\//u);
-  assert.match(spec, /\[SPEC\] LFI-N — informative-slug\.md/u);
-  assert.match(spec, /Переопределение LFI для трекера/u);
-  assert.match(spec, /В режиме Local Markdown[\s\S]*\.lfi\/tasks\/informative-slug\//u);
-  assert.match(spec, /lfi:spec/u);
-  assert.match(spec, /\[SPEC\]/u);
-  assert.match(spec, /take precedence/u);
-
-  const tickets = adaptLfiSkill(
-    "to-tickets",
-    `${frontmatter}- \`.scratch/<feature-slug>/issues/\`\nApply the \`ready-for-agent\` triage label.\n`,
-  );
-  assert.match(tickets, /\.lfi\/tasks\/specification-slug\/tasks\//u);
-  assert.match(tickets, /without a specification.*\.lfi\/tasks\//su);
-  assert.match(tickets, /Задачу без[\s\S]*\.lfi\/tasks\//u);
-  assert.match(tickets, /\.lfi\/tasks\/specification-slug\/tasks\//u);
-  assert.match(tickets, /lfi:task/u);
-  assert.match(tickets, /\[READY\].*\[BLOCKED\]/su);
-  assert.match(tickets, /must not ask for an execution model/u);
-  assert.match(tickets, /execution_tier/u);
-  assert.match(tickets, /lfi:tier:light/u);
-  assert.match(tickets, /judgment and cost of\s+error/u);
-  assert.match(tickets, /Resolve genuine doubt upward/u);
-  assert.match(tickets, /Never[\s\S]*ready-for-agent/u);
-  assert.equal(adaptLfiSkill("to-tickets", tickets), tickets);
-});
-
-test("LFI rejects an upstream skill whose adaptation anchors disappeared", () => {
-  assert.throws(
-    () => adaptLfiSkill("to-spec", "---\nname: to-spec\n---\nChanged upstream."),
-    /cannot adapt.*to-spec/iu,
-  );
-});
-
-test("skill install and update apply the LFI adaptation before replacement", async () => {
+test("skill installation copies every upstream skill byte-for-byte", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
   const sourceRoot = join(root, "source");
   const destinationRoot = join(root, "installed");
   await writeBundle(sourceRoot);
 
-  const installed = await installSkills({
+  const installed = await installSkills({ sourceRoot, destinationRoot });
+
+  assert.deepEqual(installed, SKILL_PATHS.map(skillName));
+  for (const path of SKILL_PATHS) {
+    const name = skillName(path);
+    for (const relativePath of ["SKILL.md", "agents/openai.yaml"]) {
+      assert.equal(
+        Buffer.compare(
+          await readFile(join(destinationRoot, name, relativePath)),
+          await readFile(join(sourceRoot, path, relativePath)),
+        ),
+        0,
+      );
+    }
+    assert.doesNotMatch(
+      await readFile(join(destinationRoot, name, "SKILL.md"), "utf8"),
+      /lfi:skill-override|LFI tracker override|Переопределение LFI/u,
+    );
+  }
+});
+
+test("skill update accepts upstream rewording and installs it verbatim", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
+  const sourceRoot = join(root, "source");
+  const destinationRoot = join(root, "installed");
+  await writeBundle(sourceRoot);
+  await installSkills({ sourceRoot, destinationRoot });
+
+  const changedSource = join(sourceRoot, "skills/engineering/to-spec/SKILL.md");
+  const reworded = "Upstream has reworded this instruction.\n";
+  await writeFile(changedSource, reworded);
+
+  const changed = await installSkills({
     sourceRoot,
     destinationRoot,
+    update: true,
     yes: true,
   });
-  assert.ok(installed.includes("to-spec"));
-  assert.match(
-    await readFile(join(destinationRoot, "to-spec", "SKILL.md"), "utf8"),
-    /lfi:tracker-contract[\s\S]*lfi:spec/u,
-  );
-  assert.match(
-    await readFile(join(destinationRoot, "to-tickets", "SKILL.md"), "utf8"),
-    /\.lfi\/tasks[\s\S]*Never[\s\S]*ready-for-agent/u,
-  );
 
-  const beforeFailure = await readFile(
-    join(destinationRoot, "to-spec", "SKILL.md"),
-    "utf8",
-  );
-  await writeFile(
-    join(sourceRoot, "skills", "engineering", "to-spec", "SKILL.md"),
-    "---\nname: to-spec\n---\nChanged upstream.\n",
-  );
-  await assert.rejects(
-    installSkills({
-      sourceRoot,
-      destinationRoot,
-      update: true,
-      yes: true,
-    }),
-    /cannot adapt.*to-spec/iu,
-  );
+  assert.ok(changed.includes("to-spec"));
   assert.equal(
     await readFile(join(destinationRoot, "to-spec", "SKILL.md"), "utf8"),
-    beforeFailure,
+    reworded,
+  );
+});
+
+test("skill installation replaces an earlier adapted skill", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
+  const sourceRoot = join(root, "source");
+  const destinationRoot = join(root, "installed");
+  await writeBundle(sourceRoot);
+  const destination = join(destinationRoot, "to-spec");
+  await mkdir(join(destination, "agents"), { recursive: true });
+  await writeFile(
+    join(destination, "SKILL.md"),
+    "<!-- lfi:skill-override -->\nold adapted skill\n",
+  );
+  await writeFile(join(destination, "agents", "openai.yaml"), "interface:\n");
+
+  await installSkills({ sourceRoot, destinationRoot });
+
+  assert.equal(
+    await readFile(join(destination, "SKILL.md"), "utf8"),
+    await readFile(join(sourceRoot, "skills/engineering/to-spec/SKILL.md"), "utf8"),
+  );
+});
+
+test("skill installation fails when bundle metadata is missing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
+  const sourceRoot = join(root, "source");
+  const destinationRoot = join(root, "installed");
+  await writeBundle(sourceRoot);
+  await rm(
+    join(sourceRoot, "skills/engineering/to-spec/agents/openai.yaml"),
+  );
+
+  await assert.rejects(
+    installSkills({ sourceRoot, destinationRoot }),
+    /to-spec is missing agents\/openai\.yaml at pinned commit/u,
+  );
+});
+
+test("skill installation rejects missing metadata even for installed skills", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
+  const sourceRoot = join(root, "source");
+  const destinationRoot = join(root, "installed");
+  await writeBundle(sourceRoot);
+  await installSkills({ sourceRoot, destinationRoot });
+  await rm(join(sourceRoot, "skills/engineering/to-spec/agents/openai.yaml"));
+
+  await assert.rejects(
+    installSkills({ sourceRoot, destinationRoot }),
+    /to-spec is missing agents\/openai\.yaml at pinned commit/u,
   );
 });
