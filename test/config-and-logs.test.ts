@@ -303,11 +303,18 @@ exit 1
   assert.equal(config.STANDARD_MODEL, "");
   assert.equal(config.DEEP_MODEL, "");
   assert.equal(await stat(join(root, ".lfi", "tasks")).then((item) => item.isDirectory()), true);
+  assert.equal(
+    await stat(join(root, ".lfi", "tasks", "completed")).then((item) =>
+      item.isDirectory()
+    ),
+    true,
+  );
   assert.equal(await stat(join(root, ".lfi", "specs")).then((item) => item.isDirectory()), true);
   const gitignore = await readFile(join(root, ".gitignore"), "utf8");
   assert.match(gitignore, /^# custom\n\nbuild\//u);
   assert.match(gitignore, /\.lfi\/\*/u);
   assert.match(gitignore, /!\.lfi\/tasks\//u);
+  assert.match(gitignore, /!\.lfi\/tasks\/completed\//u);
   assert.match(gitignore, /!\.lfi\/specs\//u);
   const localGuide = await readFile(
     join(root, "docs", "agents", "issue-tracker.md"),

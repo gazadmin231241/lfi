@@ -194,6 +194,8 @@ const markdownFiles = async (directory: string): Promise<string[]> =>
     .map((entry) => join(directory, entry.name))
     .sort();
 
+export const COMPLETED_TASKS_DIRECTORY = "completed";
+
 const validateTracker = (documents: readonly TrackerDocument[]): void => {
   const byId = new Map<string, TrackerDocument>();
   for (const document of documents) {
@@ -211,12 +213,22 @@ const validateTracker = (documents: readonly TrackerDocument[]): void => {
     const validFilename =
       legacy !== null ||
       (canonical !== null && canonical[1] === document.id);
+    const parent = basename(dirname(document.path));
+    const inCompletedTasks =
+      document.type === "task" &&
+      parent === COMPLETED_TASKS_DIRECTORY &&
+      basename(dirname(dirname(document.path))) === "tasks";
+    const inCollectionRoot = parent === collection;
+    const validLocation =
+      document.type === "task" && document.status === "completed"
+        ? inCollectionRoot || inCompletedTasks
+        : inCollectionRoot;
     if (
-      basename(dirname(document.path)) !== collection ||
+      !validLocation ||
       !validFilename
     ) {
       throw new Error(
-        `${document.path}: filename must be ${collection}/[STATUS] ${document.id} — informative-slug.md / имя файла должно быть ${collection}/[СТАТУС] ${document.id} — информативное-название.md`,
+        `${document.path}: filename must be ${collection}/[STATUS] ${document.id} — informative-slug.md (completed tasks go in tasks/${COMPLETED_TASKS_DIRECTORY}/) / имя файла должно быть ${collection}/[СТАТУС] ${document.id} — информативное-название.md (завершённые задачи хранятся в tasks/${COMPLETED_TASKS_DIRECTORY}/)`,
       );
     }
     if (byId.has(document.id)) {
@@ -266,6 +278,9 @@ const validateTracker = (documents: readonly TrackerDocument[]): void => {
 export const loadLocalTracker = async (lfiRoot: string): Promise<LocalTracker> => {
   const paths = [
     ...(await markdownFiles(join(lfiRoot, "tasks"))),
+    ...(await markdownFiles(
+      join(lfiRoot, "tasks", COMPLETED_TASKS_DIRECTORY),
+    )),
     ...(await markdownFiles(join(lfiRoot, "specs"))),
   ];
   const documents = await Promise.all(

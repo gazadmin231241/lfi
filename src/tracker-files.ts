@@ -1,11 +1,14 @@
-import { access, rename } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access, mkdir, rename } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 import type {
   LocalTracker,
   TrackerDocument,
 } from "./local-tracker.js";
-import { saveTrackerDocument } from "./local-tracker.js";
+import {
+  COMPLETED_TASKS_DIRECTORY,
+  saveTrackerDocument,
+} from "./local-tracker.js";
 import { withLocalRelationships } from "./local-relationships.js";
 import {
   trackerDisplayState,
@@ -36,13 +39,25 @@ const exists = (path: string): Promise<boolean> =>
     () => false,
   );
 
+const trackerDirectory = (document: TrackerDocument): string => {
+  const current = dirname(document.path);
+  if (document.type !== "task") return current;
+  const tasksRoot =
+    basename(current) === COMPLETED_TASKS_DIRECTORY
+      ? dirname(current)
+      : current;
+  return document.status === "completed"
+    ? join(tasksRoot, COMPLETED_TASKS_DIRECTORY)
+    : tasksRoot;
+};
+
 export const reconcileTrackerFilenames = async (
   tracker: LocalTracker,
   active: ReadonlySet<string>,
 ): Promise<void> => {
   for (const document of tracker.documents) {
     const destination = join(
-      dirname(document.path),
+      trackerDirectory(document),
       trackerFilename(document, tracker, active),
     );
     if (destination === document.path) continue;
@@ -51,6 +66,7 @@ export const reconcileTrackerFilenames = async (
         `${destination}: tracker filename already exists / имя файла трекера уже существует`,
       );
     }
+    await mkdir(dirname(destination), { recursive: true });
     await rename(document.path, destination);
     document.path = destination;
   }

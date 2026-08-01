@@ -21,6 +21,10 @@ import {
 import { formatLocalStatus } from "../src/status.js";
 import { runCommand } from "../src/process.js";
 import { reconcileTrackerFilenames } from "../src/tracker-files.js";
+import {
+  withLocalRelationships,
+  withoutLocalRelationships,
+} from "../src/local-relationships.js";
 
 const taskSource = `---
 id: LFI-15
@@ -55,6 +59,37 @@ test("local tracker documents round-trip readable Markdown metadata", () => {
     path: "task.md",
   });
   assert.equal(parseTrackerDocument(serializeTrackerDocument(parsed), "task.md").title, parsed.title);
+});
+
+test("local task rendering exposes complexity and hides managed markers", () => {
+  const task = parseTrackerDocument(taskSource, "task.md");
+  const spec = parseTrackerDocument(
+    taskSource
+      .replace("id: LFI-15", "id: LFI-14")
+      .replace("type: task", "type: spec")
+      .replace("execution_tier: deep\n", "")
+      .replace("spec: LFI-14\n", "")
+      .replace("  - LFI-12\n", ""),
+    "spec.md",
+  );
+  const blocker = parseTrackerDocument(
+    taskSource
+      .replace("id: LFI-15", "id: LFI-12")
+      .replace("spec: LFI-14\n", "")
+      .replace("  - LFI-12\n", ""),
+    "blocker.md",
+  );
+  const rendered = withLocalRelationships(task, {
+    documents: [spec, blocker, task],
+    tasks: [blocker, task],
+    specs: [spec],
+  });
+
+  assert.match(rendered, /^> \*\*Task complexity:\*\* `deep`/u);
+  assert.match(rendered, /\n## Specification\n/u);
+  assert.doesNotMatch(rendered, /<!-- lfi:local-relationships/u);
+  assert.doesNotMatch(rendered, /\[lfi-local-relationships/u);
+  assert.equal(withoutLocalRelationships(rendered), "## What to build\n\nParse a task.");
 });
 
 test("local tracker validates references, cycles, and one shared ID sequence", async () => {
@@ -197,6 +232,7 @@ test("tracker filenames expose derived status before the stable ID and title", a
   const specPath = join(specsRoot, "LFI-1-feature.md");
   const firstPath = join(tasksRoot, "LFI-2-first-task.md");
   const secondPath = join(tasksRoot, "LFI-3-second-task.md");
+  const completedPath = join(tasksRoot, "LFI-4-completed-task.md");
   await writeFile(
     specPath,
     serializeTrackerDocument({
@@ -238,6 +274,21 @@ test("tracker filenames expose derived status before the stable ID and title", a
       path: secondPath,
     }),
   );
+  await writeFile(
+    completedPath,
+    serializeTrackerDocument({
+      id: "LFI-4",
+      number: 4,
+      type: "task",
+      title: "Completed task",
+      status: "completed",
+      completedAt: "2026-01-01T00:00:00.000Z",
+      spec: "LFI-1",
+      blockedBy: [],
+      body: "Completed.\n",
+      path: completedPath,
+    }),
+  );
 
   const tracker = await loadLocalTracker(root);
   await reconcileTrackerFilenames(tracker, new Set(["LFI-2"]));
@@ -250,8 +301,13 @@ test("tracker filenames expose derived status before the stable ID and title", a
     [
       "[BLOCKED] LFI-3 — second-task.md",
       "[RUNNING] LFI-2 — first-task.md",
+      "completed",
     ],
   );
+  assert.deepEqual(await readdir(join(tasksRoot, "completed")), [
+    "[DONE] LFI-4 — completed-task.md",
+  ]);
+  assert.equal((await loadLocalTracker(root)).tasks.length, 3);
   const second = await readFile(
     join(tasksRoot, "[BLOCKED] LFI-3 — second-task.md"),
     "utf8",

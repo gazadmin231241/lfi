@@ -131,10 +131,24 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
     [...calls.matchAll(/model_reasoning_effort="low"/gu)].length,
     3,
   );
-  assert.match(
-    await readFile(join(fixture.root, ".lfi", "logs", "run.log"), "utf8"),
-    /LFI-2.+no execution tier.+standard/isu,
+  const runLog = await readFile(
+    join(fixture.root, ".lfi", "logs", "run.log"),
+    "utf8",
   );
+  assert.match(runLog, /LFI-2.+no execution tier.+standard/isu);
+  for (const [id, model] of [
+    ["LFI-1", "luna"],
+    ["LFI-2", "terra"],
+    ["LFI-3", "sol"],
+  ]) {
+    assert.match(
+      runLog,
+      new RegExp(
+        `${id}\\n    Work started\\n    ${model} · low\\b`,
+        "u",
+      ),
+    );
+  }
   assert.equal(basename(fixture.root).startsWith("lfi-routing-"), true);
 });
 
@@ -281,6 +295,10 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
     "utf8",
   );
   assert.match(runLog, /LFI-2: уровень выполнения не указан/u);
+  assert.match(
+    runLog,
+    /LFI-2\n    Работа началась\n    terra · medium\b/u,
+  );
   assert.match(
     runLog,
     /модель luna-unavailable уровня light недоступна/u,

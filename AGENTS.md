@@ -10,3 +10,11 @@ GitHub Issues and Git worktrees.
 - Never log credentials, process environments, or GitHub tokens.
 - Run `pnpm check` before committing.
 - Do not publish packages or mutate a user's remote repository from tests.
+
+<!-- lfi:agent-tracker:begin -->
+## Agent skills
+
+### Issue tracker
+
+Tasks and specs use LFI Local Markdown. See `docs/agents/issue-tracker.md`.
+<!-- lfi:agent-tracker:end -->

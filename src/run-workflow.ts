@@ -10,6 +10,7 @@ import { closeIssue, commentFinalFailure, setIssueStatus } from "./github.js";
 import { git, gitCommonDirectory, localRepoInfo, removeWorktreeAndBranch } from "./git.js";
 import { localize, type Language } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
+import { configureLocalTrackerStorage } from "./local-setup.js";
 import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
@@ -44,10 +45,8 @@ export const runLfi = async (
   }
   const startupErrors: string[] = [];
   if (config.TASK_SOURCE === "local") {
-    await reconcileTrackerFilenames(
-      await loadLocalTracker(lfiRoot),
-      new Set(),
-    );
+    await configureLocalTrackerStorage(cwd);
+    await reconcileTrackerFilenames(await loadLocalTracker(lfiRoot), new Set());
     await checkpointTracker(cwd, "docs(lfi): update local task tracker");
     if (selectedIds.length > 0) {
       const tracker = await loadLocalTracker(lfiRoot);
@@ -221,7 +220,7 @@ export const runLfi = async (
                   : `lfi/issue-${issue.number}`,
             };
           }
-          printWorkStarted(output, language, issue.id);
+          printWorkStarted(output, language, issue.id, model, config.CODEX_REASONING_EFFORT);
           const attempt = await attemptWork({
             cwd,
             worktreesRoot,
@@ -373,10 +372,7 @@ export const runLfi = async (
     );
     await rm(currentStatePath, { force: true });
     if (config.TASK_SOURCE === "local") {
-      await reconcileTrackerFilenames(
-        await loadLocalTracker(lfiRoot),
-        new Set(),
-      );
+      await reconcileTrackerFilenames(await loadLocalTracker(lfiRoot), new Set());
     }
     return unresolved.length === 0 && pending.length === 0 ? 0 : 1;
   } catch (error) {

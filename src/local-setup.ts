@@ -11,6 +11,8 @@ export const LOCAL_IGNORE_BLOCK = `${IGNORE_BEGIN}
 .lfi/*
 !.lfi/tasks/
 !.lfi/tasks/*.md
+!.lfi/tasks/completed/
+!.lfi/tasks/completed/*.md
 !.lfi/specs/
 !.lfi/specs/*.md
 ${IGNORE_END}
@@ -107,6 +109,8 @@ const updateGitignore = (source: string): string => {
         line !== ".lfi/*" &&
         line !== "!.lfi/tasks/" &&
         line !== "!.lfi/tasks/*.md" &&
+        line !== "!.lfi/tasks/completed/" &&
+        line !== "!.lfi/tasks/completed/*.md" &&
         line !== "!.lfi/specs/" &&
         line !== "!.lfi/specs/*.md",
     )
@@ -130,7 +134,8 @@ export const configureTrackerContract = async (
       ? localize(
           language,
           `Specifications are flat files in \`.lfi/specs/\`; executable tasks are
-flat files in \`.lfi/tasks/\`. Both collections share one monotonically
+files in \`.lfi/tasks/\`. Completed tasks move immediately to
+\`.lfi/tasks/completed/\`. Both collections share one monotonically
 increasing \`LFI-N\` ID sequence, including IDs found in Git history. A task
 links to its specification with \`spec: LFI-N\` and to blockers with
 \`blocked_by\`. Executable tasks store exactly one \`execution_tier\` value:
@@ -145,7 +150,8 @@ tasks use \`status: ready\`.
 the derived status, then the stable ID: \`[READY] LFI-N — slug.md\`. LFI
 renames them when status changes.`,
           `Спецификации хранятся плоскими файлами в \`.lfi/specs/\`, исполняемые
-задачи — в \`.lfi/tasks/\`. Обе коллекции используют одну монотонно
+задачи — в \`.lfi/tasks/\`. Завершённые задачи сразу перемещаются в
+\`.lfi/tasks/completed/\`. Обе коллекции используют одну монотонно
 возрастающую последовательность \`LFI-N\`, включая ID из истории Git. Задача
 ссылается на спецификацию через \`spec: LFI-N\`, а на блокеры — через
 \`blocked_by\`. Исполняемая задача хранит ровно один \`execution_tier\`:
@@ -232,14 +238,22 @@ export const configureLocalTracker = async (
   cwd: string,
   language: Language = "en",
 ): Promise<void> => {
+  await configureLocalTrackerStorage(cwd);
+  await mkdir(join(cwd, "docs", "agents"), { recursive: true });
+  await configureTrackerContract(cwd, language, "local");
+};
+
+export const configureLocalTrackerStorage = async (
+  cwd: string,
+): Promise<void> => {
   const lfiRoot = join(cwd, ".lfi");
   await Promise.all([
     mkdir(join(lfiRoot, "tasks"), { recursive: true }),
+    mkdir(join(lfiRoot, "tasks", "completed"), { recursive: true }),
     mkdir(join(lfiRoot, "specs"), { recursive: true }),
-    mkdir(join(cwd, "docs", "agents"), { recursive: true }),
   ]);
   const gitignorePath = join(cwd, ".gitignore");
   const source = await readFile(gitignorePath, "utf8").catch(() => "");
-  await writeFile(gitignorePath, updateGitignore(source));
-  await configureTrackerContract(cwd, language, "local");
+  const updated = updateGitignore(source);
+  if (updated !== source) await writeFile(gitignorePath, updated);
 };

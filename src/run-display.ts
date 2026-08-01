@@ -5,6 +5,7 @@ import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import type { RunOutput } from "./logs.js";
 import type { ExecutionTier } from "./execution-tier.js";
+import type { ReasoningEffort } from "./config.js";
 
 const majorRule = "=".repeat(50);
 const minorRule = "-".repeat(50);
@@ -27,9 +28,13 @@ export const printWorkStarted = (
   output: RunOutput,
   language: Language,
   id: string,
+  model: string,
+  reasoning: ReasoningEffort,
 ): void => {
+  const modelName =
+    model || localize(language, "Codex default", "по умолчанию Codex");
   output.log(
-    `\n  ${id}\n    ${localize(language, "Work started", "Работа началась")}`,
+    `\n  ${id}\n    ${localize(language, "Work started", "Работа началась")}\n    ${modelName} · ${reasoning}`,
   );
 };
 

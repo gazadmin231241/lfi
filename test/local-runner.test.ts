@@ -77,7 +77,7 @@ test("local run does not repeat accepted work after integration fails", async ()
   await mkdir(tools);
   await writeFile(
     join(root, ".gitignore"),
-    ".lfi/*\n!.lfi/tasks/\n!.lfi/tasks/**\n!.lfi/specs/\n!.lfi/specs/**\n",
+    "# LFI local tracker: begin\n.lfi/*\n!.lfi/tasks/\n!.lfi/tasks/*.md\n!.lfi/specs/\n!.lfi/specs/*.md\n# LFI local tracker: end\n",
   );
   await writeFile(
     join(lfiRoot, "config.env"),
@@ -183,7 +183,7 @@ test("local run commits worker changes, integrates, and completes a task without
       title: "Implement local run",
       status: "ready",
       blockedBy: [],
-      body: "Create implemented.txt.\n",
+      body: "Create implemented.txt.\n\n- [ ] File is created.\n- [x] Existing completed criterion.\n",
       path: taskPath,
     }),
   );
@@ -247,6 +247,7 @@ exit 97
   assert.match(output, /={20,}\nIteration 1\n={20,}/u);
   assert.match(output, /  Runnable: LFI-1/u);
   assert.match(output, /    Work started/u);
+  assert.match(output, /    Codex default · medium/u);
   assert.match(output, /\[lfi-1\] Implementation is ready\./u);
   assert.match(output, /-{20,}\nIntegration\n-{20,}/u);
   assert.match(output, /    Merging branch: lfi\/lfi-1 \(LFI-1\)/u);
@@ -276,6 +277,7 @@ exit 97
   assert.equal(await readFile(join(root, "implemented.txt"), "utf8"), "implemented\n");
   const completedPath = join(
     tasks,
+    "completed",
     "[DONE] LFI-1 — implement-local-run.md",
   );
   const task = parseTrackerDocument(
@@ -283,7 +285,20 @@ exit 97
     completedPath,
   );
   assert.equal(task.status, "completed");
+  assert.match(task.body, /- \[x\] File is created\./u);
+  assert.doesNotMatch(task.body, /- \[ \]/u);
   await assert.rejects(readFile(taskPath, "utf8"));
+  const trackedCompleted = await runCommand(
+    "git",
+    [
+      "ls-files",
+      "--error-unmatch",
+      "--",
+      ".lfi/tasks/completed/[DONE] LFI-1 — implement-local-run.md",
+    ],
+    { cwd: root },
+  );
+  assert.equal(trackedCompleted.exitCode, 0, trackedCompleted.stderr);
   const log = await runCommand("git", ["log", "--format=%s"], { cwd: root });
   assert.match(log.stdout, /docs\(lfi\): update local task tracker/u);
   assert.match(log.stdout, /feat\(lfi\): implement LFI-1/u);

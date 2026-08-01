@@ -4,6 +4,7 @@ import {
   loadLocalTracker,
   type LocalTracker,
 } from "./local-tracker.js";
+import { configureLocalTrackerStorage } from "./local-setup.js";
 import { localize, type Language } from "./i18n.js";
 import {
   readActiveTaskIds,
@@ -99,6 +100,7 @@ export const localStatusLines = async (
   } = {},
 ): Promise<string[]> => {
   const lfiRoot = join(cwd, ".lfi");
+  await configureLocalTrackerStorage(cwd);
   const tracker = await loadLocalTracker(lfiRoot);
   const active = await readActiveTaskIds(lfiRoot);
   await reconcileTrackerFilenames(tracker, active);

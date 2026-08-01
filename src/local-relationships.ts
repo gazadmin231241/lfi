@@ -5,15 +5,22 @@ import type {
   TrackerDocument,
 } from "./local-tracker.js";
 
-const START = "<!-- lfi:local-relationships:start -->";
-const END = "<!-- lfi:local-relationships:end -->";
-const managedRelationships = new RegExp(
-  `\\n*${START}[\\s\\S]*?${END}\\n*`,
+const LEGACY_START = "<!-- lfi:local-relationships:start -->";
+const LEGACY_END = "<!-- lfi:local-relationships:end -->";
+const markedRelationships = new RegExp(
+  `\\n*(?:${LEGACY_START}[\\s\\S]*?${LEGACY_END}|\\[lfi-local-relationships-start\\]: <>[\\s\\S]*?\\[lfi-local-relationships-end\\]: <>)\\n*`,
   "u",
 );
+const managedRelationships =
+  /\n*## Specification\n[\s\S]*?\n## Blocked by\n[\s\S]*$/u;
+const taskComplexity = /^> \*\*Task complexity:\*\* `(?:light|standard|deep)`\n*/u;
 
 export const withoutLocalRelationships = (body: string): string =>
-  body.replace(managedRelationships, "\n").trimEnd();
+  body
+    .replace(markedRelationships, "\n")
+    .replace(managedRelationships, "\n")
+    .replace(taskComplexity, "")
+    .trimEnd();
 
 const linkTo = (
   source: TrackerDocument,
@@ -38,7 +45,6 @@ export const withLocalRelationships = (
     return blocker ? [`- ${linkTo(document, blocker)}`] : [];
   });
   const relationships = [
-    START,
     "## Specification",
     "",
     specification
@@ -50,7 +56,7 @@ export const withLocalRelationships = (
     blockers.length > 0
       ? blockers.join("\n")
       : "None — can start immediately.",
-    END,
   ].join("\n");
-  return `${body}${body ? "\n\n" : ""}${relationships}\n`;
+  const complexity = `> **Task complexity:** \`${document.executionTier ?? "standard"}\``;
+  return `${complexity}${body ? `\n\n${body}` : ""}\n\n${relationships}\n`;
 };
