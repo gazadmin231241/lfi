@@ -49,8 +49,8 @@ name: example
   assert.match(spec, /\.lfi\/tasks\/informative-slug\//u);
   assert.match(spec, /\[SPEC\] LFI-N — informative-slug\.md/u);
   assert.match(spec, /Переопределение LFI для трекера/u);
-  assert.match(spec, /В режиме Local Markdown[\s\S]*\.lfi\/tasks\/informative-slug\//u);
-  assert.match(spec, /lfi:spec/u);
+  assert.match(spec, /Выделите следующий общий[\s\S]*\.lfi\/tasks\/informative-slug\//u);
+  assert.doesNotMatch(spec, /GitHub Issues|lfi:(?:spec|task|tier)/u);
   assert.match(spec, /\[SPEC\]/u);
   assert.match(spec, /take precedence/u);
 
@@ -62,14 +62,12 @@ name: example
   assert.match(tickets, /without a specification.*\.lfi\/tasks\//su);
   assert.match(tickets, /Задачу без[\s\S]*\.lfi\/tasks\//u);
   assert.match(tickets, /\.lfi\/tasks\/specification-slug\/tasks\//u);
-  assert.match(tickets, /lfi:task/u);
+  assert.doesNotMatch(tickets, /GitHub Issues|lfi:(?:spec|task|tier)/u);
   assert.match(tickets, /\[READY\].*\[BLOCKED\]/su);
   assert.match(tickets, /must not ask for an execution model/u);
   assert.match(tickets, /execution_tier/u);
-  assert.match(tickets, /lfi:tier:light/u);
   assert.match(tickets, /judgment and cost of\s+error/u);
   assert.match(tickets, /Resolve genuine doubt upward/u);
-  assert.match(tickets, /Never[\s\S]*ready-for-agent/u);
   assert.equal(adaptLfiSkill("to-tickets", tickets), tickets);
 });
 
@@ -94,11 +92,11 @@ test("skill install and update apply the LFI adaptation before replacement", asy
   assert.ok(installed.includes("to-spec"));
   assert.match(
     await readFile(join(destinationRoot, "to-spec", "SKILL.md"), "utf8"),
-    /lfi:tracker-contract[\s\S]*lfi:spec/u,
+    /lfi:tracker-contract[\s\S]*type: spec/u,
   );
   assert.match(
     await readFile(join(destinationRoot, "to-tickets", "SKILL.md"), "utf8"),
-    /\.lfi\/tasks[\s\S]*Never[\s\S]*ready-for-agent/u,
+    /\.lfi\/tasks[\s\S]*execution_tier/u,
   );
 
   const beforeFailure = await readFile(

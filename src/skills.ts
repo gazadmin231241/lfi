@@ -49,14 +49,11 @@ const skillOverride = (name: "to-spec" | "to-tickets"): string =>
 
 Before following the process below, read \`docs/agents/issue-tracker.md\`. If it
 contains \`lfi:tracker-contract\`, these rules take precedence over every later
-tracker, path, and label instruction in this skill:
+tracker and path instruction in this skill:
 
-- In Local Markdown mode, allocate the next shared \`LFI-N\` and publish one
+- Allocate the next shared \`LFI-N\` and publish one
   \`type: spec\` document in a new \`.lfi/tasks/informative-slug/\` directory,
   named \`[SPEC] LFI-N — informative-slug.md\`.
-- In GitHub mode, publish an Issue labelled only with the LFI-managed type
-  label \`lfi:spec\`, with a stable \`LFI-N — title\`; never add \`lfi:task\`,
-  \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
 - A specification is not executable.
 
 If the marker is absent, follow the original process below unchanged.
@@ -65,16 +62,12 @@ If the marker is absent, follow the original process below unchanged.
 
 Перед выполнением процесса ниже прочитайте \`docs/agents/issue-tracker.md\`. Если
 он содержит \`lfi:tracker-contract\`, эти правила имеют приоритет над всеми
-последующими инструкциями навыка о трекере, путях и метках:
+последующими инструкциями навыка о трекере и путях:
 
-- В режиме Local Markdown выделите следующий общий \`LFI-N\` и опубликуйте один
+- Выделите следующий общий \`LFI-N\` и опубликуйте один
   документ \`type: spec\` в новом каталоге
   \`.lfi/tasks/informative-slug/\` с именем
   \`[SPEC] LFI-N — informative-slug.md\`.
-- В режиме GitHub опубликуйте Issue только с управляемой LFI меткой типа
-  \`lfi:spec\` и стабильным \`LFI-N — название\`; никогда не добавляйте
-  \`lfi:task\`, \`ready-for-agent\`, Sandcastle, model, module, wayfinder или
-  PRD-метки.
 - Спецификация не исполняется.
 
 Если маркер отсутствует, без изменений следуйте исходному процессу ниже.
@@ -85,9 +78,9 @@ If the marker is absent, follow the original process below unchanged.
 
 Before following the process below, read \`docs/agents/issue-tracker.md\`. If it
 contains \`lfi:tracker-contract\`, these rules take precedence over every later
-tracker, path, label, and execution-model instruction in this skill:
+tracker, path, and execution-model instruction in this skill:
 
-- In Local Markdown mode, publish one \`type: task\` document per ticket in
+- Publish one \`type: task\` document per ticket in
   its specification's \`.lfi/tasks/specification-slug/tasks/\` directory,
   using the shared \`LFI-N\` sequence and \`spec: LFI-N\`. Publish a ticket
   without a specification directly in \`.lfi/tasks/\`. Assign exactly one
@@ -95,11 +88,6 @@ tracker, path, label, and execution-model instruction in this skill:
   with its derived status, for example
   \`[READY] LFI-N — informative-slug.md\` or
   \`[BLOCKED] LFI-N — informative-slug.md\`.
-- In GitHub mode, publish Issues with \`lfi:task\`, a stable
-  \`LFI-N — title\`, exactly one \`lfi:tier:light\`,
-  \`lfi:tier:standard\`, or \`lfi:tier:deep\` label, and native parent and
-  dependency relationships. Never
-  add \`ready-for-agent\`, Sandcastle, model, module, wayfinder, or PRD labels.
 - Assign the execution tier automatically from required judgment and cost of
   error: bounded low-risk mechanical work is \`light\`; ordinary feature,
   maintenance, and bug work is \`standard\`; ambiguous, cross-boundary,
@@ -115,9 +103,9 @@ If the marker is absent, follow the original process below unchanged.
 
 Перед выполнением процесса ниже прочитайте \`docs/agents/issue-tracker.md\`. Если
 он содержит \`lfi:tracker-contract\`, эти правила имеют приоритет над всеми
-последующими инструкциями навыка о трекере, путях, метках и модели выполнения:
+последующими инструкциями навыка о трекере, путях и модели выполнения:
 
-- В режиме Local Markdown опубликуйте по одному документу \`type: task\` на
+- Опубликуйте по одному документу \`type: task\` на
   задачу в каталоге \`.lfi/tasks/specification-slug/tasks/\` её спецификации,
   используя общую последовательность \`LFI-N\` и \`spec: LFI-N\`. Задачу без
   спецификации публикуйте непосредственно в \`.lfi/tasks/\`. В frontmatter
@@ -125,11 +113,6 @@ If the marker is absent, follow the original process below unchanged.
   начинается с вычисленного статуса, например
   \`[READY] LFI-N — informative-slug.md\` или
   \`[BLOCKED] LFI-N — informative-slug.md\`.
-- В режиме GitHub публикуйте Issues с \`lfi:task\`, стабильным
-  \`LFI-N — название\`, ровно одной меткой \`lfi:tier:light\`,
-  \`lfi:tier:standard\` или \`lfi:tier:deep\`, а также нативными родительскими
-  связями и зависимостями. Никогда не добавляйте \`ready-for-agent\`,
-  Sandcastle, model, module, wayfinder или PRD-метки.
 - Автоматически назначайте уровень выполнения по требуемому качеству суждения и
   цене ошибки: ограниченная механическая низкорисковая работа — \`light\`;
   обычная работа над функциями, сопровождением и ошибками — \`standard\`;

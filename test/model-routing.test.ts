@@ -37,7 +37,6 @@ const initializeRoutingRepository = async (options: {
     join(lfiRoot, "config.env"),
     serializeEnvConfig({
       ...DEFAULT_CONFIG,
-      TASK_SOURCE: "local",
       MAX_PARALLEL: 3,
       MAX_STAGES: 1,
       VALIDATE_COMMAND: "true",
@@ -74,6 +73,16 @@ const initializeRoutingRepository = async (options: {
     ["config", "user.email", "lfi@example.test"],
     ["add", "."],
     ["commit", "-m", "test: initialize routing repository"],
+  ]) {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  }
+  const remote = await mkdtemp(join(tmpdir(), "lfi-routing-origin-"));
+  const initialized = await runCommand("git", ["init", "--bare", remote]);
+  assert.equal(initialized.exitCode, 0, initialized.stderr);
+  for (const args of [
+    ["remote", "add", "origin", remote],
+    ["push", "-u", "origin", "main"],
   ]) {
     const result = await runCommand("git", args, { cwd: root });
     assert.equal(result.exitCode, 0, result.stderr);
@@ -303,88 +312,4 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
     runLog,
     /модель luna-unavailable уровня light недоступна/u,
   );
-});
-
-test("GitHub run blocks conflicting tier labels without invoking a worker", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "lfi-github-routing-"));
-  const root = join(sandbox, "work");
-  const remote = join(sandbox, "origin.git");
-  const lfiRoot = join(root, ".lfi");
-  const tools = join(sandbox, "tools");
-  const ghCalls = join(sandbox, "gh-calls");
-  const codexCalled = join(sandbox, "codex-called");
-  await mkdir(root);
-  await mkdir(lfiRoot);
-  await mkdir(tools);
-  const git = async (cwd: string, ...args: string[]) => {
-    const result = await runCommand("git", args, { cwd });
-    assert.equal(result.exitCode, 0, result.stderr);
-  };
-  await git(sandbox, "init", "--bare", remote);
-  await git(root, "init", "-b", "main");
-  await git(root, "config", "user.name", "LFI Test");
-  await git(root, "config", "user.email", "lfi@example.test");
-  await writeFile(join(root, ".gitignore"), ".lfi/\n");
-  await writeFile(join(root, "README.md"), "test\n");
-  await git(root, "add", ".");
-  await git(root, "commit", "-m", "test: initialize GitHub routing repository");
-  await git(root, "remote", "add", "origin", remote);
-  await git(root, "push", "-u", "origin", "main");
-  await writeFile(
-    join(lfiRoot, "config.env"),
-    serializeEnvConfig({
-      ...DEFAULT_CONFIG,
-      TASK_SOURCE: "github",
-      BASE_BRANCH: "main",
-      STANDARD_MODEL: "terra",
-      VALIDATE_COMMAND: "true",
-      MAX_STAGES: 1,
-    }),
-  );
-  await writeFile(join(lfiRoot, "task-prompt.md"), "Implement the task.\n");
-  await writeFile(
-    join(tools, "gh"),
-    `#!/bin/sh
-printf '%s\\n' "$*" >> "${ghCalls}"
-case "$*" in
-  *"repo view"*)
-    printf '%s\\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"main"}}'
-    ;;
-  *"--label lfi:task"*)
-    printf '%s\\n' '[{"number":7,"title":"Conflicting tier","url":"https://github.test/7","body":"Do work.","labels":[{"name":"lfi:task"},{"name":"lfi:tier:light"},{"name":"lfi:tier:deep"}]}]'
-    ;;
-  *"--limit 1000"*)
-    printf '%s\\n' '[{"number":7}]'
-    ;;
-  *"dependencies/blocked_by"*)
-    ;;
-  *"issue view 7"*)
-    printf '%s\\n' 'Conflicting tier'
-    ;;
-esac
-`,
-  );
-  await writeFile(
-    join(tools, "codex"),
-    `#!/bin/sh
-touch "${codexCalled}"
-exit 97
-`,
-  );
-  await chmod(join(tools, "gh"), 0o755);
-  await chmod(join(tools, "codex"), 0o755);
-  const originalPath = process.env.PATH;
-  process.env.PATH = `${tools}:${originalPath ?? ""}`;
-  try {
-    assert.equal(await runLfi(root, "en"), 1);
-  } finally {
-    process.env.PATH = originalPath;
-  }
-
-  await assert.rejects(readFile(codexCalled, "utf8"));
-  assert.match(
-    await readFile(join(lfiRoot, "logs", "run.log"), "utf8"),
-    /#7 has conflicting execution tier labels.+Keep exactly one lfi:tier:\*/su,
-  );
-  assert.match(await readFile(ghCalls, "utf8"), /issue comment 7/u);
 });

@@ -1,7 +1,7 @@
 # LFI agent instructions
 
 LFI is a zero-runtime-dependency TypeScript CLI that orchestrates Codex over
-GitHub Issues and Git worktrees.
+local Markdown tasks and Git worktrees.
 
 - Keep user-facing behavior available in English and Russian.
 - Keep process execution behind `src/process.ts`.

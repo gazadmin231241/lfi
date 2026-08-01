@@ -13,11 +13,12 @@ import {
   validateConfig,
 } from "../src/config.js";
 import { initializeProject } from "../src/init.js";
+import { runDoctor } from "../src/doctor.js";
 import { configureTrackerContract } from "../src/local-setup.js";
 import { pruneExpiredRunLogs } from "../src/logs.js";
 import { runCommand } from "../src/process.js";
 
-test("config round-trips defaults without configurable tracker labels", () => {
+test("config round-trips defaults", () => {
   const serialized = serializeEnvConfig(DEFAULT_CONFIG);
   const parsed = parseEnvConfig(serialized);
 
@@ -28,10 +29,8 @@ test("config round-trips defaults without configurable tracker labels", () => {
   assert.equal(parsed.MAX_PARALLEL, 3);
   assert.equal(parsed.MAX_STAGES, 10);
   assert.equal(parsed.LOG_RETENTION_DAYS, 3);
-  assert.doesNotMatch(serialized, /ISSUE_LABEL|EXCLUDE_LABELS/u);
-  assert.equal("ISSUE_LABEL" in parsed, false);
-  assert.equal("EXCLUDE_LABELS" in parsed, false);
-  assert.equal(parsed.TASK_SOURCE, "local");
+  assert.equal("TASK_SOURCE" in parsed, false);
+  assert.equal("GITHUB_REPO" in parsed, false);
 });
 
 test("execution tiers resolve worker and integration models without changing reasoning", () => {
@@ -56,16 +55,12 @@ test("execution tiers resolve worker and integration models without changing rea
   assert.equal(config.CODEX_REASONING_EFFORT, "low");
 });
 
-test("config ignores removed tracker-label settings", () => {
-  const parsed = parseEnvConfig(
-    "TASK_SOURCE=github\nISSUE_LABEL=ready-for-agent\nEXCLUDE_LABELS=blocked\n",
-  );
-  assert.equal("ISSUE_LABEL" in parsed, false);
-  assert.equal("EXCLUDE_LABELS" in parsed, false);
-});
+test("doctor requires the commands used by GitHub code delivery", async () => {
+  const checks = await runDoctor(process.cwd(), "en");
+  const commands = checks.filter((check) => !check.name.startsWith("$"));
 
-test("config treats missing task source as the legacy GitHub mode", () => {
-  assert.equal(parseEnvConfig("BASE_BRANCH=main\n").TASK_SOURCE, "github");
+  assert.deepEqual(commands.map((check) => check.name), ["git", "gh", "codex"]);
+  assert.equal(commands.every((check) => check.required), true);
 });
 
 test("config rejects unsafe concurrency and invalid numeric values", () => {
@@ -154,20 +149,17 @@ new message
 test("init creates an ignored, runnable project configuration from detected defaults", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-init-"));
   const bin = join(root, "bin");
-  const ghCalls = join(root, "gh-calls");
+  const ghMarker = join(root, "gh-called");
   await mkdir(bin);
   await writeFile(
     join(bin, "gh"),
     `#!/bin/sh
-printf '%s\\n' "$*" >> "${ghCalls}"
-case "$*" in
-  *"repo view"*)
-    printf '%s\\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk"}}'
-    ;;
-esac
+printf '%s\n' "$*" > "${ghMarker}"
+printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk"}}'
 `,
   );
   await chmod(join(bin, "gh"), 0o755);
+  await runCommand("git", ["init", "-b", "main"], { cwd: root });
   await writeFile(join(root, "pnpm-lock.yaml"), "");
   await writeFile(
     join(root, "package.json"),
@@ -181,7 +173,6 @@ esac
       language: "en",
       retentionDays: 7,
       yes: true,
-      taskSource: "github",
       model: "gpt-test",
       reasoning: "high",
     });
@@ -202,30 +193,22 @@ esac
   assert.equal(config.LOG_RETENTION_DAYS, 7);
   assert.equal(config.VALIDATE_COMMAND, "pnpm validate:all");
   assert.equal(config.WORKTREE_SETUP_COMMAND, "pnpm install --frozen-lockfile");
-  assert.match(await readFile(join(root, ".gitignore"), "utf8"), /^\.lfi\/$/mu);
+  assert.match(await readFile(join(root, ".gitignore"), "utf8"), /!\.lfi\/tasks\/\*\*/u);
   assert.match(
     await readFile(join(root, ".lfi", "task-prompt.md"), "utf8"),
     /Use \$implement/u,
   );
-  const githubGuide = await readFile(
+  const trackerGuide = await readFile(
     join(root, "docs", "agents", "issue-tracker.md"),
     "utf8",
   );
-  assert.match(githubGuide, /lfi:spec/u);
-  assert.match(githubGuide, /lfi:task/u);
-  assert.match(githubGuide, /lfi:tier:light/u);
-  assert.match(githubGuide, /lfi:tier:standard/u);
-  assert.match(githubGuide, /lfi:tier:deep/u);
-  assert.doesNotMatch(githubGuide, /ready-for-agent|model:sol|\.scratch/u);
-  const calls = await readFile(ghCalls, "utf8");
-  assert.match(calls, /label create lfi:spec/u);
-  assert.match(calls, /label create lfi:task/u);
-  assert.match(calls, /label create lfi:tier:light/u);
-  assert.match(calls, /label create lfi:tier:standard/u);
-  assert.match(calls, /label create lfi:tier:deep/u);
+  assert.match(trackerGuide, /type: spec/u);
+  assert.match(trackerGuide, /type: task/u);
+  assert.match(trackerGuide, /execution_tier/u);
+  assert.doesNotMatch(trackerGuide, /GitHub Issues|lfi:(?:spec|task|tier)/u);
+  assert.match(await readFile(ghMarker, "utf8"), /repo view/u);
   const agentInstructions = await readFile(join(root, "AGENTS.md"), "utf8");
-  assert.match(agentInstructions, /GitHub Issues/u);
-  assert.doesNotMatch(agentInstructions, /use LFI Local Markdown/u);
+  assert.match(agentInstructions, /LFI Local Markdown/u);
 });
 
 test("tracker contract upgrades preserve text around the legacy marker", async () => {
@@ -245,15 +228,13 @@ User appendix.
 `,
   );
 
-  await configureTrackerContract(root, "en", "local");
+  await configureTrackerContract(root, "en");
   const guide = await readFile(join(directory, "issue-tracker.md"), "utf8");
   assert.match(guide, /^User preface\./u);
   assert.match(guide, /User appendix\.\s*$/u);
   assert.match(guide, /lfi:tracker-contract:begin/u);
 
-  await configureTrackerContract(root, "en", "github");
-  assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /GitHub Issues/u);
-  await configureTrackerContract(root, "en", "local");
+  await configureTrackerContract(root, "en");
   const agents = await readFile(join(root, "AGENTS.md"), "utf8");
   assert.match(agents, /LFI Local Markdown/u);
   assert.doesNotMatch(agents, /Tasks and specs use GitHub Issues/u);
@@ -279,7 +260,7 @@ User appendix.
 `,
   );
 
-  await configureTrackerContract(root, "en", "local");
+  await configureTrackerContract(root, "en");
 
   const guide = await readFile(join(directory, "issue-tracker.md"), "utf8");
   assert.equal((guide.match(/lfi:tracker-contract:begin/gu) ?? []).length, 1);
@@ -291,7 +272,7 @@ User appendix.
   assert.match(guide, /User appendix\.\s*$/u);
 });
 
-test("local init works without gh or a remote and tracks only task documents", async () => {
+test("init uses GitHub only for repository detection and tracks tasks locally", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-init-"));
   const bin = join(root, "bin");
   await mkdir(bin);
@@ -299,8 +280,8 @@ test("local init works without gh or a remote and tracks only task documents", a
   await writeFile(
     join(bin, "gh"),
     `#!/bin/sh
-touch '${ghMarker}'
-exit 1
+printf '%s\n' "$*" > '${ghMarker}'
+printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"main"}}'
 `,
   );
   await chmod(join(bin, "gh"), 0o755);
@@ -320,7 +301,6 @@ exit 1
       language: "ru",
       retentionDays: 3,
       yes: true,
-      taskSource: "local",
     });
   } finally {
     process.env.PATH = previousPath;
@@ -329,7 +309,6 @@ exit 1
   const config = parseEnvConfig(
     await readFile(join(root, ".lfi", "config.env"), "utf8"),
   );
-  assert.equal(config.TASK_SOURCE, "local");
   assert.equal(config.BASE_BRANCH, "main");
   assert.equal(config.LIGHT_MODEL, "");
   assert.equal(config.STANDARD_MODEL, "");
@@ -366,7 +345,6 @@ build/
       language: "ru",
       retentionDays: 3,
       yes: true,
-      taskSource: "local",
     }),
     "exists",
   );
@@ -380,10 +358,9 @@ build/
   assert.match(localGuide, /^custom tracker guide/mu);
   assert.match(localGuide, /\.lfi\/tasks\/<specification-slug>\//u);
   assert.doesNotMatch(localGuide, /\.lfi\/(?:specs|tasks\/completed)/u);
-  assert.match(localGuide, /lfi:spec/u);
-  assert.match(localGuide, /lfi:task/u);
+  assert.doesNotMatch(localGuide, /GitHub Issues|lfi:(?:spec|task|tier)/u);
   assert.match(localGuide, /execution_tier/u);
   assert.doesNotMatch(localGuide, /ready-for-agent|model:sol|\.scratch/u);
   assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /Трекер задач/u);
-  await assert.rejects(stat(ghMarker));
+  assert.match(await readFile(ghMarker, "utf8"), /repo view/u);
 });

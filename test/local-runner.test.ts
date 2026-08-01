@@ -20,6 +20,16 @@ import {
 import { dryRun, runLfi } from "../src/runner.js";
 import { runCommand } from "../src/process.js";
 
+const addOrigin = async (
+  git: (...args: string[]) => Promise<void>,
+): Promise<void> => {
+  const remote = await mkdtemp(join(tmpdir(), "lfi-origin-"));
+  const initialized = await runCommand("git", ["init", "--bare", remote]);
+  assert.equal(initialized.exitCode, 0, initialized.stderr);
+  await git("remote", "add", "origin", remote);
+  await git("push", "-u", "origin", "main");
+};
+
 test("local dry-run selects the dependency frontier without GitHub", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-plan-"));
   const lfiRoot = join(root, ".lfi");
@@ -28,7 +38,7 @@ test("local dry-run selects the dependency frontier without GitHub", async () =>
   await mkdir(join(lfiRoot, "specs"));
   await writeFile(
     join(lfiRoot, "config.env"),
-    serializeEnvConfig({ ...DEFAULT_CONFIG, TASK_SOURCE: "local" }),
+    serializeEnvConfig(DEFAULT_CONFIG),
   );
   const create = async (
     number: number,
@@ -83,7 +93,6 @@ test("local run does not repeat accepted work after integration fails", async ()
     join(lfiRoot, "config.env"),
     serializeEnvConfig({
       ...DEFAULT_CONFIG,
-      TASK_SOURCE: "local",
       MAX_PARALLEL: 1,
       MAX_STAGES: 2,
       VALIDATE_COMMAND: "printf 'validation is broken\\n' >&2; exit 1",
@@ -130,6 +139,7 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
   await git("config", "user.email", "lfi@example.test");
   await git("add", ".");
   await git("commit", "-m", "test: initialize repository");
+  await addOrigin(git);
 
   const originalPath = process.env.PATH;
   process.env.PATH = `${tools}:${originalPath ?? ""}`;
@@ -148,7 +158,7 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
   assert.equal(task.status, "ready");
 });
 
-test("local run commits worker changes, integrates, and completes a task without GitHub", async () => {
+test("local task run commits worker changes, pushes code, and completes the task", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-run-"));
   const lfiRoot = join(root, ".lfi");
   const tasks = join(lfiRoot, "tasks");
@@ -166,7 +176,6 @@ test("local run commits worker changes, integrates, and completes a task without
     join(lfiRoot, "config.env"),
     serializeEnvConfig({
       ...DEFAULT_CONFIG,
-      TASK_SOURCE: "local",
       MAX_PARALLEL: 1,
       MAX_STAGES: 2,
       VALIDATE_COMMAND:
@@ -221,6 +230,7 @@ exit 97
   await git("config", "user.email", "lfi@example.test");
   await git("add", ".");
   await git("commit", "-m", "test: initialize repository");
+  await addOrigin(git);
   await writeFile(
     taskPath,
     (await readFile(taskPath, "utf8")).replace(
@@ -274,6 +284,12 @@ exit 97
   assert.match(successfulIntegrationLog, /\[REDACTED\]/u);
   assert.doesNotMatch(successfulIntegrationLog, /github_pat_EXAMPLE_SECRET_123456/u);
 
+  const delivered = await runCommand(
+    "git",
+    ["show", "origin/main:implemented.txt"],
+    { cwd: root },
+  );
+  assert.equal(delivered.stdout, "implemented\n");
   assert.equal(await readFile(join(root, "implemented.txt"), "utf8"), "implemented\n");
   const completedPath = join(
     tasks,
@@ -286,6 +302,18 @@ exit 97
   assert.equal(task.status, "completed");
   assert.match(task.body, /- \[x\] File is created\./u);
   assert.doesNotMatch(task.body, /- \[ \]/u);
+  const deliveredTask = await runCommand(
+    "git",
+    [
+      "show",
+      "origin/main:.lfi/tasks/[DONE] LFI-1 — implement-local-run.md",
+    ],
+    { cwd: root },
+  );
+  assert.equal(
+    parseTrackerDocument(deliveredTask.stdout, completedPath).status,
+    "completed",
+  );
   await assert.rejects(readFile(taskPath, "utf8"));
   const trackedCompleted = await runCommand(
     "git",
@@ -298,10 +326,16 @@ exit 97
     { cwd: root },
   );
   assert.equal(trackedCompleted.exitCode, 0, trackedCompleted.stderr);
-  const log = await runCommand("git", ["log", "--format=%s"], { cwd: root });
-  assert.match(log.stdout, /docs\(lfi\): update local task tracker/u);
-  assert.match(log.stdout, /feat\(lfi\): implement LFI-1/u);
-  assert.match(log.stdout, /chore\(lfi\): complete LFI-1/u);
+  const localLog = await runCommand("git", ["log", "--format=%s"], { cwd: root });
+  assert.match(localLog.stdout, /docs\(lfi\): update local task tracker/u);
+  assert.match(localLog.stdout, /chore\(lfi\): complete LFI-1/u);
+  assert.match(localLog.stdout, /feat\(lfi\): implement LFI-1/u);
+  const deliveredLog = await runCommand(
+    "git",
+    ["log", "origin/main", "--format=%s"],
+    { cwd: root },
+  );
+  assert.match(deliveredLog.stdout, /feat\(lfi\): implement LFI-1/u);
   await assert.rejects(readFile(ghCalls, "utf8"));
 
   const blockedPath = join(tasks, "LFI-2-blocked.md");
@@ -429,7 +463,6 @@ printf '%s\\n' '{"status":"incomplete","summary":"blocked"}' > "$output"
     join(lfiRoot, "config.env"),
     serializeEnvConfig({
       ...DEFAULT_CONFIG,
-      TASK_SOURCE: "local",
       MAX_PARALLEL: 1,
       MAX_STAGES: 3,
       VALIDATE_COMMAND:

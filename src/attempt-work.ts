@@ -33,11 +33,8 @@ export const attemptWork = async (options: {
   taskTemplate: string;
   language: Language;
 }): Promise<Attempt> => {
-  const key =
-    options.config.TASK_SOURCE === "local"
-      ? options.issue.id.toLowerCase()
-      : `issue-${options.issue.number}`;
-  const logName = options.config.TASK_SOURCE === "local" ? options.issue.id : key;
+  const key = options.issue.id.toLowerCase();
+  const logName = options.issue.id;
   const model = resolveWorkerModel(
     options.config,
     options.issue.executionTier ?? "standard",

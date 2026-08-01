@@ -29,7 +29,6 @@ execution_tier: deep
 spec: LFI-14
 blocked_by:
   - LFI-12
-github_issue: 362
 ---
 
 ## What to build
@@ -48,7 +47,6 @@ test("local tracker documents round-trip readable Markdown metadata", () => {
     executionTier: "deep",
     spec: "LFI-14",
     blockedBy: ["LFI-12"],
-    githubIssue: 362,
     body: "## What to build\n\nParse a task.\n",
     path: "task.md",
   });
@@ -119,12 +117,11 @@ test("local tracker validates references, cycles, and one shared ID sequence", a
     taskSource
       .replace("id: LFI-15", "id: LFI-12")
       .replace("spec: LFI-14", "spec: LFI-14")
-      .replace("- LFI-12", "- LFI-15")
-      .replace("github_issue: 362\n", ""),
+      .replace("- LFI-12", "- LFI-15"),
   );
   await writeFile(
     join(tasks, "LFI-15-parser.md"),
-    taskSource.replace("github_issue: 362\n", ""),
+    taskSource,
   );
   await assert.rejects(loadLocalTracker(root), /cycle/u);
 });
@@ -139,8 +136,7 @@ test("repository ID allocation does not reuse an ID after its file is deleted", 
     taskSource
       .replaceAll("LFI-15", "LFI-9")
       .replace("spec: LFI-14\n", "")
-      .replace("  - LFI-12\n", "")
-      .replace("github_issue: 362\n", ""),
+      .replace("  - LFI-12\n", ""),
   );
   const git = async (...args: string[]) => {
     const result = await runCommand("git", args, { cwd: root });
@@ -174,8 +170,7 @@ test("tracker enforces informative filenames and completion timestamps", async (
     join(root, "tasks", "task.md"),
     taskSource
       .replace("spec: LFI-14\n", "")
-      .replace("  - LFI-12\n", "")
-      .replace("github_issue: 362\n", ""),
+      .replace("  - LFI-12\n", ""),
   );
   await assert.rejects(loadLocalTracker(root), /informative-slug/u);
 });
@@ -187,13 +182,12 @@ test("local status derives explicit display prefixes", () => {
       .replace("execution_tier: deep\n", "")
       .replaceAll("LFI-15", "LFI-14")
       .replace("spec: LFI-14\n", "")
-      .replace("  - LFI-12\n", "")
-      .replace("github_issue: 362\n", ""),
+      .replace("  - LFI-12\n", ""),
     "spec.md",
   );
   const tasks = [
     parseTrackerDocument(
-      taskSource.replace("github_issue: 362\n", "").replace("  - LFI-12\n", ""),
+      taskSource.replace("  - LFI-12\n", ""),
       "ready.md",
     ),
     parseTrackerDocument(
@@ -204,7 +198,6 @@ test("local status derives explicit display prefixes", () => {
           "blocked_by:",
           "completed_at: 2026-01-01T00:00:00.000Z\nblocked_by:",
         )
-        .replace("github_issue: 362\n", "")
         .replace("  - LFI-12\n", ""),
       "completed.md",
     ),
@@ -556,17 +549,13 @@ test("reconciliation disambiguates feature slugs and reserves completed", async 
 });
 
 test("local status orders completions by time and localizes blockers", () => {
-  const blocked = parseTrackerDocument(
-    taskSource.replace("github_issue: 362\n", ""),
-    "blocked.md",
-  );
+  const blocked = parseTrackerDocument(taskSource, "blocked.md");
   const older = parseTrackerDocument(
     taskSource
       .replaceAll("LFI-15", "LFI-20")
       .replace("status: ready", "status: completed")
       .replace("spec: LFI-14\n", "")
       .replace("  - LFI-12\n", "")
-      .replace("github_issue: 362\n", "")
       .replace("blocked_by:", "completed_at: 2026-01-01T00:00:00.000Z\nblocked_by:"),
     "older.md",
   );

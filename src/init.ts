@@ -1,8 +1,6 @@
 import {
   access,
-  appendFile,
   mkdir,
-  readFile,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,22 +9,15 @@ import { createInterface } from "node:readline/promises";
 import {
   DEFAULT_CONFIG,
   isReasoningEffort,
-  loadConfig,
   saveConfig,
   type LfiConfig,
   type ReasoningEffort,
-  type TaskSource,
 } from "./config.js";
 import { detectCommands } from "./detect.js";
-import { ensureGithubTypeLabels, repoInfo } from "./github.js";
-import { localRepoInfo } from "./git.js";
+import { repoInfo } from "./github.js";
 import type { Language } from "./i18n.js";
 import { defaultTaskPrompt } from "./prompts.js";
-import {
-  configureLocalTracker,
-  configureTrackerContract,
-  LOCAL_IGNORE_BLOCK,
-} from "./local-setup.js";
+import { configureLocalTracker } from "./local-setup.js";
 
 export interface InitOptions {
   cwd: string;
@@ -36,7 +27,6 @@ export interface InitOptions {
   retentionDays?: number;
   yes?: boolean;
   advanced?: boolean;
-  taskSource?: TaskSource;
 }
 
 const OPENAI_56_PRESET = {
@@ -61,17 +51,6 @@ const askRetention = async (language: Language): Promise<number> => {
   input.close();
   const value = Number(answer.trim() || "3");
   return Number.isFinite(value) && value >= 0 ? value : 3;
-};
-
-const askTaskSource = async (language: Language): Promise<TaskSource> => {
-  const input = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await input.question(
-    language === "ru"
-      ? "Где хранить задачи? [1] Local Markdown  [2] GitHub Issues: "
-      : "Where should tasks be stored? [1] Local Markdown  [2] GitHub Issues: ",
-  );
-  input.close();
-  return answer.trim() === "2" ? "github" : "local";
 };
 
 const askRecommendedModelPreset = async (
@@ -170,21 +149,12 @@ export const initializeProject = async (
   const lfiRoot = join(options.cwd, ".lfi");
   const configPath = join(lfiRoot, "config.env");
   if (await exists(configPath)) {
-    if ((await loadConfig(configPath)).TASK_SOURCE === "local") {
-      await configureLocalTracker(options.cwd, options.language);
-    }
+    await configureLocalTracker(options.cwd, options.language);
     return "exists";
   }
 
-  const taskSource =
-    options.taskSource ??
-    (process.stdin.isTTY && !options.yes
-      ? await askTaskSource(options.language)
-      : "local");
   const [repo, commands] = await Promise.all([
-    taskSource === "github"
-      ? repoInfo(options.cwd)
-      : localRepoInfo(options.cwd),
+    repoInfo(options.cwd),
     detectCommands(options.cwd),
   ]);
   const retentionDays =
@@ -199,7 +169,6 @@ export const initializeProject = async (
     (await askRecommendedModelPreset(options.language));
   let config: LfiConfig = {
     ...DEFAULT_CONFIG,
-    TASK_SOURCE: taskSource,
     CODEX_MODEL: options.model ?? DEFAULT_CONFIG.CODEX_MODEL,
     LIGHT_MODEL:
       options.model ??
@@ -272,10 +241,6 @@ export const initializeProject = async (
     }
   }
 
-  if (taskSource === "github") {
-    await ensureGithubTypeLabels(options.cwd, repo.nameWithOwner);
-  }
-
   await Promise.all([
     mkdir(join(lfiRoot, "logs"), { recursive: true }),
     mkdir(join(lfiRoot, "state"), { recursive: true }),
@@ -288,22 +253,6 @@ export const initializeProject = async (
     defaultTaskPrompt(options.language),
     { flag: "wx" },
   );
-  const gitignorePath = join(options.cwd, ".gitignore");
-  const gitignore = await readFile(gitignorePath, "utf8").catch(() => "");
-  const ignoreBlock =
-    config.TASK_SOURCE === "local"
-      ? LOCAL_IGNORE_BLOCK
-      : ".lfi/\n";
-  if (config.TASK_SOURCE === "local") {
-    await configureLocalTracker(options.cwd, options.language);
-  } else {
-    await configureTrackerContract(options.cwd, options.language, "github");
-    if (!gitignore.includes(ignoreBlock.trim())) {
-      await appendFile(
-        gitignorePath,
-        `${gitignore && !gitignore.endsWith("\n") ? "\n" : ""}${ignoreBlock}`,
-      );
-    }
-  }
+  await configureLocalTracker(options.cwd, options.language);
   return "created";
 };

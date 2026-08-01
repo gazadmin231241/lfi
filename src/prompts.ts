@@ -1,19 +1,19 @@
-import type { GithubIssue } from "./issues.js";
 import type { Language } from "./i18n.js";
+import type { WorkItem } from "./runner-types.js";
 
 export const defaultTaskPrompt = (language: "en" | "ru"): string =>
   language === "ru"
-    ? `Приступай к реализации: {{ISSUE_URL}}\n\nИспользуй $implement.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n`
-    : `Start implementing: {{ISSUE_URL}}\n\nUse $implement.\n\nAll local changes required by the issue are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n`;
+    ? `Приступай к реализации: {{TASK_ID}}\n\nИспользуй $implement.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n`
+    : `Start implementing: {{TASK_ID}}\n\nUse $implement.\n\nAll local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n`;
 
 export const renderWorkerPrompt = (
   template: string,
-  issue: GithubIssue,
+  issue: WorkItem,
   language: Language = "en",
 ): string => {
-  const identifier = issue.id ?? `#${issue.number}`;
+  const identifier = issue.id;
   const constraints = workerConstraints(identifier, language);
-  const issueHeading = language === "ru" ? "Задача" : "Issue";
+  const taskHeading = language === "ru" ? "Задача" : "Task";
   const constraintsHeading =
     language === "ru" ? "Ограничения LFI" : "LFI constraints";
   return `${template
@@ -22,7 +22,7 @@ export const renderWorkerPrompt = (
   .replaceAll("{{ISSUE_TITLE}}", issue.title)
   .replaceAll("{{TASK_ID}}", identifier)}
 
-# ${issueHeading}
+# ${taskHeading}
 
 ${issue.body}
 

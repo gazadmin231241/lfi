@@ -6,7 +6,7 @@ import {
   withGithubRetry,
 } from "../src/github-resilience.js";
 
-test("GitHub retry distinguishes transient transport and server failures", async () => {
+test("GitHub delivery retries transient transport and server failures", async () => {
   assert.equal(isTransientGithubFailure(new Error("dial tcp: i/o timeout")), true);
   assert.equal(isTransientGithubFailure(new Error("HTTP 503 unavailable")), true);
   assert.equal(isTransientGithubFailure(new Error("HTTP 401 unauthorized")), false);

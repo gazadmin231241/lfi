@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { GithubIssue } from "../src/issues.js";
 import { renderWorkerPrompt } from "../src/prompts.js";
+import type { WorkItem } from "../src/runner-types.js";
 
-const issue: GithubIssue = {
+const issue: WorkItem = {
+  id: "LFI-3",
   number: 3,
   title: "Bound autonomous review convergence",
-  url: "https://github.test/issues/3",
-  labels: ["lfi:task"],
+  url: ".lfi/tasks/review/tasks/[READY] LFI-3 — convergence.md",
   body: "Implement the review-convergence contract.",
 };
 
 test("English worker prompt bounds complete review and validation", () => {
   const prompt = renderWorkerPrompt(
-    "Start {{ISSUE_URL}} for {{TASK_ID}}.",
+    "Start {{TASK_ID}}.",
     issue,
     "en",
   );
@@ -39,7 +39,7 @@ test("English worker prompt bounds complete review and validation", () => {
 
 test("Russian worker prompt bounds complete review and validation", () => {
   const prompt = renderWorkerPrompt(
-    "Начни {{ISSUE_URL}} для {{TASK_ID}}.",
+    "Начни {{TASK_ID}}.",
     issue,
     "ru",
   );

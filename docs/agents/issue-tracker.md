@@ -21,13 +21,10 @@ its `spec` relationship; tickets without a specification go directly in
 `.lfi/tasks/`. Filenames start with the derived status, then the stable ID:
 `[READY] LFI-N — slug.md`. LFI renames them when status changes.
 
-Local `type: spec` and `type: task` map exactly to GitHub `lfi:spec` and
-`lfi:task`. Task creation assigns an abstract execution tier from required
-judgment and cost of error; it never chooses a concrete model. LFI
-configuration maps tiers to models.
+Task creation assigns an abstract execution tier from required judgment and
+cost of error; it never chooses a concrete model. LFI configuration maps tiers
+to models.
 
-Use `[SPEC]`, `[READY]`, `[RUNNING]`, `[BLOCKED]`, and `[DONE]` only
-for local filenames and local status output. GitHub Issue titles use the stable
-`LFI-N — title` form without status prefixes. Specifications are never
-executable.
+Use `[SPEC]`, `[READY]`, `[RUNNING]`, `[BLOCKED]`, and `[DONE]` for local
+filenames and status output. Specifications are never executable.
 <!-- lfi:tracker-contract:end -->

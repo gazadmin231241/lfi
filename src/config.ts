@@ -3,11 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import type { ExecutionTier } from "./execution-tier.js";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-export type TaskSource = "local" | "github";
-
 export interface LfiConfig {
-  TASK_SOURCE: TaskSource;
-  GITHUB_REPO: string;
   CODEX_MODEL: string;
   LIGHT_MODEL: string;
   STANDARD_MODEL: string;
@@ -25,8 +21,6 @@ export interface LfiConfig {
 }
 
 export const DEFAULT_CONFIG: LfiConfig = {
-  TASK_SOURCE: "local",
-  GITHUB_REPO: "",
   CODEX_MODEL: "",
   LIGHT_MODEL: "",
   STANDARD_MODEL: "",
@@ -49,7 +43,7 @@ export const serializeEnvConfig = (config: LfiConfig): string =>
     .join("\n")}\n`;
 
 export const parseEnvConfig = (source: string): LfiConfig => {
-  const result: LfiConfig = { ...DEFAULT_CONFIG, TASK_SOURCE: "github" };
+  const result: LfiConfig = { ...DEFAULT_CONFIG };
   for (const rawLine of source.split(/\r?\n/u)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
@@ -63,19 +57,10 @@ export const parseEnvConfig = (source: string): LfiConfig => {
       case "STANDARD_MODEL":
       case "DEEP_MODEL":
       case "MERGER_MODEL":
-      case "GITHUB_REPO":
       case "BASE_BRANCH":
       case "VALIDATE_COMMAND":
       case "WORKTREE_SETUP_COMMAND":
         result[key] = value;
-        break;
-      case "TASK_SOURCE":
-        if (value === "local" || value === "github") result.TASK_SOURCE = value;
-        else {
-          throw new Error(
-            `TASK_SOURCE must be local or github / должен быть local или github: ${value}`,
-          );
-        }
         break;
       case "CODEX_REASONING_EFFORT":
       case "MERGER_REASONING_EFFORT":

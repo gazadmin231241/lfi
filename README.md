@@ -2,18 +2,18 @@
 
 [Русский](README.ru.md)
 
-LFI turns local Markdown tasks or `lfi:task` GitHub Issues into reviewed, validated
-commits using Codex and isolated Git worktrees. Local mode works without a
-remote; GitHub can be updated later as an explicit reporting mirror.
+LFI turns local Markdown tasks into reviewed, validated commits using Codex and
+isolated Git worktrees. Tasks never leave the local tracker; GitHub hosts the
+repository and receives validated code.
 
-> GitHub mode can push directly to your default branch. Local mode never
-> fetches or pushes. Start with `lfi run --dry-run`.
+> LFI pushes validated changes directly to the default branch. Start with
+> `lfi run --dry-run`.
 
 ## Requirements
 
 - Node.js 22+
 - Git
-- [GitHub CLI](https://cli.github.com/) only for GitHub mode, migration, or sync
+- [GitHub CLI](https://cli.github.com/) authenticated with `gh auth login`
 - [Codex CLI](https://developers.openai.com/codex/cli/) authenticated with
   `codex login`
 - pnpm for building/linking LFI from source
@@ -45,14 +45,13 @@ lfi run
 [`mattpocock/skills`](https://github.com/mattpocock/skills). Open Codex in the
 target repository and use `to-spec`/`to-tickets`; local initialization writes
 their tracker contract automatically. LFI conditionally adapts the installed
-`to-spec` and `to-tickets` instructions for LFI projects: specs and tasks go
-to `.lfi` locally or use `lfi:spec`/`lfi:task` on GitHub, and ticket creation
-assigns an abstract execution tier instead of choosing a concrete model.
+`to-spec` and `to-tickets` instructions for LFI projects: specs and tasks go to
+the local `.lfi` tracker, and ticket creation assigns an abstract execution
+tier instead of choosing a concrete model.
 
 ## Task storage
 
-`lfi init` asks where tasks live. New and non-interactive projects default to
-Local Markdown:
+`lfi init` creates the Local Markdown tracker:
 
 ```text
 .lfi/tasks/
@@ -78,28 +77,20 @@ Each local task ends with clickable `Specification` and `Blocked by` sections.
 LFI updates their exact relative file links whenever a status rename occurs.
 
 Task status output uses `[READY]`, `[RUNNING]`, `[BLOCKED]`, and `[DONE]`.
-These prefixes are local-only. GitHub Issue titles use the stable
-`LFI-N — title` form; native issue state and dependencies show their status.
-
-GitHub mode uses the same fixed type vocabulary as Local Markdown:
-`type: spec` maps to `lfi:spec`, and `type: task` maps to `lfi:task`.
-Specifications are never executable. Tasks support textual and native
-dependencies. Every executable task may declare `execution_tier: light`,
-`standard`, or `deep`; GitHub uses the corresponding `lfi:tier:*` label.
-Missing tier metadata runs as `standard` with a warning.
+Specifications are never executable. Tasks support local dependencies. Every
+executable task may declare `execution_tier: light`, `standard`, or `deep` in
+its document. Missing tier metadata runs as `standard` with a warning.
 
 ## Commands
 
 ```text
-lfi init [--task-source local|github]
-lfi doctor [--sync]
+lfi init
+lfi doctor
 lfi run [LFI-ID...]
 lfi run --dry-run
 lfi status [--all|--ready|--blocked|--completed]
-lfi sync [github] [--repo OWNER/REPO] [--dry-run] [--force]
-lfi migrate local
 lfi logs
-lfi logs LFI-ID|ISSUE_NUMBER
+lfi logs LFI-ID
 lfi logs prune
 lfi logs prune --all
 lfi skills install
@@ -111,15 +102,15 @@ lfi config language en|ru
 
 ## Configuration
 
-Normal interactive initialization asks for task storage, log retention, and
-whether to use the recommended Luna/Terra/Sol mapping. Advanced values remain
+Normal interactive initialization asks for log retention and whether to use
+the recommended Luna/Terra/Sol mapping. Advanced values remain
 editable in `.lfi/config.env`, including:
 
 - light, standard, and deep worker models
 - project-wide worker reasoning, kept unchanged across tiers and retries
 - an independent integration model and reasoning setting
 - parallel workers and stage count
-- task source, GitHub mirror repository, and default branch
+- default branch
 - validation and worktree setup commands
 - inactivity timeout
 
@@ -140,27 +131,9 @@ worktree first. A base failure is reported without invoking Codex. If the base
 passes, the merger receives the exact redacted diagnostics and may change only
 paths already present in the integrated diff. LFI makes one repair attempt and
 does not send an accepted task back through implementation after an integration
-failure. Local mode merges the validated integration branch back into the
-current host branch using ordinary Git semantics and never pushes. Any
-integration failure preserves the integration worktree and prints its branch
-and path for recovery.
-
-`lfi sync` is a one-way local-to-GitHub mirror. It publishes specs as parents,
-tasks as children, fixed LFI type labels, dependencies where supported,
-explicit status prefixes, and open/closed state. It preserves unrelated labels
-and reconciles conflicting LFI type and tier labels. Sync is resumable, limits GitHub
-concurrency to three, retries transient network and 502/503/504 failures, and
-persists each mapping to avoid duplicate Issues.
-
-`lfi migrate local` reads only `lfi:spec` and `lfi:task` Issues, preserves
-native parent and blocker relationships, writes the correct local document
-types, and then switches the source to Local Markdown. Previous tracker labels
-are intentionally not recognized.
-
-In GitHub mode, if GitHub accepts the push but temporarily fails to close an Issue, LFI records
-the pending closure and retries it at the beginning of the next run. `lfi
-status` shows the active run while work is in progress and falls back to the
-most recent completed run.
+failure. LFI pushes the validated integration branch to the configured default
+branch. Any integration failure preserves the integration worktree and prints
+its branch and path for recovery.
 
 At execution time, `LIGHT_MODEL`, `STANDARD_MODEL`, and `DEEP_MODEL` map the
 task tier to a Codex model, falling back to `CODEX_MODEL` when a tier mapping is
@@ -190,15 +163,15 @@ The terminal emphasizes iterations, worker completion, integration, validation,
 and the final result. `.lfi/logs/run.log` mirrors that LFI-owned stdout/stderr
 stream in real time. The shell prompt itself is not part of the log.
 
-`.lfi/logs` is flat: local tasks use `LFI-2.log`, GitHub Issues use
-`issue-123.log`, and combined validation uses `integration.log`. Repeated
+`.lfi/logs` is flat: tasks use `LFI-2.log` and combined validation uses
+`integration.log`. Repeated
 attempts append timestamped iteration sections. Task logs stream readable agent
 messages, commands, token usage, stderr, exit status, and the final summary in
 real time; failed workers use the same task log instead of a separate raw
 artifact.
 
-`lfi logs` shows recent runs as a localized table. `lfi logs LFI-2` or `lfi
-logs 123` prints the latest task section and points to the full history. Log
+`lfi logs` shows recent runs as a localized table. `lfi logs LFI-2` prints the
+latest task section and points to the full history. Log
 sections and legacy timestamp directories expire according to
 `LOG_RETENTION_DAYS` (three days by default); `0` retains them indefinitely.
 

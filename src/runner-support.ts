@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 
 import { runCodex } from "./codex.js";
 import {
@@ -15,37 +15,11 @@ import {
 } from "./logs.js";
 import { runShell } from "./process.js";
 
-export interface PendingClosure {
-  number: number;
-  sha: string;
-}
-
-export const readPendingClosures = async (
-  path: string,
-): Promise<PendingClosure[]> => {
-  const source = await readFile(path, "utf8").catch(() => "[]");
-  const parsed: unknown = JSON.parse(source);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((item): item is PendingClosure => {
-    if (typeof item !== "object" || item === null) return false;
-    return (
-      typeof Reflect.get(item, "number") === "number" &&
-      typeof Reflect.get(item, "sha") === "string"
-    );
-  });
-};
-
-export const writePendingClosures = (
-  path: string,
-  pending: readonly PendingClosure[],
-): Promise<void> =>
-  writeFile(path, `${JSON.stringify(pending, null, 2)}\n`);
-
 export const checkpointTracker = async (
   cwd: string,
   message: string,
 ): Promise<boolean> => {
-  const paths = [".lfi/tasks", ".lfi/specs"];
+  const paths = [".lfi/tasks"];
   const status = await gitResult(cwd, ["status", "--porcelain", "--", ...paths]);
   if (!status.stdout.trim()) return false;
   const changedPaths = paths.filter((path) => status.stdout.includes(`${path}/`));

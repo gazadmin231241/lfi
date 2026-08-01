@@ -1,7 +1,7 @@
 {
   "name": "@gazadmin231241/lfi",
   "version": "0.1.0",
-  "description": "LFI — Let's Fucking Implement. Turn local Markdown tasks or GitHub Issues into reviewed, validated commits with Codex and Git worktrees.",
+  "description": "LFI — Let's Fucking Implement. Turn local Markdown tasks into reviewed, validated commits with Codex and Git worktrees.",
   "type": "module",
   "bin": {
     "lfi": "dist/cli.js"
@@ -30,7 +30,7 @@
   },
   "keywords": [
     "codex",
-    "github-issues",
+    "local-markdown",
     "markdown-tasks",
     "git-worktree",
     "agent",

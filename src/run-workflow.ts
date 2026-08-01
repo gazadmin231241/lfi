@@ -1,13 +1,9 @@
 import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { attemptWork } from "./attempt-work.js";
-import {
-  mapConcurrent,
-  mapConcurrentAfterDistinctKeyProbes,
-} from "./concurrency.js";
+import { mapConcurrentAfterDistinctKeyProbes } from "./concurrency.js";
 import { loadConfig, resolveWorkerModel } from "./config.js";
-import { closeIssue, commentFinalFailure, setIssueStatus } from "./github.js";
-import { git, gitCommonDirectory, localRepoInfo, removeWorktreeAndBranch } from "./git.js";
+import { git, gitCommonDirectory, removeWorktreeAndBranch } from "./git.js";
 import { localize, type Language } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
 import { configureLocalTrackerStorage } from "./local-setup.js";
@@ -21,9 +17,7 @@ import { listWork } from "./run-source.js";
 import type { Attempt } from "./runner-types.js";
 import {
   checkpointTracker,
-  readPendingClosures,
   ValidationFailure,
-  writePendingClosures,
 } from "./runner-support.js";
 import { loadReconciledLocalTracker } from "./tracker-files.js";
 
@@ -44,27 +38,31 @@ export const runLfi = async (
     );
   }
   const startupErrors: string[] = [];
-  if (config.TASK_SOURCE === "local") {
-    await configureLocalTrackerStorage(cwd);
-    await loadReconciledLocalTracker(lfiRoot);
-    await checkpointTracker(cwd, "docs(lfi): update local task tracker");
-    if (selectedIds.length > 0) {
-      const tracker = await loadLocalTracker(lfiRoot);
-      const blocked = runnableLocalTasks(tracker, selectedIds).blocked;
-      for (const task of blocked) {
-        const unfinished = task.blockedBy.filter(
-          (id) =>
-            tracker.tasks.find((candidate) => candidate.id === id)?.status !==
-            "completed",
-        );
-        startupErrors.push(
-          localize(
-            language,
-            `${task.id} is blocked by ${unfinished.join(", ")}.`,
-            `${task.id} заблокирована задачами ${unfinished.join(", ")}.`,
-          ),
-        );
-      }
+  await configureLocalTrackerStorage(cwd);
+  await loadReconciledLocalTracker(lfiRoot);
+  await checkpointTracker(cwd, "docs(lfi): update local task tracker");
+  await git(cwd, ["fetch", "origin", config.BASE_BRANCH]);
+  await git(cwd, [
+    "merge",
+    `origin/${config.BASE_BRANCH}`,
+    "--no-edit",
+  ]);
+  if (selectedIds.length > 0) {
+    const tracker = await loadLocalTracker(lfiRoot);
+    const blocked = runnableLocalTasks(tracker, selectedIds).blocked;
+    for (const task of blocked) {
+      const unfinished = task.blockedBy.filter(
+        (id) =>
+          tracker.tasks.find((candidate) => candidate.id === id)?.status !==
+          "completed",
+      );
+      startupErrors.push(
+        localize(
+          language,
+          `${task.id} is blocked by ${unfinished.join(", ")}.`,
+          `${task.id} заблокирована задачами ${unfinished.join(", ")}.`,
+        ),
+      );
     }
   }
   const stateRoot = join(lfiRoot, "state");
@@ -86,21 +84,14 @@ export const runLfi = async (
   }
   await lock.writeFile(`${JSON.stringify({ pid: process.pid, runId })}\n`);
   const currentStatePath = join(stateRoot, "current-run.json");
-  const pendingPath = join(stateRoot, "pending-closures.json");
   const completed = new Set<string>();
   const attempted = new Map<string, string>();
   const warnedMissingTier = new Set<string>();
   const unavailableModels = new Set<string>();
   const reportedUnavailableTasks = new Set<string>();
   let iterations = 0;
-  let pending = await readPendingClosures(pendingPath);
-  if (config.TASK_SOURCE === "local") pending = [];
-  const branch =
-    config.TASK_SOURCE === "local"
-      ? (await localRepoInfo(cwd)).defaultBranch
-      : config.BASE_BRANCH;
-  const baseRef =
-    config.TASK_SOURCE === "local" ? branch : `origin/${config.BASE_BRANCH}`;
+  const branch = config.BASE_BRANCH;
+  const baseRef = branch;
   const gitDirectory = await gitCommonDirectory(cwd);
   const taskTemplate = await readFile(join(lfiRoot, "task-prompt.md"), "utf8");
   await pruneExpiredRunLogs(logsRoot, {
@@ -110,34 +101,10 @@ export const runLfi = async (
   const output = await createRunOutput(logsRoot, startedAt);
   for (const message of startupErrors) output.error(message);
   try {
-    if (config.TASK_SOURCE === "github") {
-      const stillPending = [];
-      for (const item of pending) {
-        try {
-          await closeIssue(cwd, item.number, item.sha, language);
-        } catch {
-          stillPending.push(item);
-        }
-      }
-      pending = stillPending;
-      await writePendingClosures(pendingPath, pending);
-    }
     for (let stage = 1; stage <= config.MAX_STAGES; stage++) {
-      if (config.TASK_SOURCE === "github") {
-        await git(cwd, ["fetch", "origin", config.BASE_BRANCH]);
-      }
+      await git(cwd, ["fetch", "origin", branch]);
       const candidates = await listWork(cwd, completed, selectedIds);
       const runnable = candidates.flatMap((issue) => {
-        if (issue.executionTierConflict) {
-          const reason = localize(
-            language,
-            `${issue.id} has conflicting execution tier labels: ${issue.executionTierConflict.join(", ")}. Keep exactly one lfi:tier:* label.`,
-            `${issue.id}: конфликтующие метки уровня выполнения: ${issue.executionTierConflict.join(", ")}. Оставьте ровно одну метку lfi:tier:*.`,
-          );
-          attempted.set(issue.id, reason);
-          output.error(reason);
-          return [];
-        }
         if (issue.executionTier === undefined) {
           if (!warnedMissingTier.has(issue.id)) {
             output.log(
@@ -185,11 +152,6 @@ export const runLfi = async (
         iteration: stage,
         output,
       };
-      if (config.TASK_SOURCE === "github") {
-        await mapConcurrent(runnable, 3, (issue) =>
-          setIssueStatus(cwd, issue.number, "running", issue.title),
-        );
-      }
       printIteration(output, language, stage, runnable.map((item) => item.id));
       const attempts = await mapConcurrentAfterDistinctKeyProbes(
         runnable,
@@ -211,13 +173,8 @@ export const runLfi = async (
               issue,
               accepted: false,
               summary,
-              worktreePath: join(worktreesRoot, config.TASK_SOURCE === "local"
-                ? issue.id.toLowerCase()
-                : `issue-${issue.number}`),
-              branch:
-                config.TASK_SOURCE === "local"
-                  ? `lfi/${issue.id.toLowerCase()}`
-                  : `lfi/issue-${issue.number}`,
+              worktreePath: join(worktreesRoot, issue.id.toLowerCase()),
+              branch: `lfi/${issue.id.toLowerCase()}`,
             };
           }
           printWorkStarted(output, language, issue.id, model, config.CODEX_REASONING_EFFORT);
@@ -265,11 +222,11 @@ export const runLfi = async (
             branch: attempt.branch,
           })),
         );
-        const result = await integrateAttempts({
+        await integrateAttempts({
           cwd,
           worktreesRoot,
           baseRef,
-          baseBranch: config.BASE_BRANCH,
+          baseBranch: branch,
           runId,
           log,
           attempts: accepted,
@@ -277,31 +234,13 @@ export const runLfi = async (
           gitDirectory,
           language,
           onValidationStarted: () => printValidationStarted(output, language),
+          beforeDelivery: (integrationPath) =>
+            recordLocalCompletion(integrationPath, accepted),
+          beforeHostUpdate: async () => {
+            await loadReconciledLocalTracker(lfiRoot, new Set());
+          },
         });
         printIntegrationCompleted(output, language, branch);
-        if (config.TASK_SOURCE === "local") {
-          await recordLocalCompletion(cwd, accepted);
-        } else {
-          for (const attempt of accepted) {
-            pending.push({ number: attempt.issue.number, sha: result.sha });
-            await writePendingClosures(pendingPath, pending);
-            try {
-              await closeIssue(cwd, attempt.issue.number, result.sha, language);
-              pending = pending.filter(
-                (item) => item.number !== attempt.issue.number,
-              );
-            } catch {
-              output.error(
-                localize(
-                  language,
-                  `Published ${attempt.issue.id}, but closing it failed; the next run will retry.`,
-                  `${attempt.issue.id} опубликована, но закрыть её не удалось; следующий запуск повторит попытку.`,
-                ),
-              );
-            }
-          }
-          await writePendingClosures(pendingPath, pending);
-        }
         for (const attempt of accepted) {
           completed.add(attempt.issue.id);
           await removeWorktreeAndBranch({
@@ -326,7 +265,7 @@ export const runLfi = async (
         throw new Error(localize(language, "Interrupted", "Выполнение прервано"));
       }
     }
-    if (config.TASK_SOURCE === "local" && selectedIds.length > 0) {
+    if (selectedIds.length > 0) {
       const tracker = await loadLocalTracker(lfiRoot);
       for (const task of runnableLocalTasks(tracker, selectedIds).blocked) {
         const unfinished = task.blockedBy.filter(
@@ -345,21 +284,12 @@ export const runLfi = async (
       }
     }
     const unresolved = [...attempted].filter(([id]) => !completed.has(id));
-    if (config.TASK_SOURCE === "github") {
-      for (const [id] of unresolved) {
-        await setIssueStatus(cwd, Number(id.slice(1)), "ready").catch(() => undefined);
-        await commentFinalFailure(cwd, Number(id.slice(1)), language).catch(
-          () => undefined,
-        );
-      }
-    }
     const summary = {
       runId,
       startedAt,
       iterations,
       completed: [...completed],
       unresolved: unresolved.map(([id, reason]) => ({ id, reason })),
-      pendingClosures: pending.map((item) => item.number),
       finishedAt: new Date().toISOString(),
     };
     await saveRunSummary(stateRoot, runId, summary);
@@ -371,10 +301,8 @@ export const runLfi = async (
       logsRoot,
     );
     await rm(currentStatePath, { force: true });
-    if (config.TASK_SOURCE === "local") {
-      await loadReconciledLocalTracker(lfiRoot);
-    }
-    return unresolved.length === 0 && pending.length === 0 ? 0 : 1;
+    await loadReconciledLocalTracker(lfiRoot);
+    return unresolved.length === 0 ? 0 : 1;
   } catch (error) {
     await writeFile(
       currentStatePath,

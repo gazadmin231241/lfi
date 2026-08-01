@@ -1,10 +1,13 @@
-import type { GithubIssue } from "./issues.js";
 import type { ExecutionTier } from "./execution-tier.js";
 
-export interface WorkItem extends GithubIssue {
+export interface WorkItem {
   id: string;
+  number: number;
+  title: string;
+  url: string;
+  body: string;
+  blockedBy?: string[];
   executionTier?: ExecutionTier;
-  executionTierConflict?: string[];
   localPath?: string;
 }
 

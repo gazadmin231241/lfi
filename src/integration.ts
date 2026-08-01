@@ -45,6 +45,8 @@ export const integrateAttempts = async (options: {
   gitDirectory: string;
   language: Language;
   onValidationStarted?: () => void;
+  beforeDelivery?: (cwd: string) => Promise<void>;
+  beforeHostUpdate?: () => Promise<void>;
 }): Promise<{ sha: string; preserveIntegration: boolean }> => {
   const integration = await createIntegrationWorktree({
     repoRoot: options.cwd,
@@ -124,29 +126,14 @@ export const integrateAttempts = async (options: {
         });
       },
     });
-    if (options.config.TASK_SOURCE === "github") {
-      await git(integration.path, [
-        "push",
-        "origin",
-        `HEAD:${options.baseBranch}`,
-      ]);
-    } else {
-      const merge = await gitResult(options.cwd, [
-        "merge",
-        integration.branch,
-        "--no-edit",
-      ]);
-      if (merge.exitCode !== 0) {
-        preserveIntegration = true;
-        throw new Error(
-          localize(
-            options.language,
-            `Could not merge validated work into the current branch. Preserved ${integration.branch} at ${integration.path}. Resolve and commit the current merge, or abort it and retry: git merge ${integration.branch}`,
-            `Не удалось слить проверенную работу в текущую ветку. ${integration.branch} сохранена в ${integration.path}. Разрешите текущий конфликт и создайте коммит либо отмените слияние и повторите: git merge ${integration.branch}`,
-          ),
-        );
-      }
-    }
+    await options.beforeDelivery?.(integration.path);
+    await git(integration.path, [
+      "push",
+      "origin",
+      `HEAD:${options.baseBranch}`,
+    ]);
+    await options.beforeHostUpdate?.();
+    await git(options.cwd, ["merge", integration.branch, "--ff-only"]);
     return {
       sha: (await git(integration.path, ["rev-parse", "HEAD"])).stdout.trim(),
       preserveIntegration,

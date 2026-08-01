@@ -6,10 +6,9 @@ status: accepted
 
 LFI assigns every executable task a model-independent `execution_tier` of
 `light`, `standard`, or `deep`. The task-creation agent proposes the tier from
-an explicit rubric, and a user may override it before execution. Local tasks
-store the tier in YAML frontmatter; GitHub tasks use exactly one managed
-`lfi:tier:*` label. Missing legacy metadata resolves to `standard` with a
-warning, while conflicting tier labels block the task.
+an explicit rubric, and a user may override it before execution. Tasks store
+the tier in local YAML frontmatter. Missing legacy metadata resolves to
+`standard` with a warning.
 
 Each tier resolves through `LIGHT_MODEL`, `STANDARD_MODEL`, or `DEEP_MODEL`.
 An absent tier mapping falls back to the existing `CODEX_MODEL`; an explicitly

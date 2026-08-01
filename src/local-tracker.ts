@@ -25,7 +25,6 @@ export interface TrackerDocument {
   executionTier?: ExecutionTier;
   spec?: string;
   blockedBy: string[];
-  githubIssue?: number;
   completedAt?: string;
   body: string;
   path: string;
@@ -109,16 +108,6 @@ export const parseTrackerDocument = (
       `${path}: invalid status / некорректный статус: ${status}`,
     );
   }
-  const github = fields.get("github_issue");
-  const githubIssue = github === undefined ? undefined : Number(github);
-  if (
-    githubIssue !== undefined &&
-    (!Number.isSafeInteger(githubIssue) || githubIssue < 1)
-  ) {
-    throw new Error(
-      `${path}: invalid github_issue / некорректный github_issue: ${github}`,
-    );
-  }
   const completedAt = fields.get("completed_at");
   const executionTier = fields.get("execution_tier");
   if (executionTier !== undefined && !isExecutionTier(executionTier)) {
@@ -153,7 +142,6 @@ export const parseTrackerDocument = (
     ...(executionTier === undefined ? {} : { executionTier }),
     ...(fields.get("spec") ? { spec: fields.get("spec")! } : {}),
     blockedBy,
-    ...(githubIssue === undefined ? {} : { githubIssue }),
     ...(completedAt === undefined ? {} : { completedAt }),
     body: match[2]!.replace(/^\r?\n/u, ""),
     path,
@@ -186,9 +174,6 @@ export const serializeTrackerDocument = (
   if (document.spec) lines.push(`spec: ${document.spec}`);
   lines.push("blocked_by:");
   for (const blocker of document.blockedBy) lines.push(`  - ${blocker}`);
-  if (document.githubIssue !== undefined) {
-    lines.push(`github_issue: ${document.githubIssue}`);
-  }
   if (document.completedAt !== undefined) {
     lines.push(`completed_at: ${document.completedAt}`);
   }

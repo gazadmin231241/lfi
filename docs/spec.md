@@ -1,13 +1,12 @@
 # LFI v1 specification
 
 LFI (“Let’s Fucking Implement”) is a bilingual TypeScript CLI for unattended
-implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
+implementation of local Markdown tasks with Codex.
 
 ## User workflow
 
 1. Install/link `lfi`, select English or Russian once, and run `lfi init` in a
-   Git repository. Choose Local Markdown or GitHub Issues; new projects default
-   to local.
+   Git repository. Tasks live only in the local Markdown tracker.
 2. Local tracker documents are versioned under `.lfi/tasks/`: each
    specification has a directory containing its specification document and
    `tasks/` subdirectory, while tasks without a specification are at the root.
@@ -17,10 +16,9 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
    completion ordering.
 3. `lfi run --dry-run` reports eligible and blocked work without mutations.
 4. `lfi run` performs at most ten stages, with at most three workers in
-   parallel. Each issue runs in `.lfi/worktrees/issue-N`.
-5. Eligible GitHub issues are open and labelled `lfi:task`.
-   Specifications use `lfi:spec` and are never executable. Open dependencies
-   declared in `## Blocked by` or GitHub dependencies block execution.
+   parallel. Each task runs in `.lfi/worktrees/lfi-N`.
+5. Specifications are never executable. Unfinished local dependencies declared
+   by the task document block execution.
 6. Workers invoke Codex with the configured model/reasoning, the editable
    `task-prompt.md`, and `$implement`. Local implementation changes are
    pre-approved; deploy, SSH, production changes, force-push, destructive
@@ -44,9 +42,8 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
    redacted command output and may modify only paths in the integrated diff.
    One failed integration repair stops the run and preserves the worktree
    instead of re-running accepted implementation work.
-10. In local mode the validated integration branch merges to the host checkout
-   without network access. In GitHub mode the base is pushed and Issues close
-   only after validation.
+10. The validated integration branch is pushed to the configured default
+    branch on GitHub.
 11. Successful worktrees/branches are removed; unfinished ones persist and are
     updated from the latest base before another attempt.
 
@@ -62,8 +59,4 @@ implementation of local Markdown tasks or `lfi:task` GitHub Issues with Codex.
   their `agents/openai.yaml`. LFI conditionally adapts `to-spec` and
   `to-tickets` for projects carrying the generated LFI tracker contract.
 - GitHub auth is provided by `gh auth login`; Codex auth by `codex login`.
-- `lfi sync` explicitly and resumably mirrors local specs, tasks, parents,
-  blockers, and completion state to GitHub.
-- `lfi migrate local` imports open `lfi:spec` and `lfi:task` Issues with native
-  parent and blocker relationships into an existing project.
 - The CLI runs in one foreground terminal and does not open terminal windows.
