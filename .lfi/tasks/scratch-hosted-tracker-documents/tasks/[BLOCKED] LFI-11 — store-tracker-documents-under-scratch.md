@@ -58,4 +58,4 @@ This feature's own specification and tasks move as part of the change.
 
 ## Blocked by
 
-- [LFI-10 — Record document fields as marker lines](<[BLOCKED] LFI-10 — record-document-fields-as-marker-lines.md>)
+- [LFI-10 — Record document fields as marker lines](<[READY] LFI-10 — record-document-fields-as-marker-lines.md>)

@@ -2,10 +2,11 @@
 id: LFI-8
 type: task
 title: "Remove GitHub from the tracker role"
-status: ready
+status: completed
 execution_tier: deep
 spec: LFI-7
 blocked_by:
+completed_at: 2026-08-01T19:46:15.332Z
 ---
 
 > **Task complexity:** `deep`
@@ -35,22 +36,22 @@ place instead of two.
 
 ## Acceptance criteria
 
-- [ ] Tracker documents are never written to, read from, or reconciled against
+- [x] Tracker documents are never written to, read from, or reconciled against
       GitHub Issues.
-- [ ] The Issue import command is gone, and invoking it reports an unknown
+- [x] The Issue import command is gone, and invoking it reports an unknown
       command rather than failing part-way.
-- [ ] The LFI-managed specification, task, and execution-tier labels are neither
+- [x] The LFI-managed specification, task, and execution-tier labels are neither
       created nor applied nor read.
-- [ ] Running a task still creates its branch and worktree, and still delivers
+- [x] Running a task still creates its branch and worktree, and still delivers
       its result, with no change in behaviour.
-- [ ] Execution tier still routes work to the same model it routed to before, in
+- [x] Execution tier still routes work to the same model it routed to before, in
       every tier.
-- [ ] The environment report no longer requires GitHub facilities used solely by
+- [x] The environment report no longer requires GitHub facilities used solely by
       the removed tracker role, and still requires what code delivery needs.
-- [ ] Tests covering mirroring, Issue import, and the removed label vocabulary
+- [x] Tests covering mirroring, Issue import, and the removed label vocabulary
       are removed together with the code they covered; tests covering branches,
       worktrees, integration, and model routing still pass.
-- [ ] User-facing output remains available in English and Russian.
+- [x] User-facing output remains available in English and Russian.
 
 ## Specification
 

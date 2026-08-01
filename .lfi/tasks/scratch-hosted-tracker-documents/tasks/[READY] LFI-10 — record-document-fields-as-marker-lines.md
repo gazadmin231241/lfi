@@ -70,4 +70,4 @@ Their location does not move yet.
 
 ## Blocked by
 
-- [LFI-8 — Remove GitHub from the tracker role](<[READY] LFI-8 — remove-github-from-the-tracker-role.md>)
+- [LFI-8 — Remove GitHub from the tracker role](<[DONE] LFI-8 — remove-github-from-the-tracker-role.md>)

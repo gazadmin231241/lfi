@@ -2,10 +2,11 @@
 id: LFI-9
 type: task
 title: "Install upstream skills verbatim"
-status: ready
+status: completed
 execution_tier: light
 spec: LFI-7
 blocked_by:
+completed_at: 2026-08-01T19:46:15.332Z
 ---
 
 > **Task complexity:** `light`
@@ -30,19 +31,19 @@ behave exactly as upstream intends.
 
 ## Acceptance criteria
 
-- [ ] Every installed skill is byte-identical to the same skill in the fetched
+- [x] Every installed skill is byte-identical to the same skill in the fetched
       bundle.
-- [ ] No installed skill contains an LFI tracker override marker or text.
-- [ ] Installation succeeds against skill text that would previously have
+- [x] No installed skill contains an LFI tracker override marker or text.
+- [x] Installation succeeds against skill text that would previously have
       aborted it because the expected upstream sentences were absent.
-- [ ] The set of installed skills, the pinned commit, the update flow, and its
+- [x] The set of installed skills, the pinned commit, the update flow, and its
       confirmation prompt are unchanged.
-- [ ] Each installed skill still carries its agent metadata, and installation
+- [x] Each installed skill still carries its agent metadata, and installation
       still fails loudly when that metadata is missing from the bundle.
-- [ ] Tests assert byte-identical installation and the absence of any
+- [x] Tests assert byte-identical installation and the absence of any
       adaptation, driving installation from a local source and destination
       rather than the network.
-- [ ] User-facing output remains available in English and Russian.
+- [x] User-facing output remains available in English and Russian.
 
 ## Specification
 
