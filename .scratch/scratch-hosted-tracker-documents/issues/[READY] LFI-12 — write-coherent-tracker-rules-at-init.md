@@ -57,4 +57,4 @@ with no skill edited and nothing else configured.
 
 ## Blocked by
 
-- [LFI-11 — Store tracker documents under scratch](<[READY] LFI-11 — store-tracker-documents-under-scratch.md>)
+- [LFI-11 — Store tracker documents under scratch](<[DONE] LFI-11 — store-tracker-documents-under-scratch.md>)

@@ -29,21 +29,21 @@ This feature's own specification and tasks move as part of the change.
 
 ## Acceptance criteria
 
-- [ ] Specifications, their tasks, and specification-less tasks are discovered
+- [x] Specifications, their tasks, and specification-less tasks are discovered
       at the new locations, and nowhere else.
-- [ ] Documents written by LFI land at the new locations, and renaming on status
+- [x] Documents written by LFI land at the new locations, and renaming on status
       change keeps a document in its feature directory.
-- [ ] The status listing groups by feature and is otherwise unchanged in
+- [x] The status listing groups by feature and is otherwise unchanged in
       content, ordering, filters, and annotations.
-- [ ] LFI's private directory contains only logs, run state, and worktrees.
-- [ ] The previous tracker directory is gone and the ignore rules LFI wrote for
+- [x] LFI's private directory contains only logs, run state, and worktrees.
+- [x] The previous tracker directory is gone and the ignore rules LFI wrote for
       it are removed from the project.
-- [ ] Tracker documents are visible to a task running in a worktree.
-- [ ] This feature's own documents are in the new location and load without
+- [x] Tracker documents are visible to a task running in a worktree.
+- [x] This feature's own documents are in the new location and load without
       error.
-- [ ] Tests build a document tree at the new locations and assert on discovery,
+- [x] Tests build a document tree at the new locations and assert on discovery,
       on where written documents land, and on the grouped listing.
-- [ ] User-facing output remains available in English and Russian.
+- [x] User-facing output remains available in English and Russian.
 
 ## Specification
 
