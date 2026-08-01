@@ -37,4 +37,4 @@ as they do today.
 
 ## Blocked by
 
-- [LFI-3 — Store each specification and its tasks in one directory](<[BLOCKED] LFI-3 — store-each-specification-and-its-tasks-in-one-directory.md>)
+- [LFI-3 — Store each specification and its tasks in one directory](<[READY] LFI-3 — store-each-specification-and-its-tasks-in-one-directory.md>)

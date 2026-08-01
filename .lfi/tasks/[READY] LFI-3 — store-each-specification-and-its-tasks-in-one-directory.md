@@ -80,4 +80,4 @@ behaves as before.
 
 ## Blocked by
 
-- [LFI-2 — Prepare tracker storage and ignore rules for nested documents](<[READY] LFI-2 — prepare-tracker-storage-and-ignore-rules-for-nested-documents.md>)
+- [LFI-2 — Prepare tracker storage and ignore rules for nested documents](<completed/[DONE] LFI-2 — prepare-tracker-storage-and-ignore-rules-for-nested-documents.md>)
