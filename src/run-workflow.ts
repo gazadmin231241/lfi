@@ -104,34 +104,34 @@ export const runLfi = async (
     for (let stage = 1; stage <= config.MAX_STAGES; stage++) {
       await git(cwd, ["fetch", "origin", branch]);
       const candidates = await listWork(cwd, completed, selectedIds);
-      const runnable = candidates.flatMap((issue) => {
-        if (issue.executionTier === undefined) {
-          if (!warnedMissingTier.has(issue.id)) {
+      const runnable = candidates.flatMap((task) => {
+        if (task.executionTier === undefined) {
+          if (!warnedMissingTier.has(task.id)) {
             output.log(
               localize(
                 language,
-                `${issue.id} has no execution tier; using standard.`,
-                `${issue.id}: уровень выполнения не указан; используется standard.`,
+                `${task.id} has no execution tier; using standard.`,
+                `${task.id}: уровень выполнения не указан; используется standard.`,
               ),
             );
-            warnedMissingTier.add(issue.id);
+            warnedMissingTier.add(task.id);
           }
-          issue = { ...issue, executionTier: "standard" as const };
+          task = { ...task, executionTier: "standard" as const };
         }
-        const model = resolveWorkerModel(config, issue.executionTier ?? "standard");
+        const model = resolveWorkerModel(config, task.executionTier ?? "standard");
         if (model && unavailableModels.has(model)) {
           const reason = reportUnavailableModelSkip(
             output,
             language,
             reportedUnavailableTasks,
-            issue.id,
-            issue.executionTier ?? "standard",
+            task.id,
+            task.executionTier ?? "standard",
             model,
           );
-          attempted.set(issue.id, reason);
+          attempted.set(task.id, reason);
           return [];
         }
-        return [issue];
+        return [task];
       });
       await writeFile(
         currentStatePath,
@@ -156,33 +156,33 @@ export const runLfi = async (
       const attempts = await mapConcurrentAfterDistinctKeyProbes(
         runnable,
         config.MAX_PARALLEL,
-        (issue) =>
-          resolveWorkerModel(config, issue.executionTier ?? "standard"),
-        async (issue) => {
-          const model = resolveWorkerModel(config, issue.executionTier ?? "standard");
+        (task) =>
+          resolveWorkerModel(config, task.executionTier ?? "standard"),
+        async (task) => {
+          const model = resolveWorkerModel(config, task.executionTier ?? "standard");
           if (model && unavailableModels.has(model)) {
             const summary = reportUnavailableModelSkip(
               output,
               language,
               reportedUnavailableTasks,
-              issue.id,
-              issue.executionTier ?? "standard",
+              task.id,
+              task.executionTier ?? "standard",
               model,
             );
             return {
-              issue,
+              task,
               accepted: false,
               summary,
-              worktreePath: join(worktreesRoot, issue.id.toLowerCase()),
-              branch: `lfi/${issue.id.toLowerCase()}`,
+              worktreePath: join(worktreesRoot, task.id.toLowerCase()),
+              branch: `lfi/${task.id.toLowerCase()}`,
             };
           }
-          printWorkStarted(output, language, issue.id, model, config.CODEX_REASONING_EFFORT);
+          printWorkStarted(output, language, task.id, model, config.CODEX_REASONING_EFFORT);
           const attempt = await attemptWork({
             cwd,
             worktreesRoot,
             baseRef,
-            issue,
+            task,
             config,
             gitDirectory,
             log,
@@ -194,8 +194,8 @@ export const runLfi = async (
             output.error(
               localize(
                 language,
-                `${issue.id}: configured ${issue.executionTier ?? "standard"} tier model ${attempt.unavailableModel} is unavailable; LFI will not fall back and will skip other tasks using it for this run.`,
-                `${issue.id}: настроенная модель ${attempt.unavailableModel} уровня ${issue.executionTier ?? "standard"} недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этой моделью в текущем запуске.`,
+                `${task.id}: configured ${task.executionTier ?? "standard"} tier model ${attempt.unavailableModel} is unavailable; LFI will not fall back and will skip other tasks using it for this run.`,
+                `${task.id}: настроенная модель ${attempt.unavailableModel} уровня ${task.executionTier ?? "standard"} недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этой моделью в текущем запуске.`,
               ),
             );
           }
@@ -203,11 +203,11 @@ export const runLfi = async (
         },
       );
       for (const attempt of attempts) {
-        attempted.set(attempt.issue.id, attempt.summary);
+        attempted.set(attempt.task.id, attempt.summary);
         printWorkFinished(
           output,
           language,
-          attempt.issue.id,
+          attempt.task.id,
           attempt.accepted,
         );
       }
@@ -218,7 +218,7 @@ export const runLfi = async (
           output,
           language,
           accepted.map((attempt) => ({
-            id: attempt.issue.id,
+            id: attempt.task.id,
             branch: attempt.branch,
           })),
         );
@@ -242,7 +242,7 @@ export const runLfi = async (
         });
         printIntegrationCompleted(output, language, branch);
         for (const attempt of accepted) {
-          completed.add(attempt.issue.id);
+          completed.add(attempt.task.id);
           await removeWorktreeAndBranch({
             repoRoot: cwd,
             path: attempt.worktreePath,
@@ -258,7 +258,7 @@ export const runLfi = async (
           error instanceof ValidationFailure ? error.command : undefined,
           logsRoot,
         );
-        for (const attempt of accepted) attempted.set(attempt.issue.id, reason);
+        for (const attempt of accepted) attempted.set(attempt.task.id, reason);
         break;
       }
       if (isShutdownRequested()) {

@@ -11,7 +11,7 @@ import {
 import {
   commitWorktreeChanges,
   commitsAhead,
-  ensureIssueWorktree,
+  ensureTaskWorktree,
   gitResult,
   worktreeClean,
 } from "./git.js";
@@ -26,25 +26,24 @@ export const attemptWork = async (options: {
   cwd: string;
   worktreesRoot: string;
   baseRef: string;
-  issue: WorkItem;
+  task: WorkItem;
   config: LfiConfig;
   gitDirectory: string;
   log: RunLogContext;
   taskTemplate: string;
   language: Language;
 }): Promise<Attempt> => {
-  const key = options.issue.id.toLowerCase();
-  const logName = options.issue.id;
+  const key = options.task.id.toLowerCase();
+  const logName = options.task.id;
   const model = resolveWorkerModel(
     options.config,
-    options.issue.executionTier ?? "standard",
+    options.task.executionTier ?? "standard",
   );
   try {
-    const worktree = await ensureIssueWorktree({
+    const worktree = await ensureTaskWorktree({
       repoRoot: options.cwd,
       worktreesRoot: options.worktreesRoot,
-      issueNumber: options.issue.number,
-      workItem: key,
+      taskKey: key,
       baseRef: options.baseRef,
       setupCommand: options.config.WORKTREE_SETUP_COMMAND,
     });
@@ -57,7 +56,7 @@ export const attemptWork = async (options: {
       if (update.exitCode !== 0) {
         await mergeWithAgent({
           cwd: worktree.path,
-          context: `Update ${options.issue.id} from ${options.baseRef}.`,
+          context: `Update ${options.task.id} from ${options.baseRef}.`,
           config: options.config,
           gitDirectory: options.gitDirectory,
           log: options.log,
@@ -70,7 +69,7 @@ export const attemptWork = async (options: {
       cwd: worktree.path,
       prompt: renderWorkerPrompt(
         options.taskTemplate,
-        options.issue,
+        options.task,
         options.language,
       ),
       model,
@@ -84,7 +83,7 @@ export const attemptWork = async (options: {
     if (codex.exitCode === 0 && codex.status === "completed") {
       await commitWorktreeChanges(
         worktree.path,
-        `feat(lfi): implement ${options.issue.id}`,
+        `feat(lfi): implement ${options.task.id}`,
       );
     }
     const evaluation = evaluateWorkerResult({
@@ -94,7 +93,7 @@ export const attemptWork = async (options: {
       worktreeClean: await worktreeClean(worktree.path),
     });
     return {
-      issue: options.issue,
+      task: options.task,
       accepted: evaluation.accepted,
       summary: evaluation.accepted
         ? codex.summary
@@ -110,7 +109,7 @@ export const attemptWork = async (options: {
     };
   } catch (error) {
     return {
-      issue: options.issue,
+      task: options.task,
       accepted: false,
       summary: error instanceof Error ? error.message : String(error),
       worktreePath: join(options.worktreesRoot, key),

@@ -43,15 +43,14 @@ export const gitCommonDirectory = async (cwd: string): Promise<string> => {
   return isAbsolute(value) ? value : resolve(cwd, value);
 };
 
-export const ensureIssueWorktree = async (options: {
+export const ensureTaskWorktree = async (options: {
   repoRoot: string;
   worktreesRoot: string;
-  issueNumber: number;
-  workItem?: string;
+  taskKey: string;
   baseRef: string;
   setupCommand: string;
 }): Promise<{ path: string; branch: string; created: boolean }> => {
-  const key = options.workItem ?? `issue-${options.issueNumber}`;
+  const key = options.taskKey;
   const path = join(options.worktreesRoot, key);
   const branch = `lfi/${key}`;
   if (await exists(path)) return { path, branch, created: false };

@@ -12,7 +12,7 @@ export interface WorkItem {
 }
 
 export interface Attempt {
-  issue: WorkItem;
+  task: WorkItem;
   accepted: boolean;
   summary: string;
   worktreePath: string;

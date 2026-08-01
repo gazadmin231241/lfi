@@ -65,7 +65,7 @@ export const integrateAttempts = async (options: {
       if (merge.exitCode !== 0) {
         await mergeWithAgent({
           cwd: integration.path,
-          context: `Merge ${attempt.branch} for ${attempt.issue.id}.\n${attempt.issue.body}`,
+          context: `Merge ${attempt.branch} for ${attempt.task.id}.\n${attempt.task.body}`,
           config: options.config,
           gitDirectory: options.gitDirectory,
           log: options.log,

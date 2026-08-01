@@ -20,7 +20,7 @@ export const recordLocalCompletion = async (
 ): Promise<void> => {
   await configureLocalTrackerStorage(cwd);
   const tracker = await loadReconciledLocalTracker(join(cwd, ".lfi"));
-  const completed = new Set(attempts.map((attempt) => attempt.issue.id));
+  const completed = new Set(attempts.map((attempt) => attempt.task.id));
   const completedAt = new Date().toISOString();
   for (const task of tracker.tasks) {
     if (completed.has(task.id)) {

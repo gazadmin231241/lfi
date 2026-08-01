@@ -4,7 +4,7 @@ import test from "node:test";
 import { renderWorkerPrompt } from "../src/prompts.js";
 import type { WorkItem } from "../src/runner-types.js";
 
-const issue: WorkItem = {
+const task: WorkItem = {
   id: "LFI-3",
   number: 3,
   title: "Bound autonomous review convergence",
@@ -15,7 +15,7 @@ const issue: WorkItem = {
 test("English worker prompt bounds complete review and validation", () => {
   const prompt = renderWorkerPrompt(
     "Start {{TASK_ID}}.",
-    issue,
+    task,
     "en",
   );
 
@@ -40,7 +40,7 @@ test("English worker prompt bounds complete review and validation", () => {
 test("Russian worker prompt bounds complete review and validation", () => {
   const prompt = renderWorkerPrompt(
     "Начни {{TASK_ID}}.",
-    issue,
+    task,
     "ru",
   );
 
@@ -71,8 +71,8 @@ test("Russian worker prompt bounds complete review and validation", () => {
 });
 
 test("worker prompt defines axis-scoped confirmation paths", () => {
-  const english = renderWorkerPrompt("Implement.", issue, "en");
-  const russian = renderWorkerPrompt("Реализуй.", issue, "ru");
+  const english = renderWorkerPrompt("Implement.", task, "en");
+  const russian = renderWorkerPrompt("Реализуй.", task, "ru");
 
   assert.match(english, /No relevant findings: do not run confirmation/u);
   assert.match(

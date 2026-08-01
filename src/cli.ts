@@ -93,12 +93,12 @@ const printDoctor = async (
 };
 
 const showLogs = async (
-  issue: string | undefined,
+  task: string | undefined,
   language: Language,
 ): Promise<void> => {
   const lfiRoot = join(cwd, ".lfi");
   const logsRoot = join(cwd, ".lfi", "logs");
-  if (!issue) {
+  if (!task) {
     const runs = await listLogRuns(lfiRoot);
     console.log(
       runs.length > 0
@@ -107,7 +107,7 @@ const showLogs = async (
     );
     return;
   }
-  const latest = await readLatestTaskLog(logsRoot, issue);
+  const latest = await readLatestTaskLog(logsRoot, task);
   if (!latest) {
     console.log(localize(language, "No task log found.", "Лог задачи не найден."));
     return;
@@ -253,15 +253,15 @@ const main = async (): Promise<number> => {
     if (has("--dry-run")) {
       const plan = await dryRun(cwd, selected);
       console.log(
-        `${localize(language, "Runnable", "Доступны")}: ${plan.runnable.map((issue) => `${issue.id ?? `#${issue.number}`} ${issue.title}`).join("\n") || localize(language, "none", "нет")}`,
+        `${localize(language, "Runnable", "Доступны")}: ${plan.runnable.map((task) => `${task.id} ${task.title}`).join("\n") || localize(language, "none", "нет")}`,
       );
       console.log(
         `${localize(language, "Blocked/excluded", "Заблокированы/исключены")}: ${plan.blocked
           .map(
-            (issue) =>
-              `${issue.id ?? `#${issue.number}`} ${issue.title}${
-                issue.blockedBy?.length
-                  ? ` · ${localize(language, "blocked by", "заблокирована задачами")} ${issue.blockedBy.join(", ")}`
+            (task) =>
+              `${task.id} ${task.title}${
+                task.blockedBy?.length
+                  ? ` · ${localize(language, "blocked by", "заблокирована задачами")} ${task.blockedBy.join(", ")}`
                   : ""
               }`,
           )

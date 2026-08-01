@@ -8,23 +8,23 @@ export const defaultTaskPrompt = (language: "en" | "ru"): string =>
 
 export const renderWorkerPrompt = (
   template: string,
-  issue: WorkItem,
+  task: WorkItem,
   language: Language = "en",
 ): string => {
-  const identifier = issue.id;
+  const identifier = task.id;
   const constraints = workerConstraints(identifier, language);
   const taskHeading = language === "ru" ? "Задача" : "Task";
   const constraintsHeading =
     language === "ru" ? "Ограничения LFI" : "LFI constraints";
   return `${template
-  .replaceAll("{{ISSUE_URL}}", issue.url)
-  .replaceAll("{{ISSUE_NUMBER}}", String(issue.number))
-  .replaceAll("{{ISSUE_TITLE}}", issue.title)
+  .replaceAll("{{ISSUE_URL}}", task.url)
+  .replaceAll("{{ISSUE_NUMBER}}", String(task.number))
+  .replaceAll("{{ISSUE_TITLE}}", task.title)
   .replaceAll("{{TASK_ID}}", identifier)}
 
 # ${taskHeading}
 
-${issue.body}
+${task.body}
 
 # ${constraintsHeading}
 
@@ -43,7 +43,7 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Прочитай применимые файлы AGENTS.md и используй установленные пользовательские skills.",
   },
   {
-    en: "Schema changes, non-destructive migrations, dependencies, lockfile edits, root configuration, and file moves required by this issue are pre-approved.",
+    en: "Schema changes, non-destructive migrations, dependencies, lockfile edits, root configuration, and file moves required by this task are pre-approved.",
     ru: "Изменения схемы, неразрушительные миграции, зависимости, lockfile, корневая конфигурация и перемещения файлов, необходимые для этой задачи, заранее разрешены.",
   },
   {
@@ -107,7 +107,7 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Не запускай git add или git commit. Sandbox Codex намеренно защищает Git metadata; после успешного ответа host-процесс LFI сам добавит изменения и создаст commit.",
   },
   {
-    en: 'Your final response must conform to the output schema. Use status "completed" only when the entire issue is implemented, reviewed, and tested. Otherwise use "incomplete" and explain the remaining work.',
+    en: 'Your final response must conform to the output schema. Use status "completed" only when the entire task is implemented, reviewed, and tested. Otherwise use "incomplete" and explain the remaining work.',
     ru: 'Финальный ответ должен соответствовать output schema. Используй статус "completed", только если задача полностью реализована, прошла ревью и тесты. Иначе используй "incomplete" и объясни, что осталось сделать.',
   },
 ];
@@ -130,7 +130,7 @@ export const mergerPrompt = (
 ): string => `Resolve the current integration problem in this worktree.
 
 Use $resolving-merge-conflicts when a merge is in progress.
-Read the relevant issue bodies and commit history, preserve both intents, and run the configured validation.
+Read the relevant task bodies and commit history, preserve both intents, and run the configured validation.
 Do not run git add or git commit; the LFI host commits a successful resolution because the Codex sandbox protects Git metadata.
 Never abort the merge, deploy, use SSH, force-push, or touch production.
 
