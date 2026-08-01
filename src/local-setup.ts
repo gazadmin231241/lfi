@@ -10,11 +10,7 @@ const IGNORE_END = "# LFI local tracker: end";
 export const LOCAL_IGNORE_BLOCK = `${IGNORE_BEGIN}
 .lfi/*
 !.lfi/tasks/
-!.lfi/tasks/*.md
-!.lfi/tasks/completed/
-!.lfi/tasks/completed/*.md
-!.lfi/specs/
-!.lfi/specs/*.md
+!.lfi/tasks/**
 ${IGNORE_END}
 `;
 export const TRACKER_CONTRACT_MARKER = "<!-- lfi:tracker-contract -->";
@@ -247,11 +243,7 @@ export const configureLocalTrackerStorage = async (
   cwd: string,
 ): Promise<void> => {
   const lfiRoot = join(cwd, ".lfi");
-  await Promise.all([
-    mkdir(join(lfiRoot, "tasks"), { recursive: true }),
-    mkdir(join(lfiRoot, "tasks", "completed"), { recursive: true }),
-    mkdir(join(lfiRoot, "specs"), { recursive: true }),
-  ]);
+  await mkdir(join(lfiRoot, "tasks"), { recursive: true });
   const gitignorePath = join(cwd, ".gitignore");
   const source = await readFile(gitignorePath, "utf8").catch(() => "");
   const updated = updateGitignore(source);

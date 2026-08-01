@@ -303,19 +303,44 @@ exit 1
   assert.equal(config.STANDARD_MODEL, "");
   assert.equal(config.DEEP_MODEL, "");
   assert.equal(await stat(join(root, ".lfi", "tasks")).then((item) => item.isDirectory()), true);
-  assert.equal(
-    await stat(join(root, ".lfi", "tasks", "completed")).then((item) =>
-      item.isDirectory()
-    ),
-    true,
-  );
-  assert.equal(await stat(join(root, ".lfi", "specs")).then((item) => item.isDirectory()), true);
+  await assert.rejects(stat(join(root, ".lfi", "tasks", "completed")));
+  await assert.rejects(stat(join(root, ".lfi", "specs")));
   const gitignore = await readFile(join(root, ".gitignore"), "utf8");
   assert.match(gitignore, /^# custom\n\nbuild\//u);
   assert.match(gitignore, /\.lfi\/\*/u);
   assert.match(gitignore, /!\.lfi\/tasks\//u);
-  assert.match(gitignore, /!\.lfi\/tasks\/completed\//u);
-  assert.match(gitignore, /!\.lfi\/specs\//u);
+  assert.match(gitignore, /!\.lfi\/tasks\/\*\*/u);
+  assert.doesNotMatch(gitignore, /\.lfi\/(?:specs|tasks\/completed)/u);
+
+  await writeFile(
+    join(root, ".gitignore"),
+    `# custom
+
+build/
+# LFI local tracker: begin
+.lfi/*
+!.lfi/tasks/
+!.lfi/tasks/*.md
+!.lfi/tasks/completed/
+!.lfi/tasks/completed/*.md
+!.lfi/specs/
+!.lfi/specs/*.md
+# LFI local tracker: end
+`,
+  );
+  assert.equal(
+    await initializeProject({
+      cwd: root,
+      language: "ru",
+      retentionDays: 3,
+      yes: true,
+      taskSource: "local",
+    }),
+    "exists",
+  );
+  const upgradedGitignore = await readFile(join(root, ".gitignore"), "utf8");
+  assert.match(upgradedGitignore, /!\.lfi\/tasks\/\*\*/u);
+  assert.doesNotMatch(upgradedGitignore, /\.lfi\/(?:specs|tasks\/completed)/u);
   const localGuide = await readFile(
     join(root, "docs", "agents", "issue-tracker.md"),
     "utf8",

@@ -26,6 +26,7 @@ test("migration preserves LFI document types and native relationships", async ()
     join(root, ".lfi", "config.env"),
     serializeEnvConfig({ ...DEFAULT_CONFIG, TASK_SOURCE: "github" }),
   );
+  await mkdir(join(root, ".lfi", "specs"));
 
   const result = await migrateToLocal(root, {
     source: {

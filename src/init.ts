@@ -11,6 +11,7 @@ import { createInterface } from "node:readline/promises";
 import {
   DEFAULT_CONFIG,
   isReasoningEffort,
+  loadConfig,
   saveConfig,
   type LfiConfig,
   type ReasoningEffort,
@@ -168,7 +169,12 @@ export const initializeProject = async (
 ): Promise<"created" | "exists"> => {
   const lfiRoot = join(options.cwd, ".lfi");
   const configPath = join(lfiRoot, "config.env");
-  if (await exists(configPath)) return "exists";
+  if (await exists(configPath)) {
+    if ((await loadConfig(configPath)).TASK_SOURCE === "local") {
+      await configureLocalTracker(options.cwd, options.language);
+    }
+    return "exists";
+  }
 
   const taskSource =
     options.taskSource ??
@@ -275,7 +281,6 @@ export const initializeProject = async (
     mkdir(join(lfiRoot, "state"), { recursive: true }),
     mkdir(join(lfiRoot, "worktrees"), { recursive: true }),
     mkdir(join(lfiRoot, "tasks"), { recursive: true }),
-    mkdir(join(lfiRoot, "specs"), { recursive: true }),
   ]);
   await saveConfig(configPath, config);
   await writeFile(
