@@ -152,7 +152,53 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
   assert.equal(basename(fixture.root).startsWith("lfi-routing-"), true);
 });
 
-test("run reports an unavailable model once and continues other tiers", async () => {
+test("run starts repeated-model tasks up to the configured parallel limit", async () => {
+  const fixture = await initializeRoutingRepository({
+    tasks: [
+      { id: 1, tier: "standard" },
+      { id: 2, tier: "light" },
+      { id: 3, tier: "standard" },
+    ],
+    config: {
+      LIGHT_MODEL: "luna",
+      STANDARD_MODEL: "terra",
+    },
+    codexScript: `#!/bin/sh
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    output="$1"
+  fi
+  shift
+done
+cat >/dev/null
+printf 'started\n' >> "{{CALLS}}"
+attempt=0
+while [ "$(wc -l < "{{CALLS}}")" -lt 3 ] && [ "$attempt" -lt 20 ]; do
+  sleep 0.05
+  attempt=$((attempt + 1))
+done
+if [ "$(wc -l < "{{CALLS}}")" -lt 3 ]; then
+  printf '{"status":"incomplete","summary":"parallel worker did not start"}\n' > "$output"
+  exit 0
+fi
+printf 'implemented\n' > "implemented-$(basename "$PWD").txt"
+printf '{"status":"completed","summary":"implemented"}\n' > "$output"
+`,
+  });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fixture.tools}:${originalPath ?? ""}`;
+  try {
+    assert.equal(await runLfi(fixture.root, "en"), 0);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  assert.equal(await readFile(fixture.calls, "utf8"), "started\nstarted\nstarted\n");
+});
+
+test("run reports an unavailable model and continues other tiers", async () => {
   const fixture = await initializeRoutingRepository({
     tasks: [
       { id: 1, tier: "light" },
@@ -197,7 +243,11 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
   }
 
   const calls = (await readFile(fixture.calls, "utf8")).trim().split("\n");
-  assert.deepEqual(calls.sort(), ["luna-unavailable", "sol"]);
+  assert.deepEqual(calls.sort(), [
+    "luna-unavailable",
+    "luna-unavailable",
+    "sol",
+  ]);
   const runLog = await readFile(
     join(fixture.root, ".lfi", "logs", "run.log"),
     "utf8",
