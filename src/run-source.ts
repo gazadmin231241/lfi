@@ -16,14 +16,14 @@ import {
   githubTaskState,
   selectRunnableIssues,
 } from "./issues.js";
-import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
+import { runnableLocalTasks } from "./local-tracker.js";
 import type { WorkItem } from "./runner-types.js";
 import {
   LFI_SPEC_LABEL,
   LFI_TASK_LABEL,
 } from "./tracker-contract.js";
 import { readActiveTaskIds } from "./tracker-state.js";
-import { reconcileTrackerFilenames } from "./tracker-files.js";
+import { loadReconciledLocalTracker } from "./tracker-files.js";
 
 export const listWork = async (
   cwd: string,
@@ -33,9 +33,8 @@ export const listWork = async (
   const config = await loadConfig(join(cwd, ".lfi", "config.env"));
   if (config.TASK_SOURCE === "local") {
     const lfiRoot = join(cwd, ".lfi");
-    const tracker = await loadLocalTracker(lfiRoot);
-    await reconcileTrackerFilenames(
-      tracker,
+    const tracker = await loadReconciledLocalTracker(
+      lfiRoot,
       await readActiveTaskIds(lfiRoot),
     );
     const plan = runnableLocalTasks(tracker, selectedIds);

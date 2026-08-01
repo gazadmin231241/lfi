@@ -149,8 +149,22 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   assert.deepEqual(issues.get(102)?.labels, ["lfi:task", "lfi:tier:deep"]);
   assert.deepEqual(parents, [[101, 100], [102, 100]]);
   assert.deepEqual(dependencies, [[102, [101]]]);
+  const completedPath = join(
+    lfiRoot,
+    "tasks",
+    "spec-lfi-1",
+    "tasks",
+    "[DONE] LFI-2 — task-lfi-2.md",
+  );
+  const readyPath = join(
+    lfiRoot,
+    "tasks",
+    "spec-lfi-1",
+    "tasks",
+    "[READY] LFI-3 — task-lfi-3.md",
+  );
   assert.match(
-    await readFile(join(lfiRoot, "tasks", "LFI-2-document.md"), "utf8"),
+    await readFile(completedPath, "utf8"),
     /github_issue: 101/u,
   );
 
@@ -189,9 +203,10 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   assert.deepEqual(dependencies, [[102, [101]]]);
 
   await writeFile(
-    ready.path,
+    readyPath,
     serializeTrackerDocument({
       ...ready,
+      path: readyPath,
       status: "completed",
       completedAt: "2026-02-01T00:00:00.000Z",
     }),
@@ -201,23 +216,37 @@ test("sync publishes specs, tasks, mappings, parents, and dependencies without d
   assert.equal(issues.get(100)?.state, "closed");
   assert.equal(issues.get(102)?.state, "closed");
 
+  const donePath = join(
+    lfiRoot,
+    "tasks",
+    "spec-lfi-1",
+    "tasks",
+    "[DONE] LFI-3 — task-lfi-3.md",
+  );
   await writeFile(
-    ready.path,
-    serializeTrackerDocument({ ...ready, status: "cancelled" }),
+    donePath,
+    serializeTrackerDocument({ ...ready, path: donePath, status: "cancelled" }),
   );
   const cancelled = await syncGithubMirror(root, { adapter });
   assert.deepEqual(cancelled.skipped, ["LFI-1", "LFI-2", "LFI-3"]);
   assert.deepEqual(closingComments, []);
 
-  await writeFile(ready.path, serializeTrackerDocument(ready));
+  const cancelledPath = join(
+    lfiRoot,
+    "tasks",
+    "spec-lfi-1",
+    "tasks",
+    "[CANCELLED] LFI-3 — task-lfi-3.md",
+  );
+  await writeFile(cancelledPath, serializeTrackerDocument({ ...ready, path: cancelledPath }));
   const reopened = await syncGithubMirror(root, { adapter });
   assert.deepEqual(reopened.updated, ["LFI-1", "LFI-3"]);
   assert.equal(issues.get(100)?.state, "open");
   assert.equal(issues.get(102)?.state, "open");
 
   await writeFile(
-    ready.path,
-    serializeTrackerDocument({ ...ready, blockedBy: [] }),
+    readyPath,
+    serializeTrackerDocument({ ...ready, path: readyPath, blockedBy: [] }),
   );
   await syncGithubMirror(root, { adapter });
   assert.deepEqual(dependencies.at(-1), [102, []]);
@@ -286,8 +315,10 @@ test("sync persists partial progress, resumes, and reports relationship failures
   assert.deepEqual(partial.created, ["LFI-1"]);
   assert.equal(issues.get(50)?.title, "LFI-1 — Task LFI-1");
   assert.deepEqual(partial.failed.map((item) => item.id), ["LFI-2"]);
-  assert.match(await readFile(firstTask.path, "utf8"), /github_issue: 50/u);
-  assert.doesNotMatch(await readFile(secondTask.path, "utf8"), /github_issue/u);
+  const firstTaskPath = join(lfiRoot, "tasks", "[READY] LFI-1 — task-lfi-1.md");
+  const secondTaskPath = join(lfiRoot, "tasks", "[BLOCKED] LFI-2 — task-lfi-2.md");
+  assert.match(await readFile(firstTaskPath, "utf8"), /github_issue: 50/u);
+  assert.doesNotMatch(await readFile(secondTaskPath, "utf8"), /github_issue/u);
 
   failCreate = false;
   const resumed = await syncGithubMirror(root, { adapter });

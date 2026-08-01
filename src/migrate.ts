@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { mkdir } from "node:fs/promises";
 
 import { loadConfig, updateConfig } from "./config.js";
 import {
@@ -13,7 +14,6 @@ import {
   withoutManagedGithubTitle,
 } from "./issues.js";
 import {
-  loadLocalTracker,
   nextRepositoryLfiId,
   saveTrackerDocument,
   type TrackerDocument,
@@ -27,9 +27,10 @@ import {
   LFI_TASK_LABEL,
 } from "./tracker-contract.js";
 import {
-  reconcileTrackerFilenames,
-  trackerTitleSlug,
+  loadReconciledLocalTracker,
+  trackerTargetPath,
 } from "./tracker-files.js";
+import { withLocalRelationships } from "./local-relationships.js";
 
 export interface MigrationSource {
   listOpenLfiIssues(): Promise<GithubIssue[]>;
@@ -96,7 +97,7 @@ export const migrateToLocal = async (
     source.blockers(issueNumbers),
   ]);
   await configureLocalTracker(cwd, options.language ?? "en");
-  const tracker = await loadLocalTracker(lfiRoot);
+  const tracker = await loadReconciledLocalTracker(lfiRoot);
   const issueIds = new Map<number, string>();
   let next = Number(
     (await nextRepositoryLfiId(cwd, tracker.documents)).slice(4),
@@ -153,17 +154,26 @@ export const migrateToLocal = async (
         withoutManagedGithubSections(issue.body),
         blockerNumbers,
       ),
-      path: join(
-        lfiRoot,
-        type === "spec" ? "specs" : "tasks",
-        `${id}-${trackerTitleSlug(title)}.md`,
-      ),
+      path: join(lfiRoot, "tasks", `${id}-pending.md`),
     };
-    await saveTrackerDocument(document);
     created.push(document);
   }
-  const imported = await loadLocalTracker(lfiRoot);
-  await reconcileTrackerFilenames(imported, new Set());
+  const documents = [...tracker.documents, ...created];
+  const combined = {
+    root: lfiRoot,
+    documents,
+    tasks: documents.filter((document) => document.type === "task"),
+    specs: documents.filter((document) => document.type === "spec"),
+  };
+  for (const document of created) {
+    document.path = trackerTargetPath(document, combined, new Set());
+  }
+  for (const document of created) {
+    document.body = withLocalRelationships(document, combined);
+    await mkdir(dirname(document.path), { recursive: true });
+    await saveTrackerDocument(document);
+  }
+  await loadReconciledLocalTracker(lfiRoot);
   await checkpointTracker(cwd, "docs(lfi): import GitHub tracker");
   await updateConfig(configPath, { ...config, TASK_SOURCE: "local" });
   return created.map((document) => document.id);

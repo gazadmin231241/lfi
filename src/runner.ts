@@ -9,12 +9,12 @@ import {
 } from "./github.js";
 import { selectRunnableIssues, type GithubIssue } from "./issues.js";
 import {
-  loadLocalTracker,
   runnableLocalTasks,
   type TrackerDocument,
 } from "./local-tracker.js";
 import { runLfi } from "./run-workflow.js";
 import { LFI_TASK_LABEL } from "./tracker-contract.js";
+import { loadReconciledLocalTracker } from "./tracker-files.js";
 
 const localIssue = (
   task: TrackerDocument,
@@ -35,7 +35,7 @@ export const dryRun = async (
 ): Promise<{ runnable: GithubIssue[]; blocked: GithubIssue[] }> => {
   const config = await loadConfig(join(cwd, ".lfi", "config.env"));
   if (config.TASK_SOURCE === "local") {
-    const tracker = await loadLocalTracker(join(cwd, ".lfi"));
+    const tracker = await loadReconciledLocalTracker(join(cwd, ".lfi"));
     const plan = runnableLocalTasks(tracker, selectedIds);
     return {
       runnable: plan.runnable.map((task) => localIssue(task)),

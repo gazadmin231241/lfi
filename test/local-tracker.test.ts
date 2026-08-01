@@ -20,7 +20,10 @@ import {
 } from "../src/local-tracker.js";
 import { formatLocalStatus } from "../src/status.js";
 import { runCommand } from "../src/process.js";
-import { reconcileTrackerFilenames } from "../src/tracker-files.js";
+import {
+  loadReconciledLocalTracker,
+  reconcileTrackerFilenames,
+} from "../src/tracker-files.js";
 import {
   withLocalRelationships,
   withoutLocalRelationships,
@@ -228,11 +231,12 @@ test("tracker filenames expose derived status before the stable ID and title", a
   const tasksRoot = join(root, "tasks");
   const specsRoot = join(root, "specs");
   await mkdir(tasksRoot);
+  await mkdir(join(tasksRoot, "completed"));
   await mkdir(specsRoot);
   const specPath = join(specsRoot, "LFI-1-feature.md");
   const firstPath = join(tasksRoot, "LFI-2-first-task.md");
   const secondPath = join(tasksRoot, "LFI-3-second-task.md");
-  const completedPath = join(tasksRoot, "LFI-4-completed-task.md");
+  const completedPath = join(tasksRoot, "completed", "LFI-4-completed-task.md");
   await writeFile(
     specPath,
     serializeTrackerDocument({
@@ -292,34 +296,209 @@ test("tracker filenames expose derived status before the stable ID and title", a
 
   const tracker = await loadLocalTracker(root);
   await reconcileTrackerFilenames(tracker, new Set(["LFI-2"]));
-  assert.deepEqual(
-    (await readdir(specsRoot)).sort(),
-    ["[SPEC] LFI-1 — feature.md"],
-  );
+  assert.deepEqual(await readdir(specsRoot), []);
   assert.deepEqual(
     (await readdir(tasksRoot)).sort(),
+    ["completed", "feature"],
+  );
+  assert.deepEqual(await readdir(join(tasksRoot, "completed")), []);
+  assert.deepEqual(
+    (await readdir(join(tasksRoot, "feature"))).sort(),
+    ["[SPEC] LFI-1 — feature.md", "tasks"],
+  );
+  assert.deepEqual(
+    (await readdir(join(tasksRoot, "feature", "tasks"))).sort(),
     [
       "[BLOCKED] LFI-3 — second-task.md",
+      "[DONE] LFI-4 — completed-task.md",
       "[RUNNING] LFI-2 — first-task.md",
-      "completed",
     ],
   );
-  assert.deepEqual(await readdir(join(tasksRoot, "completed")), [
-    "[DONE] LFI-4 — completed-task.md",
-  ]);
-  assert.equal((await loadLocalTracker(root)).tasks.length, 3);
+  const migrated = await loadLocalTracker(root);
+  assert.equal(migrated.tasks.length, 3);
+  assert.equal(migrated.tasks.find((item) => item.id === "LFI-4")?.completedAt,
+    "2026-01-01T00:00:00.000Z");
   const second = await readFile(
-    join(tasksRoot, "[BLOCKED] LFI-3 — second-task.md"),
+    join(tasksRoot, "feature", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
     "utf8",
   );
   assert.match(
     second,
-    /## Specification[\s\S]*\[LFI-1 — Feature\]\(<\.\.\/specs\/\[SPEC\] LFI-1 — feature\.md>\)/u,
+    /## Specification[\s\S]*\[LFI-1 — Feature\]\(<\.\.\/\[SPEC\] LFI-1 — feature\.md>\)/u,
   );
   assert.match(
     second,
     /## Blocked by[\s\S]*- \[LFI-2 — First task\]\(<\[RUNNING\] LFI-2 — first-task\.md>\)/u,
   );
+});
+
+test("new layout ignores feature material and validates specification placement", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-new-layout-"));
+  const feature = join(root, "tasks", "feature");
+  const featureTasks = join(feature, "tasks");
+  await mkdir(featureTasks, { recursive: true });
+  await writeFile(join(feature, "notes.md"), "# Notes\n");
+  await writeFile(join(feature, "diagram.png"), "not really an image");
+  await writeFile(
+    join(feature, "[SPEC] LFI-14 — feature.md"),
+    taskSource
+      .replace("id: LFI-15", "id: LFI-14")
+      .replace("type: task", "type: spec")
+      .replace("execution_tier: deep\n", "")
+      .replace("spec: LFI-14\n", "")
+      .replace("  - LFI-12\n", ""),
+  );
+  await writeFile(
+    join(featureTasks, "[READY] LFI-15 — implement-task-parser.md"),
+    taskSource.replace("  - LFI-12\n", ""),
+  );
+  await writeFile(
+    join(root, "tasks", "[READY] LFI-16 — standalone.md"),
+    taskSource
+      .replace("id: LFI-15", "id: LFI-16")
+      .replace("title: Implement task parser", "title: Standalone")
+      .replace("spec: LFI-14\n", "")
+      .replace("  - LFI-12\n", ""),
+  );
+
+  const tracker = await loadLocalTracker(root);
+  assert.deepEqual(tracker.documents.map((item) => item.id).sort(), [
+    "LFI-14",
+    "LFI-15",
+    "LFI-16",
+  ]);
+
+  const specificationPath = join(feature, "[SPEC] LFI-14 — feature.md");
+  const specificationSource = await readFile(specificationPath, "utf8");
+  await rm(specificationPath);
+  await assert.rejects(loadLocalTracker(root), /exactly one specification/u);
+
+  await writeFile(specificationPath, specificationSource);
+  const duplicatePath = join(feature, "[SPEC] LFI-17 — duplicate.md");
+  await writeFile(
+    duplicatePath,
+    specificationSource
+      .replace("id: LFI-14", "id: LFI-17")
+      .replace("title: Implement task parser", "title: Duplicate"),
+  );
+  await assert.rejects(loadLocalTracker(root), /exactly one specification/u);
+
+  await rm(duplicatePath);
+  const otherFeature = join(root, "tasks", "other-feature");
+  await mkdir(join(otherFeature, "tasks"), { recursive: true });
+  await writeFile(
+    join(otherFeature, "[SPEC] LFI-17 — other-feature.md"),
+    specificationSource
+      .replace("id: LFI-14", "id: LFI-17")
+      .replace("title: Implement task parser", "title: Other feature"),
+  );
+  const featureTaskPath = join(featureTasks, "[READY] LFI-15 — implement-task-parser.md");
+  await writeFile(
+    featureTaskPath,
+    (await readFile(featureTaskPath, "utf8")).replace("spec: LFI-14", "spec: LFI-17"),
+  );
+  await assert.rejects(loadLocalTracker(root), /task must reference LFI-14/u);
+});
+
+test("reconciliation follows specification renames and task specification changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-layout-changes-"));
+  const tasksRoot = join(root, "tasks");
+  const firstFeature = join(tasksRoot, "first-feature");
+  const secondFeature = join(tasksRoot, "second-feature");
+  await mkdir(join(firstFeature, "tasks"), { recursive: true });
+  await mkdir(join(secondFeature, "tasks"), { recursive: true });
+  const makeSpec = (id: string, title: string, path: string) =>
+    serializeTrackerDocument({
+      id,
+      number: Number(id.slice(4)),
+      type: "spec",
+      title,
+      status: "ready",
+      blockedBy: [],
+      body: `${title}.\n`,
+      path,
+    });
+  const firstSpecPath = join(firstFeature, "[SPEC] LFI-1 — first-feature.md");
+  const secondSpecPath = join(secondFeature, "[SPEC] LFI-2 — second-feature.md");
+  const taskPath = join(firstFeature, "tasks", "[READY] LFI-3 — task.md");
+  await writeFile(firstSpecPath, makeSpec("LFI-1", "First feature", firstSpecPath));
+  await writeFile(secondSpecPath, makeSpec("LFI-2", "Second feature", secondSpecPath));
+  await writeFile(
+    taskPath,
+    serializeTrackerDocument({
+      id: "LFI-3",
+      number: 3,
+      type: "task",
+      title: "Task",
+      status: "ready",
+      spec: "LFI-1",
+      blockedBy: [],
+      body: "Task.\n",
+      path: taskPath,
+    }),
+  );
+
+  const tracker = await loadLocalTracker(root);
+  const firstSpec = tracker.specs.find((item) => item.id === "LFI-1")!;
+  const task = tracker.tasks[0]!;
+  firstSpec.title = "Renamed feature";
+  await reconcileTrackerFilenames(tracker, new Set());
+  assert.equal(
+    firstSpec.path,
+    join(tasksRoot, "renamed-feature", "[SPEC] LFI-1 — renamed-feature.md"),
+  );
+  assert.equal(task.path, join(tasksRoot, "renamed-feature", "tasks", "[READY] LFI-3 — task.md"));
+
+  await writeFile(
+    task.path,
+    (await readFile(task.path, "utf8")).replace("spec: LFI-1", "spec: LFI-2"),
+  );
+  const repointed = await loadReconciledLocalTracker(root);
+  const movedTask = repointed.tasks[0]!;
+  assert.equal(movedTask.path, join(secondFeature, "tasks", "[READY] LFI-3 — task.md"));
+  assert.match(await readFile(movedTask.path, "utf8"), /\.\.\/\[SPEC\] LFI-2 — second-feature\.md/u);
+
+  await writeFile(
+    movedTask.path,
+    (await readFile(movedTask.path, "utf8")).replace("spec: LFI-2\n", ""),
+  );
+  const cleared = await loadReconciledLocalTracker(root);
+  const standaloneTask = cleared.tasks[0]!;
+  assert.equal(standaloneTask.path, join(tasksRoot, "[READY] LFI-3 — task.md"));
+  assert.match(await readFile(standaloneTask.path, "utf8"), /## Specification\n\nNone\./u);
+});
+
+test("reconciliation disambiguates feature slugs and reserves completed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-layout-collisions-"));
+  const specsRoot = join(root, "specs");
+  await mkdir(join(root, "tasks"), { recursive: true });
+  await mkdir(specsRoot);
+  const specifications: ReadonlyArray<readonly [string, string]> = [
+    ["LFI-1", "Same title"],
+    ["LFI-2", "Same title!"],
+    ["LFI-3", "Completed"],
+  ];
+  for (const [id, title] of specifications) {
+    const path = join(specsRoot, `${id}-spec.md`);
+    await writeFile(path, serializeTrackerDocument({
+      id,
+      number: Number(id.slice(4)),
+      type: "spec",
+      title,
+      status: "ready",
+      blockedBy: [],
+      body: "Specification.\n",
+      path,
+    }));
+  }
+
+  const tracker = await loadLocalTracker(root);
+  await reconcileTrackerFilenames(tracker, new Set());
+  assert.deepEqual((await readdir(join(root, "tasks"))).sort(), [
+    "completed-2",
+    "same-title",
+    "same-title-2",
+  ]);
 });
 
 test("local status orders completions by time and localizes blockers", () => {

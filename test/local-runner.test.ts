@@ -277,7 +277,6 @@ exit 97
   assert.equal(await readFile(join(root, "implemented.txt"), "utf8"), "implemented\n");
   const completedPath = join(
     tasks,
-    "completed",
     "[DONE] LFI-1 — implement-local-run.md",
   );
   const task = parseTrackerDocument(
@@ -294,7 +293,7 @@ exit 97
       "ls-files",
       "--error-unmatch",
       "--",
-      ".lfi/tasks/completed/[DONE] LFI-1 — implement-local-run.md",
+      ".lfi/tasks/[DONE] LFI-1 — implement-local-run.md",
     ],
     { cwd: root },
   );

@@ -1,7 +1,6 @@
 import { join } from "node:path";
 
 import {
-  loadLocalTracker,
   type LocalTracker,
 } from "./local-tracker.js";
 import { configureLocalTrackerStorage } from "./local-setup.js";
@@ -11,7 +10,7 @@ import {
   trackerDisplayState,
   trackerStatusPrefix,
 } from "./tracker-state.js";
-import { reconcileTrackerFilenames } from "./tracker-files.js";
+import { loadReconciledLocalTracker } from "./tracker-files.js";
 
 export type StatusFilter = "ready" | "blocked" | "completed";
 
@@ -101,8 +100,7 @@ export const localStatusLines = async (
 ): Promise<string[]> => {
   const lfiRoot = join(cwd, ".lfi");
   await configureLocalTrackerStorage(cwd);
-  const tracker = await loadLocalTracker(lfiRoot);
   const active = await readActiveTaskIds(lfiRoot);
-  await reconcileTrackerFilenames(tracker, active);
+  const tracker = await loadReconciledLocalTracker(lfiRoot, active);
   return formatLocalStatus(tracker, active, options);
 };

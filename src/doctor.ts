@@ -6,7 +6,7 @@ import { runCommand } from "./process.js";
 import { localize, type Language } from "./i18n.js";
 import { loadConfig } from "./config.js";
 import { inferGithubRepo } from "./github-mirror-adapter.js";
-import { loadLocalTracker } from "./local-tracker.js";
+import { loadReconciledLocalTracker } from "./tracker-files.js";
 
 export interface DoctorCheck {
   name: string;
@@ -84,7 +84,7 @@ export const runDoctor = async (
   );
   const syncChecks: DoctorCheck[] = [];
   if (options.sync) {
-    const tracker = await loadLocalTracker(join(cwd, ".lfi"))
+    const tracker = await loadReconciledLocalTracker(join(cwd, ".lfi"))
       .then(() => ({
         name: "local tracker",
         ok: true,

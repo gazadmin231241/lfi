@@ -12,6 +12,7 @@ import {
   type LocalTracker,
   type TrackerDocument,
 } from "./local-tracker.js";
+import { loadReconciledLocalTracker } from "./tracker-files.js";
 import type { GithubMirrorAdapter, MirrorIssue } from "./mirror-types.js";
 import { withoutLocalRelationships } from "./local-relationships.js";
 import { checkpointTracker } from "./runner-support.js";
@@ -143,10 +144,13 @@ export const syncGithubMirror = async (
     options.adapter ?? createGhMirrorAdapter(cwd, repo!);
   await adapter.verifyDestination?.();
   if (!options.dryRun) await adapter.ensureTypeLabels?.();
-  let tracker = await loadLocalTracker(join(cwd, ".lfi"));
+  const lfiRoot = join(cwd, ".lfi");
+  let tracker = options.dryRun
+    ? await loadLocalTracker(lfiRoot)
+    : await loadReconciledLocalTracker(lfiRoot);
   if (!options.dryRun) {
     await checkpointTracker(cwd, "docs(lfi): update local task tracker");
-    tracker = await loadLocalTracker(join(cwd, ".lfi"));
+    tracker = await loadLocalTracker(lfiRoot);
   }
   const result: SyncResult = {
     created: [],

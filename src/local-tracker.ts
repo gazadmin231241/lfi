@@ -1,11 +1,17 @@
-import { readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 
 import { gitResult } from "./git.js";
 import {
   isExecutionTier,
   type ExecutionTier,
 } from "./execution-tier.js";
+import {
+  trackerMarkdownFiles,
+  validateTrackerPlacement,
+} from "./tracker-layout.js";
+
+export { COMPLETED_TASKS_DIRECTORY } from "./tracker-layout.js";
 
 export type TrackerDocumentType = "task" | "spec";
 export type TrackerStatus = "ready" | "completed" | "cancelled";
@@ -26,6 +32,7 @@ export interface TrackerDocument {
 }
 
 export interface LocalTracker {
+  root?: string;
   documents: TrackerDocument[];
   tasks: TrackerDocument[];
   specs: TrackerDocument[];
@@ -188,19 +195,13 @@ export const serializeTrackerDocument = (
   return `${lines.join("\n")}\n---\n\n${document.body}`;
 };
 
-const markdownFiles = async (directory: string): Promise<string[]> =>
-  (await readdir(directory, { withFileTypes: true }).catch(() => []))
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => join(directory, entry.name))
-    .sort();
-
-export const COMPLETED_TASKS_DIRECTORY = "completed";
-
-const validateTracker = (documents: readonly TrackerDocument[]): void => {
+const validateTracker = (
+  lfiRoot: string,
+  documents: readonly TrackerDocument[],
+  allowPlacementDrift: boolean,
+): void => {
   const byId = new Map<string, TrackerDocument>();
   for (const document of documents) {
-    const collection =
-      document.type === "task" ? "tasks" : "specs";
     const filename = basename(document.path);
     const legacy = new RegExp(
       `^${document.id}-([\\p{L}\\p{N}]+(?:-[\\p{L}\\p{N}]+)*)\\.md$`,
@@ -213,22 +214,9 @@ const validateTracker = (documents: readonly TrackerDocument[]): void => {
     const validFilename =
       legacy !== null ||
       (canonical !== null && canonical[1] === document.id);
-    const parent = basename(dirname(document.path));
-    const inCompletedTasks =
-      document.type === "task" &&
-      parent === COMPLETED_TASKS_DIRECTORY &&
-      basename(dirname(dirname(document.path))) === "tasks";
-    const inCollectionRoot = parent === collection;
-    const validLocation =
-      document.type === "task" && document.status === "completed"
-        ? inCollectionRoot || inCompletedTasks
-        : inCollectionRoot;
-    if (
-      !validLocation ||
-      !validFilename
-    ) {
+    if (!validFilename) {
       throw new Error(
-        `${document.path}: filename must be ${collection}/[STATUS] ${document.id} — informative-slug.md (completed tasks go in tasks/${COMPLETED_TASKS_DIRECTORY}/) / имя файла должно быть ${collection}/[СТАТУС] ${document.id} — информативное-название.md (завершённые задачи хранятся в tasks/${COMPLETED_TASKS_DIRECTORY}/)`,
+        `${document.path}: filename must be [STATUS] ${document.id} — informative-slug.md / имя файла должно быть [СТАТУС] ${document.id} — информативное-название.md`,
       );
     }
     if (byId.has(document.id)) {
@@ -238,6 +226,8 @@ const validateTracker = (documents: readonly TrackerDocument[]): void => {
     }
     byId.set(document.id, document);
   }
+
+  if (!allowPlacementDrift) validateTrackerPlacement(lfiRoot, documents);
   for (const document of documents) {
     if (document.spec) {
       const spec = byId.get(document.spec);
@@ -275,21 +265,26 @@ const validateTracker = (documents: readonly TrackerDocument[]): void => {
   }
 };
 
-export const loadLocalTracker = async (lfiRoot: string): Promise<LocalTracker> => {
+export const loadLocalTracker = async (
+  lfiRoot: string,
+  options: { allowPlacementDrift?: boolean } = {},
+): Promise<LocalTracker> => {
   const paths = [
-    ...(await markdownFiles(join(lfiRoot, "tasks"))),
-    ...(await markdownFiles(
-      join(lfiRoot, "tasks", COMPLETED_TASKS_DIRECTORY),
-    )),
-    ...(await markdownFiles(join(lfiRoot, "specs"))),
+    ...(await trackerMarkdownFiles(join(lfiRoot, "tasks"), true)),
+    ...(await trackerMarkdownFiles(join(lfiRoot, "specs"))),
   ];
   const documents = await Promise.all(
-    paths.map(async (path) =>
-      parseTrackerDocument(await readFile(path, "utf8"), path),
-    ),
+    paths.map(async (path) => ({ path, source: await readFile(path, "utf8") })),
+  ).then((files) =>
+    files
+      .filter(({ source }) =>
+        /^---\r?\n[\s\S]*?^type:\s*(?:task|spec)\s*$/mu.test(source),
+      )
+      .map(({ path, source }) => parseTrackerDocument(source, path)),
   );
-  validateTracker(documents);
+  validateTracker(lfiRoot, documents, options.allowPlacementDrift ?? false);
   return {
+    root: lfiRoot,
     documents,
     tasks: documents.filter((item) => item.type === "task"),
     specs: documents.filter((item) => item.type === "spec"),

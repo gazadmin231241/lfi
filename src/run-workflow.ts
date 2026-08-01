@@ -25,7 +25,7 @@ import {
   ValidationFailure,
   writePendingClosures,
 } from "./runner-support.js";
-import { reconcileTrackerFilenames } from "./tracker-files.js";
+import { loadReconciledLocalTracker } from "./tracker-files.js";
 
 export const runLfi = async (
   cwd: string,
@@ -46,7 +46,7 @@ export const runLfi = async (
   const startupErrors: string[] = [];
   if (config.TASK_SOURCE === "local") {
     await configureLocalTrackerStorage(cwd);
-    await reconcileTrackerFilenames(await loadLocalTracker(lfiRoot), new Set());
+    await loadReconciledLocalTracker(lfiRoot);
     await checkpointTracker(cwd, "docs(lfi): update local task tracker");
     if (selectedIds.length > 0) {
       const tracker = await loadLocalTracker(lfiRoot);
@@ -372,7 +372,7 @@ export const runLfi = async (
     );
     await rm(currentStatePath, { force: true });
     if (config.TASK_SOURCE === "local") {
-      await reconcileTrackerFilenames(await loadLocalTracker(lfiRoot), new Set());
+      await loadReconciledLocalTracker(lfiRoot);
     }
     return unresolved.length === 0 && pending.length === 0 ? 0 : 1;
   } catch (error) {

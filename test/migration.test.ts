@@ -91,7 +91,8 @@ LFI-20
       join(
         root,
         ".lfi",
-        "specs",
+        "tasks",
+        "feature-specification",
         "[SPEC] LFI-1 — feature-specification.md",
       ),
       "utf8",
@@ -100,28 +101,28 @@ LFI-20
   );
   assert.doesNotMatch(
     await readFile(
-      join(root, ".lfi", "tasks", "[READY] LFI-2 — first-task.md"),
+      join(root, ".lfi", "tasks", "feature-specification", "tasks", "[READY] LFI-2 — first-task.md"),
       "utf8",
     ),
     /\[READY\]|## Родитель|## Заблокировано|Управляется LFI/u,
   );
   assert.match(
     await readFile(
-      join(root, ".lfi", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
+      join(root, ".lfi", "tasks", "feature-specification", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
       "utf8",
     ),
     /type: task[\s\S]*spec: LFI-1[\s\S]*blocked_by:\n  - LFI-2[\s\S]*github_issue: 12/u,
   );
   assert.match(
     await readFile(
-      join(root, ".lfi", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
+      join(root, ".lfi", "tasks", "feature-specification", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
       "utf8",
     ),
     /execution_tier: deep/u,
   );
   assert.doesNotMatch(
     await readFile(
-      join(root, ".lfi", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
+      join(root, ".lfi", "tasks", "feature-specification", "tasks", "[BLOCKED] LFI-3 — second-task.md"),
       "utf8",
     ),
     /- #11/u,

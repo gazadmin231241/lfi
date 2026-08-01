@@ -1,14 +1,13 @@
 import { access, mkdir, rename } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 
-import type {
-  LocalTracker,
-  TrackerDocument,
-} from "./local-tracker.js";
 import {
-  COMPLETED_TASKS_DIRECTORY,
+  loadLocalTracker,
   saveTrackerDocument,
+  type LocalTracker,
+  type TrackerDocument,
 } from "./local-tracker.js";
+import { COMPLETED_TASKS_DIRECTORY } from "./tracker-layout.js";
 import { withLocalRelationships } from "./local-relationships.js";
 import {
   trackerDisplayState,
@@ -39,16 +38,46 @@ const exists = (path: string): Promise<boolean> =>
     () => false,
   );
 
-const trackerDirectory = (document: TrackerDocument): string => {
-  const current = dirname(document.path);
-  if (document.type !== "task") return current;
-  const tasksRoot =
-    basename(current) === COMPLETED_TASKS_DIRECTORY
-      ? dirname(current)
-      : current;
-  return document.status === "completed"
-    ? join(tasksRoot, COMPLETED_TASKS_DIRECTORY)
-    : tasksRoot;
+const featureDirectories = (tracker: LocalTracker): Map<string, string> => {
+  const used = new Set([COMPLETED_TASKS_DIRECTORY]);
+  const directories = new Map<string, string>();
+  for (const specification of [...tracker.specs].sort(
+    (left, right) => left.number - right.number || left.id.localeCompare(right.id),
+  )) {
+    const base = trackerTitleSlug(specification.title);
+    let directory = base;
+    let suffix = 2;
+    while (used.has(directory)) directory = `${base}-${suffix++}`;
+    used.add(directory);
+    directories.set(specification.id, directory);
+  }
+  return directories;
+};
+
+export const trackerTargetPath = (
+  document: TrackerDocument,
+  tracker: LocalTracker,
+  active: ReadonlySet<string>,
+): string => {
+  if (tracker.root === undefined) {
+    throw new Error(
+      "Tracker root is required for reconciliation / для сверки требуется корень трекера",
+    );
+  }
+  const tasksRoot = join(tracker.root, "tasks");
+  const directories = featureDirectories(tracker);
+  const filename = trackerFilename(document, tracker, active);
+  if (document.type === "spec") {
+    return join(tasksRoot, directories.get(document.id)!, filename);
+  }
+  if (document.spec === undefined) return join(tasksRoot, filename);
+  const feature = directories.get(document.spec);
+  if (feature === undefined) {
+    throw new Error(
+      `${document.id}: missing spec / отсутствует спецификация ${document.spec}`,
+    );
+  }
+  return join(tasksRoot, feature, "tasks", filename);
 };
 
 export const reconcileTrackerFilenames = async (
@@ -56,10 +85,7 @@ export const reconcileTrackerFilenames = async (
   active: ReadonlySet<string>,
 ): Promise<void> => {
   for (const document of tracker.documents) {
-    const destination = join(
-      trackerDirectory(document),
-      trackerFilename(document, tracker, active),
-    );
+    const destination = trackerTargetPath(document, tracker, active);
     if (destination === document.path) continue;
     if (await exists(destination)) {
       throw new Error(
@@ -76,4 +102,15 @@ export const reconcileTrackerFilenames = async (
     document.body = body;
     await saveTrackerDocument(document);
   }
+};
+
+export const loadReconciledLocalTracker = async (
+  lfiRoot: string,
+  active: ReadonlySet<string> = new Set(),
+): Promise<LocalTracker> => {
+  const tracker = await loadLocalTracker(lfiRoot, {
+    allowPlacementDrift: true,
+  });
+  await reconcileTrackerFilenames(tracker, active);
+  return loadLocalTracker(lfiRoot);
 };
