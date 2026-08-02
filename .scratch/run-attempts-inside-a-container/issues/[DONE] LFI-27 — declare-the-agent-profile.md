@@ -33,15 +33,15 @@ provider inherits a declaration rather than inventing one.
 
 ## Acceptance criteria
 
-- [ ] Each agent provider declares its own profile paths; nothing outside the
+- [x] Each agent provider declares its own profile paths; nothing outside the
       provider enumerates them.
-- [ ] The skills directory is declared once and applies to every agent.
-- [ ] The boundary declaration includes the profile of the agent the session
+- [x] The skills directory is declared once and applies to every agent.
+- [x] The boundary declaration includes the profile of the agent the session
       will run.
-- [ ] History, sessions, attachments, and agent caches are not part of any
+- [x] History, sessions, attachments, and agent caches are not part of any
       profile, asserted by test.
-- [ ] Code-host credentials are not part of any profile.
-- [ ] The local provider's observable behaviour is unchanged.
+- [x] Code-host credentials are not part of any profile.
+- [x] The local provider's observable behaviour is unchanged.
 
 ## Specification
 
