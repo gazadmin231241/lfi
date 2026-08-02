@@ -32,6 +32,7 @@ export interface IsolationDeclaration {
   codeHostCredentialDirectories: readonly string[];
   codeHostCredentialFiles: readonly string[];
   agentProfilePaths: readonly string[];
+  agentStateDirectory: string;
   skillsDirectory: string;
   gitConfigFiles: readonly string[];
   sanitizedGitConfig: string;
@@ -123,7 +124,11 @@ export const resolveIsolationDeclaration = async (
   options: Omit<IsolationSessionOptions, "provider">,
   sanitizedGitConfig: string,
 ): Promise<IsolationDeclaration> => {
-  const profile = resolveAgentProfile(options.agent, options.homeDirectory);
+  const profile = resolveAgentProfile(
+    options.agent,
+    options.homeDirectory,
+    options.environment,
+  );
   const [codeHostCredentialDirectories, codeHostCredentialFiles, gitConfigFiles] = await Promise.all([
     existing(localCredentialDirectories(options.homeDirectory)),
     existing(localCredentialFiles(options.homeDirectory)),
@@ -140,6 +145,7 @@ export const resolveIsolationDeclaration = async (
     codeHostCredentialDirectories,
     codeHostCredentialFiles,
     agentProfilePaths: profile.paths,
+    agentStateDirectory: profile.stateDirectory,
     skillsDirectory: profile.skillsDirectory,
     gitConfigFiles,
     sanitizedGitConfig,
@@ -180,6 +186,10 @@ export const openIsolationSession = async (
       for (const path of declaration.packageCacheDirectories) args.push("--bind-try", path, path);
       for (const path of declaration.codeHostCredentialDirectories) args.push("--tmpfs", path);
       for (const path of declaration.codeHostCredentialFiles) args.push("--ro-bind", "/dev/null", path);
+      // The agent CLI needs its state home writable (sqlite state, logs,
+      // app-server socket) and fails on startup without it, so the state
+      // directory stays writable and shared, exactly as outside the sandbox.
+      args.push("--bind-try", declaration.agentStateDirectory, declaration.agentStateDirectory);
       args.push("--chdir", declaration.worktree, "--", command.command, ...command.args);
       return { ...command, command: "bwrap", args, environment: declaration.environment };
   };

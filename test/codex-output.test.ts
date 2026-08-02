@@ -59,8 +59,8 @@ test("Codex provider builds its invocation without spawning a process", () => {
 
 test("each agent provider declares only its own configuration profile", () => {
   const home = "/home/agent";
-  const codex = resolveAgentProfile("codex", home);
-  const pi = resolveAgentProfile("pi", home);
+  const codex = resolveAgentProfile("codex", home, {});
+  const pi = resolveAgentProfile("pi", home, {});
 
   assert.deepEqual(codex.paths, [
     "/home/agent/.codex/config.toml",
@@ -109,6 +109,31 @@ test("each agent provider declares only its own configuration profile", () => {
       assert.equal(profile.paths.includes(path), false);
     }
   }
+});
+
+test("the codex profile follows CODEX_HOME when the environment relocates it", () => {
+  const home = "/home/agent";
+  const relocated = resolveAgentProfile("codex", home, {
+    CODEX_HOME: "/home/agent/.config/orca/codex-runtime-home/home",
+  });
+
+  assert.equal(
+    relocated.stateDirectory,
+    "/home/agent/.config/orca/codex-runtime-home/home",
+  );
+  assert.deepEqual(relocated.paths, [
+    "/home/agent/.config/orca/codex-runtime-home/home/config.toml",
+    "/home/agent/.config/orca/codex-runtime-home/home/hooks",
+    "/home/agent/.config/orca/codex-runtime-home/home/agents",
+    "/home/agent/.config/orca/codex-runtime-home/home/AGENTS.md",
+    "/home/agent/.config/orca/codex-runtime-home/home/auth.json",
+  ]);
+  assert.equal(relocated.skillsDirectory, "/home/agent/.agents/skills");
+
+  const pi = resolveAgentProfile("pi", home, {
+    CODEX_HOME: "/home/agent/.config/orca/codex-runtime-home/home",
+  });
+  assert.equal(pi.stateDirectory, "/home/agent/.pi/agent");
 });
 
 test("Codex provider expands skill placeholders without spawning a process", () => {

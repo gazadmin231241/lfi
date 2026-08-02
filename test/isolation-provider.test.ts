@@ -179,6 +179,37 @@ test("local isolation derives credential exclusions and package caches on open",
   await rm(root, { recursive: true, force: true });
 });
 
+test("local isolation keeps the agent state directory writable inside the sandbox", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-isolation-session-"));
+  const gitDirectory = join(root, "repository", ".git");
+  const homeDirectory = join(root, "home", "agent");
+  await mkdir(gitDirectory, { recursive: true });
+  for (const agent of ["codex", "pi"] as const) {
+    const session = await openIsolationSession({
+      provider: "local",
+      agent,
+      worktree: "/workspace/task",
+      gitDirectory,
+      homeDirectory,
+      environment: command.environment,
+    });
+    const wrapped = session.prepare(command);
+
+    const profile = resolveAgentProfile(agent, homeDirectory, command.environment);
+    assert.ok(
+      wrapped.args.some(
+        (value, index) =>
+          value === "--bind-try" &&
+          wrapped.args[index + 1] === profile.stateDirectory &&
+          wrapped.args[index + 2] === profile.stateDirectory,
+      ),
+      `${agent} state directory must be bound writable`,
+    );
+    await session.close();
+  }
+  await rm(root, { recursive: true, force: true });
+});
+
 test("none isolation session returns commands unchanged", async () => {
   const session = await openIsolationSession({
     provider: "none",
@@ -216,7 +247,7 @@ test("boundary declarations contain the selected agent profile and shared skills
       environment: command.environment,
     }, join(gitDirectory, "safe-git-config"));
 
-    const profile = resolveAgentProfile(agent, homeDirectory);
+    const profile = resolveAgentProfile(agent, homeDirectory, command.environment);
     assert.deepEqual(declaration.agentProfilePaths, profile.paths);
     assert.equal(declaration.skillsDirectory, profile.skillsDirectory);
     const boundaryPaths = [

@@ -31,24 +31,36 @@ export const isAgentProvider = (value: string): value is AgentProvider =>
 
 export interface AgentProfile {
   paths: readonly string[];
+  stateDirectory: string;
   skillsDirectory: string;
 }
 
-const profilePathsByAgent: Record<AgentProvider, (homeDirectory: string) => readonly string[]> = {
-  codex: (homeDirectory) => [
-    join(homeDirectory, ".codex", "config.toml"),
-    join(homeDirectory, ".codex", "hooks"),
-    join(homeDirectory, ".codex", "agents"),
-    join(homeDirectory, ".codex", "AGENTS.md"),
-    join(homeDirectory, ".codex", "auth.json"),
+// Codex honours CODEX_HOME (desktop integrations such as Orca relocate it),
+// so the profile must follow it or the sandbox isolates the wrong directory.
+const stateDirectoryByAgent: Record<
+  AgentProvider,
+  (homeDirectory: string, environment: NodeJS.ProcessEnv) => string
+> = {
+  codex: (homeDirectory, environment) =>
+    environment.CODEX_HOME?.trim() || join(homeDirectory, ".codex"),
+  pi: (homeDirectory) => join(homeDirectory, ".pi", "agent"),
+};
+
+const profilePathsByAgent: Record<AgentProvider, (stateDirectory: string) => readonly string[]> = {
+  codex: (stateDirectory) => [
+    join(stateDirectory, "config.toml"),
+    join(stateDirectory, "hooks"),
+    join(stateDirectory, "agents"),
+    join(stateDirectory, "AGENTS.md"),
+    join(stateDirectory, "auth.json"),
   ],
-  pi: (homeDirectory) => [
-    join(homeDirectory, ".pi", "agent", "settings.json"),
-    join(homeDirectory, ".pi", "agent", "extensions"),
-    join(homeDirectory, ".pi", "agent", "agents"),
-    join(homeDirectory, ".pi", "agent", "subagents.json"),
-    join(homeDirectory, ".pi", "agent", "AGENTS.md"),
-    join(homeDirectory, ".pi", "agent", "auth.json"),
+  pi: (stateDirectory) => [
+    join(stateDirectory, "settings.json"),
+    join(stateDirectory, "extensions"),
+    join(stateDirectory, "agents"),
+    join(stateDirectory, "subagents.json"),
+    join(stateDirectory, "AGENTS.md"),
+    join(stateDirectory, "auth.json"),
   ],
 };
 
@@ -58,10 +70,15 @@ const sharedSkillsDirectory = (homeDirectory: string): string =>
 export const resolveAgentProfile = (
   agent: AgentProvider,
   homeDirectory: string,
-): AgentProfile => ({
-  paths: profilePathsByAgent[agent](homeDirectory),
-  skillsDirectory: sharedSkillsDirectory(homeDirectory),
-});
+  environment: NodeJS.ProcessEnv = process.env,
+): AgentProfile => {
+  const stateDirectory = stateDirectoryByAgent[agent](homeDirectory, environment);
+  return {
+    paths: profilePathsByAgent[agent](stateDirectory),
+    stateDirectory,
+    skillsDirectory: sharedSkillsDirectory(homeDirectory),
+  };
+};
 
 export const skillPlaceholder = (skill: string): string => `{{SKILL:${skill}}}`;
 

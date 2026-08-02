@@ -73,6 +73,8 @@ export const attemptWork = async (options: {
         identity,
       }),
       async (session) => {
+        const reusedDirtyWorktree =
+          !worktree.created && !(await worktreeClean(worktree.path));
         if (worktree.created && options.config.WORKTREE_SETUP_COMMAND) {
           const setup = await runProjectCommand({
             command: options.config.WORKTREE_SETUP_COMMAND,
@@ -108,7 +110,7 @@ export const attemptWork = async (options: {
             "--no-edit",
           ]);
           if (update.exitCode !== 0) {
-            await mergeWithAgent({
+            const summary = await mergeWithAgent({
               cwd: worktree.path,
               context: `Update ${options.task.id} from ${options.baseRef}.`,
               config: options.config,
@@ -117,6 +119,23 @@ export const attemptWork = async (options: {
               logName: "integration",
               language: options.language,
             });
+            if (reusedDirtyWorktree) {
+              const evaluation = evaluateWorkerResult({
+                processExitCode: 0,
+                status: "completed",
+                commitsAhead: await commitsAhead(worktree.path, options.baseRef),
+              });
+              return {
+                task: options.task,
+                accepted: evaluation.accepted,
+                summary: evaluation.accepted
+                  ? summary
+                  : `${summary}\n${evaluation.reasons.join(", ")}`,
+                worktreePath: worktree.path,
+                branch: worktree.branch,
+                logName: "integration",
+              };
+            }
           }
         }
         const agent = await runAgent({

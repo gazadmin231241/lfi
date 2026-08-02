@@ -39,7 +39,7 @@ export const mergeWithAgent = async (options: {
   logName: string;
   language: Language;
   allowedPaths?: readonly string[];
-}): Promise<void> => {
+}): Promise<string> => {
   const startingHead = (await git(options.cwd, ["rev-parse", "HEAD"])).stdout.trim();
   const unmerged = (
     await git(options.cwd, [
@@ -152,6 +152,7 @@ export const mergeWithAgent = async (options: {
       ),
     );
   }
+  return result.summary;
 };
 
 export class ValidationFailure extends Error {
