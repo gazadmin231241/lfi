@@ -33,6 +33,8 @@ test("config round-trips defaults", () => {
   assert.equal(parsed.MAX_STAGES, 10);
   assert.equal(parsed.LOG_RETENTION_DAYS, 3);
   assert.equal(parsed.ISOLATION_PROVIDER, "local");
+  assert.equal(parsed.REVIEW_ENABLED, true);
+  assert.equal(parsed.MAX_REMEDIATION_ROUNDS, 1);
   assert.equal("TASK_SOURCE" in parsed, false);
   assert.equal("GITHUB_REPO" in parsed, false);
   assert.match(serialized, /# Agent and model routing/u);
@@ -58,6 +60,9 @@ test("serialized configuration follows reading order and describes every key", (
   assert.ok(english.indexOf("# Project commands") < english.indexOf("# Agent and model routing"));
   assert.ok(english.indexOf("# Agent and model routing") < english.indexOf("# Execution"));
   assert.ok(english.indexOf("# Execution") < english.indexOf("# Isolation"));
+  assert.ok(english.indexOf("MAX_STAGES=") < english.indexOf("REVIEW_ENABLED="));
+  assert.ok(english.indexOf("REVIEW_ENABLED=") < english.indexOf("MAX_REMEDIATION_ROUNDS="));
+  assert.ok(english.indexOf("MAX_REMEDIATION_ROUNDS=") < english.indexOf("LOG_RETENTION_DAYS="));
   assert.equal(
     assignmentLines(english).every((line) => /=.* # \S/u.test(line)),
     true,
@@ -301,6 +306,18 @@ test("config rejects unsafe concurrency and invalid numeric values", () => {
   assert.throws(
     () => parseEnvConfig("CODEX_REASONING_EFFORT=extreme\n"),
     /unsupported/u,
+  );
+  assert.throws(
+    () => parseEnvConfig("REVIEW_ENABLED=maybe\n"),
+    /REVIEW_ENABLED/u,
+  );
+  assert.throws(
+    () => parseEnvConfig("MAX_REMEDIATION_ROUNDS=-1\n"),
+    /MAX_REMEDIATION_ROUNDS/u,
+  );
+  assert.throws(
+    () => parseEnvConfig("MAX_REMEDIATION_ROUNDS=1.5\n"),
+    /MAX_REMEDIATION_ROUNDS/u,
   );
 });
 

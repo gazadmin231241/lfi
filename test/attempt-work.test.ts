@@ -106,9 +106,64 @@ ${codexCompletionEvent("completed", "implemented task")}
   }
 });
 
+test("review-disabled attempts execute and validate without review sessions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-without-review-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const tools = join(root, "tools");
+  const calls = join(root, "codex-calls");
+  const validationMarker = join(root, "validation-ran");
+  await mkdir(tools, { recursive: true });
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  await writeFile(join(tools, "codex"), `#!/bin/sh
+printf 'called\\n' >> "${calls}"
+printf 'implemented\\n' > result.txt
+${codexCompletionEvent("completed", "implemented task")}
+`);
+  await chmod(join(tools, "codex"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    const result = await attemptWork({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      task: { id: "LFI-4", number: 4, title: "Skip review", sourcePath: ".scratch/[READY] LFI-4 — skip-review.md", body: "Implement it." },
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        REVIEW_ENABLED: false,
+        VALIDATE_COMMAND: `printf validated > "${validationMarker}"`,
+      },
+      gitDirectory: join(root, ".git"),
+      log: { directory: join(root, ".lfi", "logs"), startedAt: new Date().toISOString(), iteration: 1 },
+      taskTemplate: "Implement {{TASK_ID}}.",
+      language: "en",
+    });
+
+    assert.equal(result.accepted, true, result.summary);
+    assert.equal(await readFile(calls, "utf8"), "called\n");
+    assert.equal(await readFile(validationMarker, "utf8"), "validated");
+    await assert.rejects(readFile(join(root, ".lfi", "logs", "LFI-4-review.log"), "utf8"));
+    await assert.rejects(readFile(join(root, ".lfi", "logs", "LFI-4-remediation.log"), "utf8"));
+    await assert.rejects(readFile(join(root, ".lfi", "logs", "LFI-4-re-review.log"), "utf8"));
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
 const runAttemptWithReviewOutput = async (
   reviewOutput?: string,
   remediationCommits = false,
+  config: Partial<typeof DEFAULT_CONFIG> = {},
 ) => {
   const root = await mkdtemp(join(tmpdir(), "lfi-review-outcome-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
@@ -164,7 +219,7 @@ ${codexCompletionEvent("completed", "phase completed")}
         sourcePath: ".scratch/[READY] LFI-2 — findings.md",
         body: "Accept or reject the reviewed implementation.",
       },
-      config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none" },
+      config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none", ...config },
       gitDirectory: join(root, ".git"),
       log: {
         directory: join(root, ".lfi", "logs"),
@@ -271,6 +326,31 @@ test("blockers surviving re-review preserve the worktree without a third review"
   assert.match(result.summary, /Re-review phase found blocking findings/u);
   assert.equal(result.worktreePath, worktree);
   assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n");
+});
+
+test("zero remediation rounds reject blocking review findings without remediation", async () => {
+  const { result, worktree, calls } = await runAttemptWithReviewOutput(
+    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent." }]),
+    false,
+    { MAX_REMEDIATION_ROUNDS: 0 },
+  );
+
+  assert.equal(result.accepted, false);
+  assert.match(result.summary, /Review phase found blocking findings/u);
+  assert.equal(result.worktreePath, worktree);
+  assert.equal(await readFile(calls, "utf8"), "1\n2\n");
+});
+
+test("each configured remediation round receives one targeted re-review", async () => {
+  const { result, calls } = await runAttemptWithReviewOutput(
+    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent." }]),
+    false,
+    { MAX_REMEDIATION_ROUNDS: 2 },
+  );
+
+  assert.equal(result.accepted, false);
+  assert.match(result.summary, /Re-review phase found blocking findings/u);
+  assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n5\n6\n");
 });
 
 test("a remediation-created commit is rejected before re-review", async () => {
