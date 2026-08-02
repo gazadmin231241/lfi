@@ -23,14 +23,14 @@ lives in the constraints LFI appends, not in the user's template.
 
 ## Acceptance criteria
 
-- [ ] The rendered execute prompt contains no code-review invocation,
+- [x] The rendered execute prompt contains no code-review invocation,
       confirmation matrix, completion-with-blockers rule, or codex
       full-history-fork note.
-- [ ] Implementation guidance, safety constraints, and the completion contract
+- [x] Implementation guidance, safety constraints, and the completion contract
       remain, in both languages.
-- [ ] No rendered prompt varies its review instructions by agent provider.
-- [ ] An existing customized task template renders and runs unchanged.
-- [ ] Prompt-shape tests extend the existing prompt tests rather than adding a
+- [x] No rendered prompt varies its review instructions by agent provider.
+- [x] An existing customized task template renders and runs unchanged.
+- [x] Prompt-shape tests extend the existing prompt tests rather than adding a
       new seam.
 
 ## Specification
