@@ -116,6 +116,7 @@ export const runLfi = async (
       await git(cwd, ["fetch", "origin", branch]);
       const candidates = await listWork(cwd, completed, selectedIds);
       const runnable = candidates.flatMap((task) => {
+        if (attempted.has(task.id)) return [];
         if (task.executionTier === undefined) {
           if (!warnedMissingTier.has(task.id)) {
             output.log(

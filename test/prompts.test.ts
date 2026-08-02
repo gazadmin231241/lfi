@@ -111,7 +111,23 @@ test("Russian worker prompt requires the agent-created commit", () => {
   const prompt = renderWorkerPrompt("Начни {{TASK_ID}}.", task, "codex", "ru");
 
   assert.match(prompt, /добавь изменения в индекс и создай commit/u);
+  assert.match(prompt, /фактически выполни команду/u);
+  assert.match(prompt, /stderr или exit code/u);
   assert.doesNotMatch(prompt, /Не запускай git add или git commit/u);
+});
+
+test("English worker prompt requires command evidence before reporting a failure", () => {
+  const prompt = renderWorkerPrompt("Start {{TASK_ID}}.", task, "codex", "en");
+
+  assert.match(prompt, /actually run the command/u);
+  assert.match(prompt, /stderr or exit code/u);
+  assert.match(prompt, /full-history fork, omit agent_type/u);
+});
+
+test("Pi worker prompt does not receive Codex subagent invocation syntax", () => {
+  const prompt = renderWorkerPrompt("Start {{TASK_ID}}.", task, "pi", "en");
+
+  assert.doesNotMatch(prompt, /full-history fork, omit agent_type/u);
 });
 
 test("worker prompt defines axis-scoped confirmation paths", () => {

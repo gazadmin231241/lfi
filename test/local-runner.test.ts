@@ -399,6 +399,7 @@ exit 97
   );
 
   const failingPath = join(tasks, "[READY] LFI-4 — failing.md");
+  const failingCodexCalls = join(root, "failing-codex-calls");
   await writeFile(
     failingPath,
     serializeTrackerDocument({
@@ -415,6 +416,7 @@ exit 97
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
+printf 'called\n' >> "${failingCodexCalls}"
 printf '%s\\n' '{"type":"item.started","item":{"type":"command_execution","command":"sed -n '\\''1,40p'\\'' failing.txt"}}'
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Could not complete the task."}}'
 printf '%s\\n' 'provider warning' >&2
@@ -444,6 +446,7 @@ ${codexCompletionEvent("incomplete", "blocked")}
   assert.match(failedTaskLog, /exit=0/u);
   assert.match(failedTaskLog, /status=incomplete/u);
   assert.match(failedTaskLog, /blocked/u);
+  assert.equal(await readFile(failingCodexCalls, "utf8"), "called\n");
   const failureOutput = failureTerminal.join("\n");
   assert.match(failureOutput, /Log: \.lfi\/logs\/LFI-4\.log/u);
   assert.doesNotMatch(failureOutput, /Diagnostics:/u);
