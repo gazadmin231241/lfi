@@ -31,22 +31,22 @@ and the Codex-specific metadata beside each skill is simply ignored by Pi.
 
 ## Acceptance criteria
 
-- [ ] A tier configured with a Pi agent runs its tasks on Pi end to end, through
+- [x] A tier configured with a Pi agent runs its tasks on Pi end to end, through
       to an accepted attempt.
-- [ ] The invocation is built as a pure function and tested without spawning a
+- [x] The invocation is built as a pure function and tested without spawning a
       process, including that the model value is passed through untouched.
-- [ ] Pi's event stream produces the same kinds of task-log detail and terminal
+- [x] Pi's event stream produces the same kinds of task-log detail and terminal
       output LFI produces for Codex.
-- [ ] Authentication, rate-limit and API errors reported by Pi on standard
+- [x] Authentication, rate-limit and API errors reported by Pi on standard
       output appear in the task summary.
-- [ ] The skill placeholder expands into Pi's invocation syntax, and the
+- [x] The skill placeholder expands into Pi's invocation syntax, and the
       mandatory implementation and review skills load.
-- [ ] Pi's reasoning vocabulary is enforced by configuration validation.
-- [ ] An unavailable model under Pi is recognised and skips other tasks mapped
+- [x] Pi's reasoning vocabulary is enforced by configuration validation.
+- [x] An unavailable model under Pi is recognised and skips other tasks mapped
       to that same agent-and-model pair only.
-- [ ] A mixed configuration — some tiers on Codex, some on Pi, merger on either
+- [x] A mixed configuration — some tiers on Codex, some on Pi, merger on either
       — completes a run with staging, integration and delivery unchanged.
-- [ ] Skill installation is untouched.
+- [x] Skill installation is untouched.
 
 ## Specification
 
