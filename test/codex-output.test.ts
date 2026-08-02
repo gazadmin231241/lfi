@@ -74,6 +74,94 @@ test("Codex provider recognises unavailable-model errors without spawning", () =
   );
 });
 
+test("Pi provider builds a JSON-stream invocation without spawning a process", () => {
+  const invocation = buildAgentInvocation({
+    agent: "pi",
+    cwd: "/worktree",
+    gitDirectory: "/repository/.git",
+    model: "openai/gpt-5.6:high",
+    reasoning: "xhigh",
+    prompt: completionInstruction,
+  });
+
+  assert.equal(invocation.command, "pi");
+  assert.deepEqual(invocation.args, [
+    "--mode",
+    "json",
+    "--no-session",
+    "--model",
+    "openai/gpt-5.6:high",
+    "--thinking",
+    "xhigh",
+  ]);
+  assert.equal(invocation.input, completionInstruction);
+});
+
+test("Pi provider expands skill placeholders and recognises unavailable models", () => {
+  assert.equal(
+    expandSkillPlaceholders("pi", "Use {{SKILL:implement}} then {{SKILL:code-review}}."),
+    "Use /skill:implement then /skill:code-review.",
+  );
+  assert.equal(
+    isUnavailableModelError("pi", "No model found matching openai/missing-model"),
+    true,
+  );
+});
+
+test("Pi provider streams event details and reports stdout API errors in its summary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-pi-output-"));
+  const bin = join(root, "bin");
+  const logs = join(root, "logs");
+  await mkdir(bin, { recursive: true });
+  const pi = join(bin, "pi");
+  await writeFile(
+    pi,
+    `#!/bin/sh
+cat >/dev/null
+printf '%s\\n' '{"type":"tool_execution_start","toolName":"bash","args":{"command":"pnpm test"}}'
+printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Проверяю Pi."}]}}'
+printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"Authentication failed: invalid API key","content":[]}}'
+exit 1
+`,
+  );
+  await chmod(pi, 0o755);
+
+  const originalPath = process.env.PATH;
+  const originalLog = console.log;
+  const terminal: string[] = [];
+  process.env.PATH = `${bin}:${originalPath ?? ""}`;
+  console.log = (...values: unknown[]) => {
+    terminal.push(values.join(" "));
+  };
+  try {
+    const result = await runAgent({
+      agent: "pi",
+      cwd: root,
+      prompt: completionInstruction,
+      model: "openai/gpt-test",
+      reasoning: "medium",
+      gitDirectory: root,
+      log: { directory: logs, startedAt: "2026-07-30T13:44:12.749Z", iteration: 1 },
+      logName: "LFI-2",
+      idleTimeoutMinutes: 1,
+      isolationProvider: "none",
+      prefix: "lfi-2",
+      language: "en",
+    });
+    assert.equal(result.status, undefined);
+    assert.match(result.summary, /Authentication failed: invalid API key/u);
+  } finally {
+    console.log = originalLog;
+    process.env.PATH = originalPath;
+  }
+
+  assert.deepEqual(terminal, ["[lfi-2] Проверяю Pi."]);
+  const taskLog = await readFile(join(logs, "LFI-2.log"), "utf8");
+  assert.match(taskLog, /\$ pnpm test/u);
+  assert.match(taskLog, /Проверяю Pi\./u);
+  assert.match(taskLog, /Authentication failed: invalid API key/u);
+});
+
 const waitForFileContent = async (
   path: string,
   pattern: RegExp,

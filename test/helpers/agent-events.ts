@@ -11,3 +11,18 @@ export const codexCompletionEvent = (
   codexAgentMessage(
     `<lfi:completion>\n${JSON.stringify({ status, summary })}\n</lfi:completion>`,
   );
+
+export const piCompletionEvent = (
+  status: "completed" | "incomplete",
+  summary: string,
+): string =>
+  `printf '%s\\n' '${JSON.stringify({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: `<lfi:completion>\n${JSON.stringify({ status, summary })}\n</lfi:completion>`,
+      }],
+    },
+  })}'`;

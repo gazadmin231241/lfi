@@ -15,12 +15,13 @@ import type { ExecutionTier } from "../src/execution-tier.js";
 import { serializeTrackerDocument } from "../src/local-tracker.js";
 import { runCommand } from "../src/process.js";
 import { runLfi } from "../src/runner.js";
-import { codexCompletionEvent } from "./helpers/agent-events.js";
+import { codexCompletionEvent, piCompletionEvent } from "./helpers/agent-events.js";
 
 const initializeRoutingRepository = async (options: {
   tasks: Array<{ id: number; tier?: ExecutionTier }>;
   config?: Partial<typeof DEFAULT_CONFIG>;
   codexScript: string;
+  piScript?: string;
 }): Promise<{ root: string; calls: string; tools: string }> => {
   const root = await mkdtemp(join(tmpdir(), "lfi-routing-"));
   const lfiRoot = join(root, ".lfi");
@@ -69,6 +70,13 @@ const initializeRoutingRepository = async (options: {
     options.codexScript.replaceAll("{{CALLS}}", calls),
   );
   await chmod(join(tools, "codex"), 0o755);
+  if (options.piScript) {
+    await writeFile(
+      join(tools, "pi"),
+      options.piScript.replaceAll("{{CALLS}}", calls),
+    );
+    await chmod(join(tools, "pi"), 0o755);
+  }
   for (const args of [
     ["init", "-b", "main"],
     ["config", "user.name", "LFI Test"],
@@ -260,6 +268,72 @@ ${codexCompletionEvent("completed", "implemented")}
   );
   assert.match(runLog, /LFI-2.+skipped/isu);
   assert.match(runLog, /Completed: LFI-3/u);
+});
+
+test("run accepts a Pi tier through staging, integration, and delivery", async () => {
+  const fixture = await initializeRoutingRepository({
+    tasks: [{ id: 1, tier: "standard" }],
+    config: { STANDARD_MODEL: "pi:openai/gpt-test" },
+    codexScript: "#!/bin/sh\nexit 1\n",
+    piScript: `#!/bin/sh
+cat >/dev/null
+printf 'implemented by Pi\\n' > implemented.txt
+git add --all
+git commit -m 'agent: implement Pi task'
+${piCompletionEvent("completed", "implemented by Pi")}
+`,
+  });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fixture.tools}:${originalPath ?? ""}`;
+  try {
+    assert.equal(await runLfi(fixture.root, "en"), 0);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  assert.equal(
+    (await runCommand("git", ["log", "-1", "--format=%s"], { cwd: fixture.root })).stdout.trim(),
+    "chore(lfi): complete LFI-1",
+  );
+  assert.equal(
+    await readFile(join(fixture.root, "implemented.txt"), "utf8"),
+    "implemented by Pi\n",
+  );
+});
+
+test("an unavailable Pi model does not skip the same model under Codex", async () => {
+  const fixture = await initializeRoutingRepository({
+    tasks: [{ id: 1, tier: "light" }, { id: 2, tier: "deep" }],
+    config: {
+      LIGHT_MODEL: "pi:shared-model",
+      DEEP_MODEL: "codex:shared-model",
+      MAX_STAGES: 1,
+    },
+    codexScript: `#!/bin/sh
+cat >/dev/null
+printf 'implemented by Codex\\n' > implemented.txt
+git add --all
+git commit -m 'agent: implement Codex task'
+${codexCompletionEvent("completed", "implemented by Codex")}
+`,
+    piScript: `#!/bin/sh
+cat >/dev/null
+printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"No model found matching shared-model","content":[]}}'
+exit 1
+`,
+  });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fixture.tools}:${originalPath ?? ""}`;
+  try {
+    assert.equal(await runLfi(fixture.root, "en"), 1);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  const runLog = await readFile(join(fixture.root, ".lfi", "logs", "run.log"), "utf8");
+  assert.match(runLog, /model shared-model for agent pi/u);
+  assert.match(runLog, /Completed: LFI-2/u);
+  assert.equal(await readFile(join(fixture.root, "implemented.txt"), "utf8"), "implemented by Codex\n");
 });
 
 test("retries preserve the assigned model and user reasoning", async () => {

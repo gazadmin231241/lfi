@@ -82,6 +82,10 @@ test("configuration reads agent prefixes, preserves model syntax, and rewrites d
     agent: "codex",
     model: "gpt-5.6:high",
   });
+  assert.deepEqual(parseAgentModel("pi:openai/gpt-5.6:high"), {
+    agent: "pi",
+    model: "openai/gpt-5.6:high",
+  });
   assert.deepEqual(
     resolveWorkerModel(
       parseEnvConfig("LIGHT_MODEL=codex:provider:model:thinking \n"),
@@ -105,6 +109,17 @@ test("configuration reads agent prefixes, preserves model syntax, and rewrites d
   assert.throws(
     () => parseEnvConfig("LIGHT_MODEL=unknown:model\n"),
     /Unknown agent.*unknown:model/u,
+  );
+});
+
+test("configuration rejects reasoning Pi does not accept", () => {
+  assert.throws(
+    () => parseEnvConfig("LIGHT_MODEL=pi:openai/gpt-test\nREASONING_EFFORT=ultra\n"),
+    /Agent pi cannot honour REASONING_EFFORT=ultra/u,
+  );
+  assert.equal(
+    parseEnvConfig("LIGHT_MODEL=pi:openai/gpt-test\nREASONING_EFFORT=xhigh\n").REASONING_EFFORT,
+    "xhigh",
   );
 });
 
