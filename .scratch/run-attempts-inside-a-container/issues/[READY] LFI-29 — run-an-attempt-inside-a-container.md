@@ -79,4 +79,4 @@ publishes, so nothing inside ever needed them.
 - [LFI-26 — Open the isolation boundary as a session](<[DONE] LFI-26 — open-the-isolation-boundary-as-a-session.md>)
 - [LFI-27 — Declare the agent profile](<[DONE] LFI-27 — declare-the-agent-profile.md>)
 - [LFI-28 — Build the worker image](<[DONE] LFI-28 — build-the-worker-image.md>)
-- [LFI-33 — Delivered work must not be attempted again](<../../[READY] LFI-33 — delivered-work-must-not-be-attempted-again.md>)
+- [LFI-33 — Delivered work must not be attempted again](<../../[DONE] LFI-33 — delivered-work-must-not-be-attempted-again.md>)

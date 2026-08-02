@@ -30,19 +30,19 @@ fast-forward that cannot lose anything is reconciliation, not judgment.
 
 ## Acceptance criteria
 
-- [ ] A fast-forward failure after successful delivery reports the task as
+- [x] A fast-forward failure after successful delivery reports the task as
       delivered, not incomplete, asserted at the integration seam.
-- [ ] A run refuses to start while the local default branch lacks commits
+- [x] A run refuses to start while the local default branch lacks commits
       already delivered to the remote default branch, and the refusal names the
       command that reconciles.
-- [ ] When the local default branch is strictly behind the delivered result and
+- [x] When the local default branch is strictly behind the delivered result and
       no local commits or conflicting changes stand in the way, the run
       fast-forwards it and says so in the log.
-- [ ] A genuinely diverged local branch is never rebased, reset, or merged by
+- [x] A genuinely diverged local branch is never rebased, reset, or merged by
       LFI; the refusal is the whole behaviour.
-- [ ] A task delivered to the remote is not offered as runnable by a subsequent
+- [x] A task delivered to the remote is not offered as runnable by a subsequent
       run, asserted against a tracker whose local copy still names it ready.
-- [ ] Existing integration tests pass unchanged for the paths where delivery
+- [x] Existing integration tests pass unchanged for the paths where delivery
       and fast-forward both succeed or both fail.
 
 ## Blocked by

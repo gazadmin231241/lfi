@@ -58,4 +58,4 @@ that cannot exist would look like a defect rather than a boundary of the design.
 
 ## Blocked by
 
-- [LFI-29 — Run an attempt inside a container](<[BLOCKED] LFI-29 — run-an-attempt-inside-a-container.md>)
+- [LFI-29 — Run an attempt inside a container](<[READY] LFI-29 — run-an-attempt-inside-a-container.md>)
