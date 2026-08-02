@@ -194,7 +194,7 @@ test("none isolation session returns commands unchanged", async () => {
   await session.close();
 });
 
-test("boundary declarations contain only the selected agent profile and shared skills", async () => {
+test("boundary declarations contain the selected agent profile and shared skills", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-isolation-declaration-"));
   const gitDirectory = join(root, "repository", ".git");
   const homeDirectory = join(root, "home", "agent");
@@ -207,33 +207,35 @@ test("boundary declarations contain only the selected agent profile and shared s
     writeFile(join(homeDirectory, ".git-credentials"), "code-host credential"),
     writeFile(join(homeDirectory, ".netrc"), "code-host credential"),
   ]);
-  const declaration = await resolveIsolationDeclaration({
-    agent: "pi",
-    worktree: "/workspace/task",
-    gitDirectory,
-    homeDirectory,
-    environment: command.environment,
-  }, join(gitDirectory, "safe-git-config"));
+  for (const agent of ["codex", "pi"] as const) {
+    const declaration = await resolveIsolationDeclaration({
+      agent,
+      worktree: "/workspace/task",
+      gitDirectory,
+      homeDirectory,
+      environment: command.environment,
+    }, join(gitDirectory, "safe-git-config"));
 
-  const profile = resolveAgentProfile("pi", homeDirectory);
-  assert.deepEqual(declaration.agentProfilePaths, profile.paths);
-  assert.equal(declaration.skillsDirectory, profile.skillsDirectory);
-  const boundaryPaths = [
-    ...declaration.agentProfilePaths,
-    declaration.skillsDirectory,
-  ];
-  for (const excluded of [
-    join(homeDirectory, ".pi/agent/sessions"),
-    join(homeDirectory, ".pi/agent/cache"),
-    join(homeDirectory, ".pi/agent/attachments"),
-    join(homeDirectory, ".pi/agent/browser"),
-    join(homeDirectory, ".pi/agent/models.json"),
-    join(homeDirectory, ".config/gh"),
-    join(homeDirectory, ".ssh"),
-    join(homeDirectory, ".git-credentials"),
-    join(homeDirectory, ".netrc"),
-  ]) {
-    assert.equal(boundaryPaths.includes(excluded), false);
+    const profile = resolveAgentProfile(agent, homeDirectory);
+    assert.deepEqual(declaration.agentProfilePaths, profile.paths);
+    assert.equal(declaration.skillsDirectory, profile.skillsDirectory);
+    const boundaryPaths = [
+      ...declaration.agentProfilePaths,
+      declaration.skillsDirectory,
+    ];
+    for (const excluded of [
+      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/history.jsonl`),
+      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/sessions`),
+      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/attachments`),
+      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/browser`),
+      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/cache`),
+      join(homeDirectory, ".config/gh"),
+      join(homeDirectory, ".ssh"),
+      join(homeDirectory, ".git-credentials"),
+      join(homeDirectory, ".netrc"),
+    ]) {
+      assert.equal(boundaryPaths.includes(excluded), false);
+    }
   }
   await rm(root, { recursive: true, force: true });
 });
