@@ -20,6 +20,14 @@ import { runDoctor } from "../src/doctor.js";
 import { configureTrackerContract } from "../src/local-setup.js";
 import { pruneExpiredRunLogs } from "../src/logs.js";
 import { runCommand } from "../src/process.js";
+import {
+  defaultMergePrompt,
+  defaultRemediationPrompt,
+  defaultReReviewPrompt,
+  defaultReviewPrompt,
+  defaultTaskPrompt,
+  loadPromptTemplates,
+} from "../src/prompts.js";
 
 test("config round-trips defaults", () => {
   const serialized = serializeEnvConfig(DEFAULT_CONFIG);
@@ -443,9 +451,23 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
   const gitignore = await readFile(join(root, ".gitignore"), "utf8");
   assert.match(gitignore, /^\.lfi\/\*$/mu);
   assert.doesNotMatch(gitignore, /!\.lfi\/tasks/u);
-  assert.match(
-    await readFile(join(root, ".lfi", "task-prompt.md"), "utf8"),
-    /Use \{\{SKILL:implement\}\}/u,
+  const defaultTemplates = {
+    "task.md": defaultTaskPrompt("en"),
+    "review.md": defaultReviewPrompt("en"),
+    "remediation.md": defaultRemediationPrompt("en"),
+    "re-review.md": defaultReReviewPrompt("en"),
+    "merge.md": defaultMergePrompt("en"),
+  };
+  for (const [filename, defaultTemplate] of Object.entries(defaultTemplates)) {
+    const template = await readFile(join(root, ".lfi", "prompts", filename), "utf8");
+    assert.equal(template, defaultTemplate);
+    assert.doesNotMatch(template, /<lfi:completion>|Findings file:/u);
+  }
+  const stock = await loadPromptTemplates(join(root, "missing-lfi"), "en");
+  const initialized = await loadPromptTemplates(join(root, ".lfi"), "en");
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(initialized).map(([phase, template]) => [phase, template.content])),
+    Object.fromEntries(Object.entries(stock).map(([phase, template]) => [phase, template.content])),
   );
   const workerDockerfile = await readFile(join(root, "Dockerfile.lfi"), "utf8");
   assert.match(workerDockerfile, /belongs to your project/u);
@@ -468,6 +490,41 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
   const agentInstructions = await readFile(join(root, "AGENTS.md"), "utf8");
   assert.match(agentInstructions, /LFI Local Markdown/u);
   assert.equal((agentInstructions.match(/lfi:agent-tracker:begin/gu) ?? []).length, 1);
+});
+
+test("init preserves customized prompt templates when it runs again", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-init-prompts-"));
+  const lfiRoot = join(root, ".lfi");
+  await mkdir(lfiRoot, { recursive: true });
+  await writeFile(join(lfiRoot, "config.env"), serializeEnvConfig(DEFAULT_CONFIG));
+  await mkdir(join(lfiRoot, "prompts"));
+  await writeFile(join(lfiRoot, "prompts", "review.md"), "Customized review.\n");
+
+  assert.equal(
+    await initializeProject({ cwd: root, language: "ru", retentionDays: 3, yes: true }),
+    "exists",
+  );
+
+  assert.equal(
+    await readFile(join(lfiRoot, "prompts", "review.md"), "utf8"),
+    "Customized review.\n",
+  );
+  assert.equal(
+    await readFile(join(lfiRoot, "prompts", "task.md"), "utf8"),
+    defaultTaskPrompt("ru"),
+  );
+  assert.equal(
+    await readFile(join(lfiRoot, "prompts", "remediation.md"), "utf8"),
+    defaultRemediationPrompt("ru"),
+  );
+  assert.equal(
+    await readFile(join(lfiRoot, "prompts", "re-review.md"), "utf8"),
+    defaultReReviewPrompt("ru"),
+  );
+  assert.equal(
+    await readFile(join(lfiRoot, "prompts", "merge.md"), "utf8"),
+    defaultMergePrompt("ru"),
+  );
 });
 
 test("tracker contract upgrades preserve text around the legacy marker", async () => {

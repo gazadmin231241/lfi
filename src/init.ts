@@ -17,7 +17,13 @@ import {
 import { detectCommands } from "./detect.js";
 import { repoInfo } from "./github.js";
 import type { Language } from "./i18n.js";
-import { defaultTaskPrompt } from "./prompts.js";
+import {
+  defaultMergePrompt,
+  defaultRemediationPrompt,
+  defaultReReviewPrompt,
+  defaultReviewPrompt,
+  defaultTaskPrompt,
+} from "./prompts.js";
 import { configureLocalTracker } from "./local-setup.js";
 import { scaffoldWorkerDockerfile } from "./worker-image.js";
 
@@ -42,6 +48,32 @@ const exists = async (path: string) =>
     () => true,
     () => false,
   );
+
+const writeDefaultPromptTemplates = async (
+  lfiRoot: string,
+  language: Language,
+): Promise<void> => {
+  const promptsDirectory = join(lfiRoot, "prompts");
+  await mkdir(promptsDirectory, { recursive: true });
+  const templates = [
+    ["task.md", defaultTaskPrompt(language)],
+    ["review.md", defaultReviewPrompt(language)],
+    ["remediation.md", defaultRemediationPrompt(language)],
+    ["re-review.md", defaultReReviewPrompt(language)],
+    ["merge.md", defaultMergePrompt(language)],
+  ] as const;
+  const legacyTaskPromptExists = await exists(join(lfiRoot, "task-prompt.md"));
+  await Promise.all(templates.map(async ([filename, content]) => {
+    if (filename === "task.md" && legacyTaskPromptExists) return;
+    try {
+      await writeFile(join(promptsDirectory, filename), content, { flag: "wx" });
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }));
+};
 
 const askRetention = async (language: Language): Promise<number> => {
   const input = createInterface({ input: process.stdin, output: process.stdout });
@@ -178,6 +210,7 @@ export const initializeProject = async (
   const lfiRoot = join(options.cwd, ".lfi");
   const configPath = join(lfiRoot, "config.env");
   if (await exists(configPath)) {
+    await writeDefaultPromptTemplates(lfiRoot, options.language);
     await configureLocalTracker(options.cwd, options.language);
     return "exists";
   }
@@ -277,11 +310,7 @@ export const initializeProject = async (
   ]);
   await saveConfig(configPath, config, options.language);
   await scaffoldWorkerDockerfile(options.cwd);
-  await writeFile(
-    join(lfiRoot, "task-prompt.md"),
-    defaultTaskPrompt(options.language),
-    { flag: "wx" },
-  );
+  await writeDefaultPromptTemplates(lfiRoot, options.language);
   await configureLocalTracker(options.cwd, options.language);
   return "created";
 };
