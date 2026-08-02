@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderWorkerPrompt } from "../src/prompts.js";
+import { mergerPrompt, renderWorkerPrompt } from "../src/prompts.js";
 import type { WorkItem } from "../src/runner-types.js";
 
 const task: WorkItem = {
@@ -35,6 +35,12 @@ test("English worker prompt bounds complete review and validation", () => {
   assert.match(prompt, /status "incomplete"/u);
   assert.match(prompt, /full repository validation after review remediation/u);
   assert.match(prompt, /Do not repeat an unchanged successful validation/u);
+  assert.match(
+    prompt,
+    /End your final response with this LFI completion block/u,
+  );
+  assert.match(prompt, /<lfi:completion>/u);
+  assert.match(prompt, /<\/lfi:completion>/u);
 });
 
 test("Russian worker prompt bounds complete review and validation", () => {
@@ -68,6 +74,28 @@ test("Russian worker prompt bounds complete review and validation", () => {
   assert.match(prompt, /статус "incomplete"/u);
   assert.match(prompt, /полную проверку репозитория после исправлений/u);
   assert.match(prompt, /Не повторяй неизменившуюся успешную проверку/u);
+  assert.match(
+    prompt,
+    /Заверши финальный ответ этим блоком завершения LFI/u,
+  );
+  assert.match(prompt, /<lfi:completion>/u);
+  assert.match(prompt, /<\/lfi:completion>/u);
+});
+
+test("English and Russian merger prompts require the completion block", () => {
+  const english = mergerPrompt("Resolve integration.", "en");
+  const russian = mergerPrompt("Разреши интеграцию.", "ru");
+
+  assert.match(english, /End your final response with this LFI completion block/u);
+  assert.match(english, /"status":"completed"/u);
+  assert.match(english, /status "incomplete"/u);
+  assert.match(russian, /Заверши финальный ответ этим блоком завершения LFI/u);
+  assert.match(russian, /"status":"completed"/u);
+  assert.match(russian, /статус "incomplete"/u);
+  for (const prompt of [english, russian]) {
+    assert.match(prompt, /<lfi:completion>/u);
+    assert.match(prompt, /<\/lfi:completion>/u);
+  }
 });
 
 test("worker prompt defines axis-scoped confirmation paths", () => {

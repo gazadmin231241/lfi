@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { evaluateWorkerResult } from "../src/worker-result.js";
 
-test("accepts a worker only after structured completion and a clean committed branch", () => {
+test("accepts a worker only after declared completion and a clean committed branch", () => {
   assert.equal(
     evaluateWorkerResult({
       processExitCode: 0,
@@ -17,6 +17,7 @@ test("accepts a worker only after structured completion and a clean committed br
   for (const candidate of [
     { processExitCode: 1, status: "completed" as const, commitsAhead: 2, worktreeClean: true },
     { processExitCode: 0, status: "incomplete" as const, commitsAhead: 2, worktreeClean: true },
+    { processExitCode: 0, status: undefined, commitsAhead: 2, worktreeClean: true },
     { processExitCode: 0, status: "completed" as const, commitsAhead: 0, worktreeClean: true },
     { processExitCode: 0, status: "completed" as const, commitsAhead: 2, worktreeClean: false },
   ]) {

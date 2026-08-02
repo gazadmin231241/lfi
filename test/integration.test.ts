@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG } from "../src/config.js";
 import { integrateAttempts } from "../src/integration.js";
 import { runCommand } from "../src/process.js";
 import { mergeWithAgent } from "../src/runner-support.js";
+import { codexCompletionEvent } from "./helpers/agent-events.js";
 
 const conflictedRepository = async (
   codexBody: string,
@@ -17,7 +18,10 @@ const conflictedRepository = async (
   const tools = join(root, "tools");
   const logs = join(root, "logs");
   await mkdir(tools);
-  await writeFile(join(tools, "codex"), `#!/bin/sh\n${codexBody}\n`);
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh\n${codexBody}\n${codexCompletionEvent("completed", "resolved")}\n`,
+  );
   await chmod(join(tools, "codex"), 0o755);
   const git = async (...args: string[]) => {
     const result = await runCommand("git", args, { cwd: root });
@@ -112,7 +116,7 @@ test("successful merge repair is committed by the LFI host", async () => {
 });
 
 test("merge repair cannot commit unresolved conflicts", async () => {
-  const fixture = await conflictedRepository("exit 0");
+  const fixture = await conflictedRepository(":");
   await assert.rejects(
     repairWithFakeCodex(fixture, "merge-unresolved"),
     /Merger did not resolve conflict\.txt/u,
@@ -131,7 +135,7 @@ test("merge repair cannot commit unresolved conflicts", async () => {
 });
 
 test("merge repair cannot commit an unchanged markerless conflict", async () => {
-  const fixture = await conflictedRepository("exit 0", "modify-delete");
+  const fixture = await conflictedRepository(":", "modify-delete");
 
   await assert.rejects(
     repairWithFakeCodex(fixture, "merge-markerless"),

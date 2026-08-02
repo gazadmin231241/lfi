@@ -32,7 +32,8 @@ implementation of local Markdown tasks with Codex.
    `incomplete`. The planned repository-wide validation runs once on the final
    review-adjusted code.
 8. A worker result is accepted only when Codex exits successfully and emits the
-   required structured `completed` status. The Codex `workspace-write` sandbox
+   required tagged completion block with `completed` status. The Codex
+   `workspace-write` sandbox
    keeps Git metadata read-only, so the LFI host stages and commits successful
    worker changes. Acceptance then requires commits ahead of the base and a
    clean worktree.

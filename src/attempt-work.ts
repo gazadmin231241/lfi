@@ -80,6 +80,7 @@ export const attemptWork = async (options: {
       logName,
       idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
       prefix: key,
+      language: options.language,
     });
     if (agent.exitCode === 0 && agent.status === "completed") {
       await commitWorktreeChanges(

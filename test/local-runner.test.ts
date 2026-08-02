@@ -19,6 +19,7 @@ import {
 } from "../src/local-tracker.js";
 import { dryRun, runLfi } from "../src/runner.js";
 import { runCommand } from "../src/process.js";
+import { codexCompletionEvent } from "./helpers/agent-events.js";
 
 const addOrigin = async (
   git: (...args: string[]) => Promise<void>,
@@ -117,18 +118,10 @@ test("local run does not repeat accepted work after integration fails", async ()
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
 cat >/dev/null
 printf 'called\\n' >> "${codexCalls}"
 printf 'implemented\\n' > implemented.txt
-printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
+${codexCompletionEvent("completed", "implemented")}
 `,
   );
   await chmod(join(tools, "codex"), 0o755);
@@ -201,17 +194,9 @@ test("local task run commits worker changes, pushes code, and completes the task
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
 printf 'implemented\\n' > implemented.txt
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Implementation is ready."}}'
-printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
+${codexCompletionEvent("completed", "implemented")}
 `,
   );
   await writeFile(
@@ -405,18 +390,10 @@ exit 97
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
 printf '%s\\n' '{"type":"item.started","item":{"type":"command_execution","command":"sed -n '\\''1,40p'\\'' failing.txt"}}'
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Could not complete the task."}}'
 printf '%s\\n' 'provider warning' >&2
-printf '%s\\n' '{"status":"incomplete","summary":"blocked"}' > "$output"
+${codexCompletionEvent("incomplete", "blocked")}
 `,
   );
   await chmod(join(tools, "codex"), 0o755);
@@ -474,17 +451,9 @@ printf '%s\\n' '{"status":"incomplete","summary":"blocked"}' > "$output"
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
 printf 'called\\n' >> "${validationCodexCalls}"
 printf 'validation failure\\n' > validation-failure.txt
-printf '%s\\n' '{"status":"completed","summary":"implemented"}' > "$output"
+${codexCompletionEvent("completed", "implemented")}
 `,
   );
   await chmod(join(tools, "codex"), 0o755);

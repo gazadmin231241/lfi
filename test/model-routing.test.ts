@@ -15,6 +15,7 @@ import type { ExecutionTier } from "../src/execution-tier.js";
 import { serializeTrackerDocument } from "../src/local-tracker.js";
 import { runCommand } from "../src/process.js";
 import { runLfi } from "../src/runner.js";
+import { codexCompletionEvent } from "./helpers/agent-events.js";
 
 const initializeRoutingRepository = async (options: {
   tasks: Array<{ id: number; tier?: ExecutionTier }>;
@@ -105,14 +106,10 @@ test("run routes task tiers to models while preserving configured reasoning", as
       CODEX_REASONING_EFFORT: "low",
     },
     codexScript: `#!/bin/sh
-output=""
 model=""
 printf '%s\\n' "$*" >> "{{CALLS}}"
 while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  elif [ "$1" = "--model" ]; then
+  if [ "$1" = "--model" ]; then
     shift
     model="$1"
   fi
@@ -121,7 +118,7 @@ done
 cat >/dev/null
 printf '%s\\n' "$model" >> "{{CALLS}}"
 printf 'implemented\\n' > "implemented-$(basename "$PWD").txt"
-printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
+${codexCompletionEvent("completed", "implemented")}
 `,
   });
   const originalPath = process.env.PATH;
@@ -173,14 +170,6 @@ test("run starts repeated-model tasks up to the configured parallel limit", asyn
       STANDARD_MODEL: "terra",
     },
     codexScript: `#!/bin/sh
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
 cat >/dev/null
 printf 'started\n' >> "{{CALLS}}"
 attempt=0
@@ -189,11 +178,11 @@ while [ "$(wc -l < "{{CALLS}}")" -lt 3 ] && [ "$attempt" -lt 20 ]; do
   attempt=$((attempt + 1))
 done
 if [ "$(wc -l < "{{CALLS}}")" -lt 3 ]; then
-  printf '{"status":"incomplete","summary":"parallel worker did not start"}\n' > "$output"
+  ${codexCompletionEvent("incomplete", "parallel worker did not start")}
   exit 0
 fi
 printf 'implemented\n' > "implemented-$(basename "$PWD").txt"
-printf '{"status":"completed","summary":"implemented"}\n' > "$output"
+${codexCompletionEvent("completed", "implemented")}
 `,
   });
   const originalPath = process.env.PATH;
@@ -221,13 +210,9 @@ test("run reports an unavailable model and continues other tiers", async () => {
       MAX_STAGES: 3,
     },
     codexScript: `#!/bin/sh
-output=""
 model=""
 while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  elif [ "$1" = "--model" ]; then
+  if [ "$1" = "--model" ]; then
     shift
     model="$1"
   fi
@@ -240,7 +225,7 @@ if [ "$model" = "luna-unavailable" ]; then
   exit 1
 fi
 printf 'implemented\\n' > "implemented-$(basename "$PWD").txt"
-printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
+${codexCompletionEvent("completed", "implemented")}
 `,
   });
   const originalPath = process.env.PATH;
@@ -279,22 +264,14 @@ test("retries preserve the assigned model and user reasoning", async () => {
       MAX_STAGES: 2,
     },
     codexScript: `#!/bin/sh
-output=""
 printf '%s\\n' "$*" >> "{{CALLS}}"
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
 cat >/dev/null
 if [ "$(wc -l < "{{CALLS}}")" -eq 1 ]; then
-  printf '{"status":"incomplete","summary":"retry"}\\n' > "$output"
+  ${codexCompletionEvent("incomplete", "retry")}
   exit 0
 fi
 printf 'implemented\\n' > implemented-after-retry.txt
-printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
+${codexCompletionEvent("completed", "implemented")}
 `,
   });
   const originalPath = process.env.PATH;
@@ -322,13 +299,9 @@ test("Russian run logs missing tiers and unavailable configured models", async (
       MAX_STAGES: 1,
     },
     codexScript: `#!/bin/sh
-output=""
 model=""
 while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  elif [ "$1" = "--model" ]; then
+  if [ "$1" = "--model" ]; then
     shift
     model="$1"
   fi
@@ -341,7 +314,7 @@ if [ "$model" = "luna-unavailable" ]; then
   exit 1
 fi
 printf 'implemented\\n' > "implemented-$(basename "$PWD").txt"
-printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
+${codexCompletionEvent("completed", "implemented")}
 `,
   });
   const originalPath = process.env.PATH;
@@ -365,4 +338,5 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
     runLog,
     /модель luna-unavailable, настроенная маршрутизацией уровня light, недоступна/u,
   );
+  assert.match(runLog, /В выводе агента отсутствует блок завершения LFI/u);
 });

@@ -1,5 +1,22 @@
+import {
+  completionBlockClose,
+  completionBlockOpen,
+} from "./completion-result.js";
 import type { Language } from "./i18n.js";
 import type { WorkItem } from "./runner-types.js";
+
+const completionContractCopy: Record<Language, string> = {
+  en: `End your final response with this LFI completion block, using exactly these tags and a JSON object with exactly the two fields shown:
+${completionBlockOpen}
+{"status":"completed","summary":"Briefly describe the completed work."}
+${completionBlockClose}
+Use status "incomplete" and explain what remains in the summary when the task is not fully complete.`,
+  ru: `Заверши финальный ответ этим блоком завершения LFI, используя в точности эти теги и JSON-объект ровно с двумя показанными полями:
+${completionBlockOpen}
+{"status":"completed","summary":"Кратко опиши выполненную работу."}
+${completionBlockClose}
+Если задача завершена не полностью, используй статус "incomplete" и объясни в summary, что осталось сделать.`,
+};
 
 export const defaultTaskPrompt = (language: "en" | "ru"): string =>
   language === "ru"
@@ -107,8 +124,8 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Не запускай git add или git commit. Sandbox Codex намеренно защищает Git metadata; после успешного ответа host-процесс LFI сам добавит изменения и создаст commit.",
   },
   {
-    en: 'Your final response must conform to the output schema. Use status "completed" only when the entire task is implemented, reviewed, and tested. Otherwise use "incomplete" and explain the remaining work.',
-    ru: 'Финальный ответ должен соответствовать output schema. Используй статус "completed", только если задача полностью реализована, прошла ревью и тесты. Иначе используй "incomplete" и объясни, что осталось сделать.',
+    en: completionContractCopy.en,
+    ru: completionContractCopy.ru,
   },
 ];
 
@@ -127,13 +144,49 @@ const workerConstraints = (
 
 export const mergerPrompt = (
   context: string,
-): string => `Resolve the current integration problem in this worktree.
+  language: Language = "en",
+  allowedPaths?: readonly string[],
+): string => {
+  const scope = allowedPaths
+    ? language === "ru"
+      ? `
+Область исправления проверки:
+${allowedPaths.map((path) => `- ${path}`).join("\n")}
 
-Use $resolving-merge-conflicts when a merge is in progress.
-Read the relevant task bodies and commit history, preserve both intents, and run the configured validation.
-Do not run git add or git commit; the LFI host commits a successful resolution because the Codex sandbox protects Git metadata.
-Never abort the merge, deploy, use SSH, force-push, or touch production.
+Не изменяй пути вне этого списка.
+`
+      : `
+Validation repair scope:
+${allowedPaths.map((path) => `- ${path}`).join("\n")}
+
+Do not modify paths outside this list.
+`
+    : "";
+  if (language === "ru") {
+    return `Разреши текущую проблему интеграции в этом worktree.
+
+Используй $resolving-merge-conflicts, когда выполняется merge. Сохрани оба
+намерения, запусти проверку и никогда не прерывай merge, не выполняй deploy,
+не используй SSH, не делай force-push и не затрагивай production. Не запускай
+git add или git commit: host-процесс LFI зафиксирует успешное разрешение,
+поскольку sandbox Codex защищает Git metadata.
+
+Контекст:
+${context}
+${scope}
+${completionContractCopy.ru}
+`;
+  }
+  return `Resolve the current integration problem in this worktree.
+
+Use $resolving-merge-conflicts when a merge is in progress. Preserve both
+intents, run validation, and never abort the merge, deploy, use SSH, force-push,
+or touch production. Do not run git add or git commit; the LFI host commits a
+successful resolution because the Codex sandbox protects Git metadata.
 
 Context:
 ${context}
+${scope}
+${completionContractCopy.en}
 `;
+};
