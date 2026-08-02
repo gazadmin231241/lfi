@@ -31,4 +31,4 @@ and no worktree, agent session, or tracker state is touched.
 
 ## Blocked by
 
-- [LFI-41 — Serve every phase prompt from an editable template](<[READY] LFI-41 — serve-every-phase-prompt-from-an-editable-template.md>)
+- [LFI-41 — Serve every phase prompt from an editable template](<[DONE] LFI-41 — serve-every-phase-prompt-from-an-editable-template.md>)

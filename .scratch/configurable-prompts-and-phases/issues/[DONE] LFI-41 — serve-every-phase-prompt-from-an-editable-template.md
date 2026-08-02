@@ -30,18 +30,18 @@ phase that runs.
 
 ## Acceptance criteria
 
-- [ ] A custom template for each of the five phases replaces the built-in
+- [x] A custom template for each of the five phases replaces the built-in
       wording of that phase's prompt.
-- [ ] An end-to-end attempt with a fake agent shows a customized review
+- [x] An end-to-end attempt with a fake agent shows a customized review
       template reaching the review agent's prompt.
-- [ ] With no prompts directory, every phase behaves exactly as today,
+- [x] With no prompts directory, every phase behaves exactly as today,
       including the legacy task prompt file being honoured.
-- [ ] Protocol blocks appear in every phase prompt even when the custom
+- [x] Protocol blocks appear in every phase prompt even when the custom
       template omits them, and the built-in defaults no longer duplicate
       them inside the editable portion.
-- [ ] Phase-scoped placeholders substitute correctly, and the skill
+- [x] Phase-scoped placeholders substitute correctly, and the skill
       placeholder expands per agent provider in every template.
-- [ ] The run log states, per phase, whether a custom or built-in template
+- [x] The run log states, per phase, whether a custom or built-in template
       was used.
 
 ## Specification

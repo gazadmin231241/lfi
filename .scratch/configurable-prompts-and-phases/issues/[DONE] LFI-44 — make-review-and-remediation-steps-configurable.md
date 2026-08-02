@@ -21,15 +21,15 @@ the phase); merge and delivery remain non-configurable.
 
 ## Acceptance criteria
 
-- [ ] With the review switch off, an end-to-end attempt with a fake agent
+- [x] With the review switch off, an end-to-end attempt with a fake agent
       runs execute and validation only; no review, remediation, or re-review
       session starts.
-- [ ] With remediation rounds set to zero, a blocking review ends the attempt
+- [x] With remediation rounds set to zero, a blocking review ends the attempt
       not accepted with the worktree preserved and no remediation session.
-- [ ] Defaults preserve today's behaviour: review on, one remediation round.
-- [ ] Invalid values for either setting fail configuration validation with a
+- [x] Defaults preserve today's behaviour: review on, one remediation round.
+- [x] Invalid values for either setting fail configuration validation with a
       message naming the setting.
-- [ ] The generated configuration file documents both settings in reading
+- [x] The generated configuration file documents both settings in reading
       order alongside the existing execution settings.
 
 ## Specification
