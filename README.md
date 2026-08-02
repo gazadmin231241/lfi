@@ -111,14 +111,75 @@ editable in `.lfi/config.env`, including:
 - parallel workers and stage count
 - default branch
 - validation and worktree setup commands
+- whether the review phase runs and the maximum remediation rounds
 - inactivity timeout
 - isolation provider (`local` by default, or explicit `none` for a disposable environment)
 
 Use `lfi init --advanced` to edit those values interactively during setup.
 
-`.lfi/task-prompt.md` is the user-editable worker prompt. Personal skills in
-`~/.agents/skills` are referenced through agent-specific invocation syntax at
-runtime, so the same prompt template works with Codex and Pi.
+### Prompt templates
+
+`lfi init` creates `.lfi/prompts/` with one plain Markdown template per fixed
+phase:
+
+| File | Phase placeholders |
+| --- | --- |
+| `task.md` | `{{TASK_ID}}`, `{{ISSUE_URL}}`, `{{ISSUE_NUMBER}}`, `{{ISSUE_TITLE}}` |
+| `review.md` | `{{BASE_REF}}`, `{{FINDINGS_FILE}}` |
+| `remediation.md` | `{{FINDINGS}}` |
+| `re-review.md` | `{{BASE_REF}}`, `{{FINDINGS_FILE}}`, `{{FINDINGS}}` |
+| `merge.md` | `{{INTEGRATION_CONTEXT}}`, `{{ALLOWED_PATHS}}` |
+
+`{{SKILL:name}}` is also valid in every template. It is expanded to the
+provider-specific skill syntax at runtime, so templates remain portable
+between Codex and Pi. Other placeholders are invalid for that phase.
+
+For each phase, LFI resolves templates in this order:
+
+1. `.lfi/prompts/<phase>.md`;
+2. for the task phase only, the legacy `.lfi/task-prompt.md`;
+3. the built-in default for the configured language.
+
+Removing a phase file restores the built-in behaviour. Initialization never
+overwrites an existing template (and preserves the legacy task prompt), so
+local edits survive repeated `lfi init` runs.
+
+Run logs name the resolved source for every phase that runs: the custom file,
+the legacy task file, or the built-in default.
+
+Templates control editable guidance only. The runner appends non-editable
+protocol outside every template: the LFI completion block for all phases; the
+findings-file path, exact JSON findings contract, and no-worktree-changes/no-
+commit rule for review and re-review; and the no-stage/no-commit rule for
+remediation and merge. The task prompt also receives the runner-owned LFI
+safety constraint list. These blocks cannot be changed by editing a template.
+
+LFI validates all resolved templates before starting any agent. A custom or
+legacy template that is empty or whitespace-only, uses an unknown or
+phase-inappropriate placeholder, or directly references an installed skill
+with `$skill` instead of `{{SKILL:skill}}` fails fast. Built-in defaults are
+always available when files are absent.
+
+### Step settings
+
+The following settings are in `.lfi/config.env`:
+
+- `REVIEW_ENABLED=true` by default. Set it to `false` to skip review,
+  remediation, and re-review; implementation, validation, merge, and delivery
+  are unaffected.
+- `MAX_REMEDIATION_ROUNDS=1` by default. It must be a safe integer greater
+  than or equal to zero. Zero stops after the first blocking review; a positive
+  value permits that many remediation attempts, with one targeted re-review
+  after each attempt.
+- `VALIDATE_COMMAND` defaults to empty. An empty command disables the validation
+  phase; otherwise its command is run at the existing validation gates. This
+  switch is independent of `REVIEW_ENABLED`: disabling review does not disable
+  validation. A normal `lfi run` requires a validation command before agents
+  start.
+
+`REVIEW_ENABLED` must be exactly `true` or `false`. Invalid values, negative or
+fractional remediation rounds, and other invalid configuration values are
+reported before agents start.
 
 ## Safety and completion
 
