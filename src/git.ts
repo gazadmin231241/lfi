@@ -108,30 +108,6 @@ export const createIntegrationWorktree = async (options: {
 export const worktreeClean = async (cwd: string): Promise<boolean> =>
   (await git(cwd, ["status", "--porcelain"])).stdout.trim() === "";
 
-export const commitWorktreeChanges = async (
-  cwd: string,
-  message: string,
-): Promise<void> => {
-  if (await worktreeClean(cwd)) return;
-  const unmerged = (
-    await git(cwd, ["diff", "--name-only", "--diff-filter=U"])
-  ).stdout.trim();
-  if (unmerged) {
-    throw new Error(
-      `Unresolved merge conflicts remain / Остались неразрешённые конфликты слияния:\n${unmerged}`,
-    );
-  }
-  await git(cwd, ["add", "--all"]);
-  const stagedCheck = await gitResult(cwd, ["diff", "--cached", "--check"]);
-  const stagedDiagnostics = `${stagedCheck.stdout}${stagedCheck.stderr}`;
-  if (stagedDiagnostics.includes("leftover conflict marker")) {
-    throw new Error(
-      `Unresolved merge conflict markers remain / Остались маркеры неразрешённых конфликтов слияния:\n${stagedDiagnostics.trim()}`,
-    );
-  }
-  await git(cwd, ["commit", "-m", message]);
-};
-
 export const commitsAhead = async (
   cwd: string,
   baseRef: string,

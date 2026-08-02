@@ -121,6 +121,7 @@ printf '%s\\n' 'failed to refresh available models' >&2
       },
       logName: "LFI-2",
       idleTimeoutMinutes: 1,
+      isolationProvider: "none",
       prefix: "lfi-2",
       language: "en",
     });
@@ -192,6 +193,7 @@ test("runAgent rejects a prompt missing the completion contract before starting 
         },
         logName: "LFI-2",
         idleTimeoutMinutes: 1,
+        isolationProvider: "none",
         prefix: "lfi-2",
         language: "en",
       }),

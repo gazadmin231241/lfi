@@ -41,6 +41,8 @@ test("English worker prompt bounds complete review and validation", () => {
   );
   assert.match(prompt, /<lfi:completion>/u);
   assert.match(prompt, /<\/lfi:completion>/u);
+  assert.match(prompt, /stage and commit/u);
+  assert.doesNotMatch(prompt, /Do not run git add or git commit/u);
 });
 
 test("Russian worker prompt bounds complete review and validation", () => {
@@ -96,6 +98,13 @@ test("English and Russian merger prompts require the completion block", () => {
     assert.match(prompt, /<lfi:completion>/u);
     assert.match(prompt, /<\/lfi:completion>/u);
   }
+});
+
+test("Russian worker prompt requires the agent-created commit", () => {
+  const prompt = renderWorkerPrompt("Начни {{TASK_ID}}.", task, "ru");
+
+  assert.match(prompt, /добавь изменения в индекс и создай commit/u);
+  assert.doesNotMatch(prompt, /Не запускай git add или git commit/u);
 });
 
 test("worker prompt defines axis-scoped confirmation paths", () => {

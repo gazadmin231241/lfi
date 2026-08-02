@@ -38,6 +38,7 @@ const initializeRoutingRepository = async (options: {
     join(lfiRoot, "config.env"),
     serializeEnvConfig({
       ...DEFAULT_CONFIG,
+      ISOLATION_PROVIDER: "none",
       MAX_PARALLEL: 3,
       MAX_STAGES: 1,
       VALIDATE_COMMAND: "true",
@@ -118,6 +119,8 @@ done
 cat >/dev/null
 printf '%s\\n' "$model" >> "{{CALLS}}"
 printf 'implemented\\n' > "implemented-$(basename "$PWD").txt"
+git add --all
+git commit -m 'agent: implement routed task'
 ${codexCompletionEvent("completed", "implemented")}
 `,
   });
@@ -182,6 +185,8 @@ if [ "$(wc -l < "{{CALLS}}")" -lt 3 ]; then
   exit 0
 fi
 printf 'implemented\n' > "implemented-$(basename "$PWD").txt"
+git add --all
+git commit -m 'agent: implement parallel task'
 ${codexCompletionEvent("completed", "implemented")}
 `,
   });
@@ -225,6 +230,8 @@ if [ "$model" = "luna-unavailable" ]; then
   exit 1
 fi
 printf 'implemented\\n' > "implemented-$(basename "$PWD").txt"
+git add --all
+git commit -m 'agent: implement available model task'
 ${codexCompletionEvent("completed", "implemented")}
 `,
   });
@@ -271,6 +278,8 @@ if [ "$(wc -l < "{{CALLS}}")" -eq 1 ]; then
   exit 0
 fi
 printf 'implemented\\n' > implemented-after-retry.txt
+git add --all
+git commit -m 'agent: implement retried task'
 ${codexCompletionEvent("completed", "implemented")}
 `,
   });
@@ -314,6 +323,8 @@ if [ "$model" = "luna-unavailable" ]; then
   exit 1
 fi
 printf 'implemented\\n' > "implemented-$(basename "$PWD").txt"
+git add --all
+git commit -m 'agent: implement Russian routed task'
 ${codexCompletionEvent("completed", "implemented")}
 `,
   });

@@ -31,8 +31,21 @@ test("config round-trips defaults", () => {
   assert.equal(parsed.MAX_PARALLEL, 3);
   assert.equal(parsed.MAX_STAGES, 10);
   assert.equal(parsed.LOG_RETENTION_DAYS, 3);
+  assert.equal(parsed.ISOLATION_PROVIDER, "local");
   assert.equal("TASK_SOURCE" in parsed, false);
   assert.equal("GITHUB_REPO" in parsed, false);
+});
+
+test("isolation defaults to local and supports an explicit opt-out", () => {
+  assert.equal(parseEnvConfig("").ISOLATION_PROVIDER, "local");
+  assert.equal(
+    parseEnvConfig("ISOLATION_PROVIDER=none\n").ISOLATION_PROVIDER,
+    "none",
+  );
+  assert.throws(
+    () => parseEnvConfig("ISOLATION_PROVIDER=container\n"),
+    /ISOLATION_PROVIDER/u,
+  );
 });
 
 test("execution tiers resolve worker and integration agent-model pairs without changing reasoning", () => {

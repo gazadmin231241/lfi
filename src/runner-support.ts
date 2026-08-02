@@ -5,7 +5,7 @@ import {
   resolveIntegrationModel,
   type LfiConfig,
 } from "./config.js";
-import { commitWorktreeChanges, git, gitResult } from "./git.js";
+import { git, gitResult } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import {
@@ -13,8 +13,8 @@ import {
   redactSensitiveText,
   type RunLogContext,
 } from "./logs.js";
-import { runShell } from "./process.js";
 import { mergerPrompt } from "./prompts.js";
+import { runShell } from "./process.js";
 
 export const checkpointTracker = async (
   cwd: string,
@@ -39,6 +39,7 @@ export const mergeWithAgent = async (options: {
   language: Language;
   allowedPaths?: readonly string[];
 }): Promise<void> => {
+  const startingHead = (await git(options.cwd, ["rev-parse", "HEAD"])).stdout.trim();
   const unmerged = (
     await git(options.cwd, [
       "diff",
@@ -76,13 +77,19 @@ export const mergeWithAgent = async (options: {
     log: options.log,
     logName: options.logName,
     idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+    isolationProvider: options.config.ISOLATION_PROVIDER,
     prefix: "merge",
     language: options.language,
   });
   if (result.exitCode === 0 && result.status === "completed") {
     if (options.allowedPaths) {
       const [tracked, untracked] = await Promise.all([
-        git(options.cwd, ["diff", "--name-only", "-z", "HEAD"]),
+        git(options.cwd, [
+          "diff",
+          "--name-only",
+          "-z",
+          `${startingHead}..HEAD`,
+        ]),
         git(options.cwd, [
           "ls-files",
           "--others",
@@ -124,15 +131,16 @@ export const mergeWithAgent = async (options: {
         );
       }
     }
-    if (unmerged.length > 0) await git(options.cwd, ["add", "--all"]);
-    await commitWorktreeChanges(
-      options.cwd,
-      "chore(lfi): resolve integration",
-    );
   }
+  const endingHead = (await git(options.cwd, ["rev-parse", "HEAD"])).stdout.trim();
   const clean =
     (await git(options.cwd, ["status", "--porcelain"])).stdout.trim() === "";
-  if (result.exitCode !== 0 || result.status !== "completed" || !clean) {
+  if (
+    result.exitCode !== 0 ||
+    result.status !== "completed" ||
+    startingHead === endingHead ||
+    !clean
+  ) {
     throw new Error(
       localize(
         options.language,

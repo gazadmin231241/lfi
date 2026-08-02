@@ -8,6 +8,7 @@ import { createInterface } from "node:readline/promises";
 
 import {
   DEFAULT_CONFIG,
+  isIsolationProvider,
   isReasoningEffort,
   saveConfig,
   type LfiConfig,
@@ -84,12 +85,25 @@ const askAdvanced = async (
     label("Merger reasoning", "Уровень рассуждений при слиянии"),
     config.MERGER_REASONING_EFFORT,
   );
+  const isolationProvider = await ask(
+    label("Isolation provider", "Провайдер изоляции"),
+    config.ISOLATION_PROVIDER,
+  );
   if (!isReasoningEffort(codexReasoning) || !isReasoningEffort(mergerReasoning)) {
     input.close();
     throw new Error(
       label(
         "Unsupported reasoning effort.",
         "Указан неподдерживаемый уровень рассуждений.",
+      ),
+    );
+  }
+  if (!isIsolationProvider(isolationProvider)) {
+    input.close();
+    throw new Error(
+      label(
+        "Isolation provider must be local or none.",
+        "Провайдер изоляции должен иметь значение local или none.",
       ),
     );
   }
@@ -138,6 +152,7 @@ const askAdvanced = async (
       label("Worktree setup command", "Команда подготовки worktree"),
       config.WORKTREE_SETUP_COMMAND,
     ),
+    ISOLATION_PROVIDER: isolationProvider,
   };
   input.close();
   return result;

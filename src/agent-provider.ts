@@ -1,4 +1,5 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -9,11 +10,17 @@ import {
 import type { ReasoningEffort } from "./config.js";
 import { localize, type Language } from "./i18n.js";
 import {
+  resolveIsolationConfiguration,
+  sanitizeAgentEnvironment,
+  wrapWithIsolation,
+  type IsolationProvider,
+} from "./isolation-provider.js";
+import {
   formatRunLogSection,
   redactSensitiveText,
   type RunLogContext,
 } from "./logs.js";
-import { runCommand } from "./process.js";
+import { runCommand, runCommandLines } from "./process.js";
 
 export type AgentProvider = "codex";
 export const defaultAgentProvider: AgentProvider = "codex";
@@ -137,6 +144,7 @@ export const runAgent = async (options: {
   log: RunLogContext;
   logName: string;
   idleTimeoutMinutes: number;
+  isolationProvider: IsolationProvider;
   prefix: string;
   language: Language;
 }): Promise<AgentRunResult> => {
@@ -152,6 +160,8 @@ export const runAgent = async (options: {
   }
   await mkdir(options.log.directory, { recursive: true });
   const compactPath = join(options.log.directory, `${options.logName}.log`);
+  const artifacts = await mkdtemp(join(options.gitDirectory, "lfi-agent-"));
+  const sanitizedGitConfig = join(artifacts, "safe-git-config");
   await appendFile(
     compactPath,
     formatRunLogSection(
@@ -160,7 +170,6 @@ export const runAgent = async (options: {
       "",
     ),
   );
-  let lineBuffer = "";
   const agentMessages: string[] = [];
   let logWrites = Promise.resolve();
   const appendDetail = (content: string): void => {
@@ -180,24 +189,52 @@ export const runAgent = async (options: {
     appendDetail(`${text}\n`);
   };
   try {
-    const invocation = buildAgentInvocation({
+    await writeFile(sanitizedGitConfig, "");
+    const agentInvocation = buildAgentInvocation({
       ...options,
     });
-    const result = await runCommand(invocation.command, invocation.args, {
+    const isolation = await resolveIsolationConfiguration({
+      provider: options.isolationProvider,
+      worktree: options.cwd,
+      gitDirectory: options.gitDirectory,
+      homeDirectory: homedir(),
+      sanitizedGitConfig,
+    });
+    const identity =
+      options.isolationProvider === "none"
+        ? {}
+        : await Promise.all([
+            runCommand("git", ["config", "--get", "user.name"], {
+              cwd: options.cwd,
+            }),
+            runCommand("git", ["config", "--get", "user.email"], {
+              cwd: options.cwd,
+            }),
+          ]).then(([name, email]) => ({
+            ...(name.exitCode === 0 ? { name: name.stdout.trim() } : {}),
+            ...(email.exitCode === 0 ? { email: email.stdout.trim() } : {}),
+          }));
+    const invocation = wrapWithIsolation(
+      {
+        ...agentInvocation,
+        idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
+        onStdoutLine: recordEvent,
+        onStderrLine: (line) => appendDetail(`${line}\n`),
+        environment:
+          options.isolationProvider === "none"
+            ? process.env
+            : sanitizeAgentEnvironment(process.env, identity),
+      },
+      isolation,
+    );
+    const result = await runCommandLines(invocation.command, invocation.args, {
       cwd: options.cwd,
       input: invocation.input,
-      idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
-      onStdout: (chunk) => {
-        lineBuffer += chunk;
-        const lines = lineBuffer.split("\n");
-        lineBuffer = lines.pop() ?? "";
-        for (const line of lines) recordEvent(line);
-      },
-      onStderr: (chunk) => {
-        appendDetail(chunk);
-      },
+      idleTimeoutMs: invocation.idleTimeoutMs,
+      onStdoutLine: invocation.onStdoutLine,
+      onStderrLine: invocation.onStderrLine,
+      env: invocation.environment,
     });
-    if (lineBuffer) recordEvent(lineBuffer);
     const parsed = extractCompletionResult(agentMessages.join("\n"));
     const status = parsed.ok ? parsed.status : undefined;
     const parsedSummary = parsed.ok
@@ -230,5 +267,6 @@ export const runAgent = async (options: {
     };
   } finally {
     await logWrites;
+    await rm(artifacts, { recursive: true, force: true });
   }
 };

@@ -89,6 +89,43 @@ export const requireCommand = async (
   return result;
 };
 
+export interface LineCommandOptions
+  extends Omit<CommandOptions, "onStdout" | "onStderr"> {
+  onStdoutLine: (line: string) => void;
+  onStderrLine: (line: string) => void;
+}
+
+export const runCommandLines = async (
+  command: string,
+  args: readonly string[],
+  options: LineCommandOptions,
+): Promise<CommandResult> => {
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+  const emitLines = (
+    chunk: string,
+    buffer: string,
+    emit: (line: string) => void,
+  ): string => {
+    const lines = `${buffer}${chunk}`.split("\n");
+    const remainder = lines.pop() ?? "";
+    for (const line of lines) emit(line);
+    return remainder;
+  };
+  const result = await runCommand(command, args, {
+    ...options,
+    onStdout: (chunk) => {
+      stdoutBuffer = emitLines(chunk, stdoutBuffer, options.onStdoutLine);
+    },
+    onStderr: (chunk) => {
+      stderrBuffer = emitLines(chunk, stderrBuffer, options.onStderrLine);
+    },
+  });
+  if (stdoutBuffer) options.onStdoutLine(stdoutBuffer);
+  if (stderrBuffer) options.onStderrLine(stderrBuffer);
+  return result;
+};
+
 export const runShell = (
   command: string,
   options: CommandOptions = {},

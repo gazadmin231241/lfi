@@ -120,8 +120,8 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Явно отмечай этапы в сообщениях агента: полное ревью, исправления, точечное подтверждение по направлениям, когда оно требуется, и финальная проверка. Не включай в логи секреты, учётные данные, токены, содержащие их prompts или окружение процессов.",
   },
   {
-    en: "Do not run git add or git commit. The Codex sandbox intentionally protects Git metadata; after a successful response, the LFI host stages and commits the worktree.",
-    ru: "Не запускай git add или git commit. Sandbox Codex намеренно защищает Git metadata; после успешного ответа host-процесс LFI сам добавит изменения и создаст commit.",
+    en: "Before reporting completion, stage and commit all task changes. LFI accepts only agent-created commits and a clean worktree.",
+    ru: "Перед сообщением о завершении добавь изменения в индекс и создай commit. LFI принимает только commits, созданные агентом, и чистый worktree.",
   },
   {
     en: completionContractCopy.en,
@@ -167,9 +167,9 @@ Do not modify paths outside this list.
 
 Используй $resolving-merge-conflicts, когда выполняется merge. Сохрани оба
 намерения, запусти проверку и никогда не прерывай merge, не выполняй deploy,
-не используй SSH, не делай force-push и не затрагивай production. Не запускай
-git add или git commit: host-процесс LFI зафиксирует успешное разрешение,
-поскольку sandbox Codex защищает Git metadata.
+не используй SSH, не делай force-push и не затрагивай production. Добавь
+разрешение в индекс и создай commit самостоятельно; LFI не создаёт commit за
+агента.
 
 Контекст:
 ${context}
@@ -181,8 +181,8 @@ ${completionContractCopy.ru}
 
 Use $resolving-merge-conflicts when a merge is in progress. Preserve both
 intents, run validation, and never abort the merge, deploy, use SSH, force-push,
-or touch production. Do not run git add or git commit; the LFI host commits a
-successful resolution because the Codex sandbox protects Git metadata.
+or touch production. Stage the resolution and create the commit yourself; LFI
+does not commit for the agent.
 
 Context:
 ${context}
