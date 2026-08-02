@@ -83,7 +83,13 @@ export const integrateAttempts = async (options: {
   onValidationStarted?: () => void;
   beforeDelivery: (cwd: string) => Promise<void>;
   beforeHostUpdate?: () => Promise<void>;
-}): Promise<{ sha: string; preserveIntegration: boolean }> => {
+}): Promise<{
+  sha: string;
+  preserveIntegration: boolean;
+  delivered: true;
+  localBranch: "updated" | "reconciliation-required";
+  reconciliation?: string;
+}> => {
   const integrationAgent = resolveIntegrationModel(options.config).agent;
   const integration = await createIntegrationWorktree({
     repoRoot: options.cwd,
@@ -220,17 +226,23 @@ export const integrateAttempts = async (options: {
     ]);
     if (hostUpdate.exitCode !== 0) {
       preserveIntegration = true;
-      throw new Error(
-        localize(
+      return {
+        sha: (await git(integration.path, ["rev-parse", "HEAD"])).stdout.trim(),
+        preserveIntegration,
+        delivered: true,
+        localBranch: "reconciliation-required",
+        reconciliation: localize(
           options.language,
-          `Could not fast-forward the current branch to the validated result. The work was delivered to origin/${options.baseBranch}, and ${integration.branch} was preserved at ${integration.path}. Reconcile or relocate the divergent local commits, then retry: git merge --ff-only ${integration.branch}`,
-          `Не удалось обновить текущую ветку до проверенного результата без создания merge-коммита. Работа доставлена в origin/${options.baseBranch}, а ${integration.branch} сохранена в ${integration.path}. Согласуйте или перенесите расходящиеся локальные коммиты, затем повторите: git merge --ff-only ${integration.branch}`,
+          `The work was delivered to origin/${options.baseBranch}, but the local branch could not fast-forward. Reconcile or relocate the divergent local commits, then run: git merge --ff-only origin/${options.baseBranch}. The integration branch ${integration.branch} was preserved at ${integration.path}.`,
+          `Работа доставлена в origin/${options.baseBranch}, но локальная ветка не смогла обновиться fast-forward. Согласуйте или перенесите расходящиеся локальные коммиты, затем выполните: git merge --ff-only origin/${options.baseBranch}. Интеграционная ветка ${integration.branch} сохранена в ${integration.path}.`,
         ),
-      );
+      };
     }
     return {
       sha: (await git(integration.path, ["rev-parse", "HEAD"])).stdout.trim(),
       preserveIntegration,
+      delivered: true,
+      localBranch: "updated",
     };
   } catch (error) {
     if (preserveIntegration) throw error;

@@ -7,7 +7,11 @@ import {
   loadConfig,
   resolveWorkerModel,
 } from "./config.js";
-import { gitCommonDirectory, removeWorktreeAndBranch } from "./git.js";
+import {
+  gitCommonDirectory,
+  reconcileDefaultBranch,
+  removeWorktreeAndBranch,
+} from "./git.js";
 import { localize, type Language } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
 import { configureLocalTrackerStorage } from "./local-setup.js";
@@ -16,7 +20,7 @@ import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
 import { assertNoDirectInstalledSkillReference } from "./prompts.js";
-import { printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
+import { printDefaultBranchReconciled, printDeliveredWithLocalReconciliation, printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
 import { listWork } from "./run-source.js";
 import type { Attempt } from "./runner-types.js";
@@ -49,6 +53,23 @@ export const runLfi = async (
     await installedSkillNames(),
     language,
   );
+  const branchReconciliation = await reconcileDefaultBranch(
+    cwd,
+    config.BASE_BRANCH,
+  );
+  if (branchReconciliation.outcome === "blocked") {
+    throw new Error(
+      localize(
+        language,
+        branchReconciliation.reason === "not-current"
+          ? `A run must start on local ${branchReconciliation.branch}. Switch and reconcile before starting a run: ${branchReconciliation.command}`
+          : `Local ${branchReconciliation.branch} cannot reconcile delivered commits from origin/${branchReconciliation.branch} because it is ${branchReconciliation.reason === "dirty" ? "dirty" : "diverged"}. Reconcile before starting a run: ${branchReconciliation.command}`,
+        branchReconciliation.reason === "not-current"
+          ? `Запуск должен начинаться на локальной ветке ${branchReconciliation.branch}. Переключитесь и выполните сверку до запуска: ${branchReconciliation.command}`
+          : `Локальная ${branchReconciliation.branch} не может сверить доставленные коммиты из origin/${branchReconciliation.branch}: ${branchReconciliation.reason === "dirty" ? "есть незакоммиченные изменения" : "ветки разошлись"}. Сверьте ветку до запуска: ${branchReconciliation.command}`,
+      ),
+    );
+  }
   const startupErrors: string[] = [];
   await configureLocalTrackerStorage(cwd);
   await loadReconciledLocalTracker(join(cwd, ".scratch"));
@@ -104,6 +125,9 @@ export const runLfi = async (
     activeRunName: runId,
   });
   const output = await createRunOutput(logsRoot, startedAt);
+  if (branchReconciliation.outcome === "fast-forwarded") {
+    printDefaultBranchReconciled(output, language, branch);
+  }
   for (const message of startupErrors) output.error(message);
   try {
     for (let stage = 1; stage <= config.MAX_STAGES; stage++) {
@@ -225,7 +249,7 @@ export const runLfi = async (
             branch: attempt.branch,
           })),
         );
-        await integrateAttempts({
+        const integration = await integrateAttempts({
           cwd,
           worktreesRoot,
           baseRef,
@@ -244,6 +268,12 @@ export const runLfi = async (
           },
         });
         printIntegrationCompleted(output, language, branch);
+        if (integration.localBranch === "reconciliation-required") {
+          printDeliveredWithLocalReconciliation(
+            output,
+            integration.reconciliation ?? "",
+          );
+        }
         for (const attempt of accepted) {
           completed.add(attempt.task.id);
           if (attempt.dirtyWorktree) {

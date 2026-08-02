@@ -168,6 +168,25 @@ export const printIntegrationCompleted = (
   );
 };
 
+export const printDefaultBranchReconciled = (
+  output: RunOutput,
+  language: Language,
+  branch: string,
+): void => {
+  output.log(
+    `    ${localize(
+      language,
+      `Local ${branch} fast-forwarded to origin/${branch}`,
+      `Локальная ${branch} обновлена до origin/${branch}`,
+    )}`,
+  );
+};
+
+export const printDeliveredWithLocalReconciliation = (
+  output: RunOutput,
+  message: string,
+): void => output.log(`    ${message}`);
+
 export const printIntegrationFailed = async (
   output: RunOutput,
   language: Language,

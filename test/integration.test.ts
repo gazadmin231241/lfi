@@ -346,7 +346,7 @@ test("integration refuses delivery when accepted work was not recorded as done",
   );
 });
 
-test("Russian delivery failure explains how to recover the preserved work", async () => {
+test("delivery remains complete when the local branch cannot fast-forward", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-host-update-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
   const logs = join(root, ".lfi", "logs");
@@ -373,8 +373,7 @@ test("Russian delivery failure explains how to recover the preserved work", asyn
   await git("commit", "-m", "feat: worker result");
   await git("switch", "main");
 
-  await assert.rejects(
-    integrateAttempts({
+  const result = await integrateAttempts({
       cwd: root,
       worktreesRoot,
       baseRef: "main",
@@ -421,7 +420,16 @@ test("Russian delivery failure explains how to recover the preserved work", asyn
         await git("add", "host.txt");
         await git("commit", "-m", "test: advance host branch");
       },
-    }),
-    /Не удалось обновить текущую ветку до проверенного результата[\s\S]*git merge --ff-only/u,
+    });
+
+  assert.equal(result.delivered, true);
+  assert.equal(result.localBranch, "reconciliation-required");
+  assert.ok(result.reconciliation);
+  assert.match(result.reconciliation, /git merge --ff-only origin\/main/u);
+  assert.equal(
+    await runCommand("git", ["show", "origin/main:.scratch/[DONE] LFI-1 — task.md"], {
+      cwd: root,
+    }).then((outcome) => outcome.exitCode),
+    0,
   );
 });

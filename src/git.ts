@@ -140,6 +140,69 @@ export type OriginRefresh =
       reason: "detached" | "dirty" | "fetch-failed" | "diverged";
     };
 
+export type DefaultBranchReconciliation =
+  | { outcome: "up-to-date"; branch: string }
+  | { outcome: "fast-forwarded"; branch: string }
+  | {
+      outcome: "blocked";
+      branch: string;
+      reason: "dirty" | "diverged" | "not-current";
+      command: string;
+    };
+
+/**
+ * Bring the checked-out default branch up to its delivered remote result when
+ * doing so cannot lose local work. A branch with commits on both sides is
+ * deliberately left untouched for its owner to reconcile.
+ */
+export const reconcileDefaultBranch = async (
+  cwd: string,
+  branch: string,
+): Promise<DefaultBranchReconciliation> => {
+  const current = await gitResult(cwd, ["branch", "--show-current"]);
+  const command = `git switch ${branch} && git fetch origin ${branch} && git merge --ff-only origin/${branch}`;
+  if (current.exitCode !== 0 || current.stdout.trim() !== branch) {
+    return { outcome: "blocked", branch, reason: "not-current", command };
+  }
+  await git(cwd, ["fetch", "origin", branch]);
+  const remote = `origin/${branch}`;
+  const reconciliationCommand = `git merge --ff-only ${remote}`;
+  const localIsBehind = await gitResult(cwd, [
+    "merge-base",
+    "--is-ancestor",
+    "HEAD",
+    remote,
+  ]);
+  if (localIsBehind.exitCode === 0) {
+    const before = (await git(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+    const remoteSha = (await git(cwd, ["rev-parse", remote])).stdout.trim();
+    if (before === remoteSha) return { outcome: "up-to-date", branch };
+    if (!(await worktreeClean(cwd))) {
+      return {
+        outcome: "blocked",
+        branch,
+        reason: "dirty",
+        command: reconciliationCommand,
+      };
+    }
+    await git(cwd, ["merge", "--ff-only", remote]);
+    return { outcome: "fast-forwarded", branch };
+  }
+  const remoteIsBehind = await gitResult(cwd, [
+    "merge-base",
+    "--is-ancestor",
+    remote,
+    "HEAD",
+  ]);
+  if (remoteIsBehind.exitCode === 0) return { outcome: "up-to-date", branch };
+  return {
+    outcome: "blocked",
+    branch,
+    reason: "diverged",
+    command: reconciliationCommand,
+  };
+};
+
 /**
  * Best-effort refresh of a reused worktree from `origin/<branch>`.
  *
