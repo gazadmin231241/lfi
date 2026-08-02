@@ -134,12 +134,14 @@ branch. Any integration failure preserves the integration worktree and prints
 its branch and path for recovery.
 
 At execution time, `LIGHT_MODEL`, `STANDARD_MODEL`, and `DEEP_MODEL` map the
-task tier to a Codex model, falling back to `CODEX_MODEL` when a tier mapping is
-empty. `CODEX_REASONING_EFFORT` is always passed through exactly as configured.
-`MERGER_MODEL` is independent and falls back through `STANDARD_MODEL`, then
-`CODEX_MODEL`. If Codex rejects an explicitly configured worker model, LFI
-logs it, does not silently substitute another model, skips remaining tasks
-using it for that run, and continues other tiers.
+task tier to an agent and model, falling back to `DEFAULT_MODEL` when a tier
+mapping is empty. Prefix a model with an agent and a colon (for example,
+`codex:gpt-5.6`); an unprefixed value means Codex. `REASONING_EFFORT` is always
+passed through exactly as configured. `MERGER_MODEL` is independent and falls
+back through `STANDARD_MODEL`, then `DEFAULT_MODEL`. If an agent rejects an
+explicitly configured worker model, LFI logs it, does not silently substitute
+another model, skips remaining tasks using that agent-model pair for that run,
+and continues other tiers.
 
 Worker prompts pre-approve required local code, migration, dependency, lockfile,
 and configuration work. They explicitly forbid production deploys, SSH,

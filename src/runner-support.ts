@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
-import { defaultAgentProvider, runAgent } from "./agent-provider.js";
+import { runAgent } from "./agent-provider.js";
 import {
   resolveIntegrationModel,
   type LfiConfig,
@@ -63,14 +63,14 @@ export const mergeWithAgent = async (options: {
     ),
   );
   const result = await runAgent({
-    agent: defaultAgentProvider,
+    agent: resolveIntegrationModel(options.config).agent,
     cwd: options.cwd,
     prompt: mergerPrompt(
       options.context,
       options.language,
       options.allowedPaths,
     ),
-    model: resolveIntegrationModel(options.config),
+    model: resolveIntegrationModel(options.config).model,
     reasoning: options.config.MERGER_REASONING_EFFORT,
     gitDirectory: options.gitDirectory,
     log: options.log,

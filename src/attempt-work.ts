@@ -1,7 +1,6 @@
 import { join } from "node:path";
 
 import {
-  defaultAgentProvider,
   runAgent,
 } from "./agent-provider.js";
 import {
@@ -35,7 +34,7 @@ export const attemptWork = async (options: {
 }): Promise<Attempt> => {
   const key = options.task.id.toLowerCase();
   const logName = options.task.id;
-  const model = resolveWorkerModel(
+  const target = resolveWorkerModel(
     options.config,
     options.task.executionTier ?? "standard",
   );
@@ -66,15 +65,15 @@ export const attemptWork = async (options: {
       }
     }
     const agent = await runAgent({
-      agent: defaultAgentProvider,
+      agent: target.agent,
       cwd: worktree.path,
       prompt: renderWorkerPrompt(
         options.taskTemplate,
         options.task,
         options.language,
       ),
-      model,
-      reasoning: options.config.CODEX_REASONING_EFFORT,
+      model: target.model,
+      reasoning: options.config.REASONING_EFFORT,
       gitDirectory: options.gitDirectory,
       log: options.log,
       logName,
@@ -104,9 +103,9 @@ export const attemptWork = async (options: {
       branch: worktree.branch,
       logName,
       ...(agent.exitCode !== 0 &&
-      model &&
+      target.model &&
       agent.unavailableModel
-        ? { unavailableModel: model }
+        ? { unavailableModel: target }
         : {}),
     };
   } catch (error) {

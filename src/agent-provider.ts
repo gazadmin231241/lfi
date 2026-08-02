@@ -18,6 +18,21 @@ import { runCommand } from "./process.js";
 export type AgentProvider = "codex";
 export const defaultAgentProvider: AgentProvider = "codex";
 
+const agentProviders: ReadonlySet<string> = new Set([defaultAgentProvider]);
+
+export const isAgentProvider = (value: string): value is AgentProvider =>
+  agentProviders.has(value);
+
+export const supportsReasoningEffort = (
+  agent: AgentProvider,
+  reasoning: ReasoningEffort,
+): boolean => {
+  switch (agent) {
+    case "codex":
+      return true;
+  }
+};
+
 export interface AgentRunResult {
   exitCode: number;
   status: "completed" | "incomplete" | undefined;
