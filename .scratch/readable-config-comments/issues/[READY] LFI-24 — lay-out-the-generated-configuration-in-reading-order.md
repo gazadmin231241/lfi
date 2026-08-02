@@ -59,4 +59,4 @@ rewritten, and no command is added to rewrite them.
 
 ## Blocked by
 
-- [LFI-23 — Tolerate trailing comments when reading configuration](<[READY] LFI-23 — tolerate-trailing-comments-when-reading-configuration.md>)
+- [LFI-23 — Tolerate trailing comments when reading configuration](<[DONE] LFI-23 — tolerate-trailing-comments-when-reading-configuration.md>)

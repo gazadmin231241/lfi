@@ -25,18 +25,18 @@ exist before the generated file can annotate its own keys.
 
 ## Acceptance criteria
 
-- [ ] A line with a trailing comment parses to the same value as the same line
+- [x] A line with a trailing comment parses to the same value as the same line
       without one, for a string key and for a numeric key.
-- [ ] A numeric key followed by a trailing comment parses to a number, not
+- [x] A numeric key followed by a trailing comment parses to a number, not
       `NaN`.
-- [ ] A `#` not preceded by whitespace remains part of the value, asserted with
+- [x] A `#` not preceded by whitespace remains part of the value, asserted with
       a command-shaped value.
-- [ ] Trailing whitespace left by comment removal is not part of the value.
-- [ ] A configuration in which every field is non-default survives write-then-read
+- [x] Trailing whitespace left by comment removal is not part of the value.
+- [x] A configuration in which every field is non-default survives write-then-read
       unchanged.
-- [ ] Existing configuration round-trip tests pass unmodified in both the
+- [x] Existing configuration round-trip tests pass unmodified in both the
       default language and Russian.
-- [ ] No key is added, removed, or renamed, and the generated file is unchanged
+- [x] No key is added, removed, or renamed, and the generated file is unchanged
       by this task.
 
 ## Specification
