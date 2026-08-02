@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
+import { join } from "node:path";
 
 import {
   completionBlockClose,
@@ -29,6 +31,174 @@ export const defaultTaskPrompt = (language: "en" | "ru"): string =>
   language === "ru"
     ? `Приступай к реализации: {{TASK_ID}}\n\nИспользуй ${skillPlaceholder("implement")}.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n`
     : `Start implementing: {{TASK_ID}}\n\nUse ${skillPlaceholder("implement")}.\n\nAll local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n`;
+
+export type PromptPhase =
+  | "task"
+  | "review"
+  | "remediation"
+  | "re-review"
+  | "merge";
+
+export interface ResolvedPromptTemplate {
+  content: string;
+  source:
+    | { kind: "custom"; path: string }
+    | { kind: "legacy"; path: string }
+    | { kind: "built-in" };
+}
+
+export type PromptTemplates = Record<PromptPhase, ResolvedPromptTemplate>;
+
+export const defaultReviewPrompt = (language: Language): string =>
+  language === "ru"
+    ? `Проведи независимое ревью уже зафиксированных изменений в текущем worktree.
+
+Используй ${skillPlaceholder("code-review")} для проверки diff относительно указанного base ref.
+
+Base ref: {{BASE_REF}}
+`
+    : `Review the committed changes in the current worktree independently.
+
+Use ${skillPlaceholder("code-review")} to review the diff against the specified base ref.
+
+Base ref: {{BASE_REF}}
+`;
+
+export const defaultRemediationPrompt = (language: Language): string =>
+  language === "ru"
+    ? `Исправь блокирующие замечания независимого ревью в текущем worktree.
+
+Замечания ниже переданы дословно:
+{{FINDINGS}}
+`
+    : `Remediate the blocking findings from an independent review in the current worktree.
+
+The findings below are passed verbatim:
+{{FINDINGS}}
+`;
+
+export const defaultReReviewPrompt = (language: Language): string =>
+  language === "ru"
+    ? `Проведи одно точечное повторное ревью зафиксированного исправления. Проверь только исходные замечания ниже и риск регрессии в исправленной области; не расширяй ревью.
+
+Base ref: {{BASE_REF}}
+
+Исходные замечания (дословно):
+{{FINDINGS}}
+`
+    : `Perform one targeted re-review of the committed remediation. Check only the original findings below and regression risk in the remediated area; do not broaden the review.
+
+Base ref: {{BASE_REF}}
+
+Original findings (verbatim):
+{{FINDINGS}}
+`;
+
+export const defaultMergePrompt = (language: Language): string =>
+  language === "ru"
+    ? `Разреши текущую проблему интеграции в этом worktree.
+
+Используй ${skillPlaceholder("resolving-merge-conflicts")}, когда выполняется merge. Сохрани оба
+намерения, запусти проверку и никогда не прерывай merge, не выполняй deploy,
+не используй SSH, не делай force-push и не затрагивай production.
+
+Контекст:
+{{INTEGRATION_CONTEXT}}
+{{ALLOWED_PATHS}}`
+    : `Resolve the current integration problem in this worktree.
+
+Use ${skillPlaceholder("resolving-merge-conflicts")} when a merge is in progress. Preserve both
+intents, run validation, and never abort the merge, deploy, use SSH, force-push,
+or touch production.
+
+Context:
+{{INTEGRATION_CONTEXT}}
+{{ALLOWED_PATHS}}`;
+
+const defaultPromptTemplates = (language: Language): Record<PromptPhase, string> => ({
+  task: defaultTaskPrompt(language),
+  review: defaultReviewPrompt(language),
+  remediation: defaultRemediationPrompt(language),
+  "re-review": defaultReReviewPrompt(language),
+  merge: defaultMergePrompt(language),
+});
+
+const phaseFileNames: Record<PromptPhase, string> = {
+  task: "task.md",
+  review: "review.md",
+  remediation: "remediation.md",
+  "re-review": "re-review.md",
+  merge: "merge.md",
+};
+
+const readOptionalFile = async (path: string): Promise<string | undefined> => {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) return undefined;
+    throw error;
+  }
+};
+
+export const loadPromptTemplates = async (
+  lfiRoot: string,
+  language: Language,
+): Promise<PromptTemplates> => {
+  const defaults = defaultPromptTemplates(language);
+  const resolvePhase = async (phase: PromptPhase): Promise<ResolvedPromptTemplate> => {
+    const relativePath = join(".lfi", "prompts", phaseFileNames[phase]);
+    const custom = await readOptionalFile(join(lfiRoot, "prompts", phaseFileNames[phase]));
+    if (custom !== undefined) {
+      return {
+        content: custom,
+        source: { kind: "custom", path: relativePath },
+      };
+    }
+    if (phase === "task") {
+      const legacy = await readOptionalFile(join(lfiRoot, "task-prompt.md"));
+      if (legacy !== undefined) {
+        return {
+          content: legacy,
+          source: { kind: "legacy", path: join(".lfi", "task-prompt.md") },
+        };
+      }
+    }
+    return {
+      content: defaults[phase],
+      source: { kind: "built-in" },
+    };
+  };
+  const [task, review, remediation, reReview, merge] = await Promise.all([
+    resolvePhase("task"),
+    resolvePhase("review"),
+    resolvePhase("remediation"),
+    resolvePhase("re-review"),
+    resolvePhase("merge"),
+  ]);
+  return { task, review, remediation, "re-review": reReview, merge };
+};
+
+export const describePromptTemplateSource = (
+  phase: PromptPhase,
+  template: ResolvedPromptTemplate,
+  language: Language,
+): string => {
+  if (template.source.kind === "built-in") {
+    return language === "ru"
+      ? `Шаблон prompt [${phase}]: встроенный по умолчанию.`
+      : `Prompt template [${phase}]: built-in default.`;
+  }
+  const source = template.source.kind === "legacy"
+    ? language === "ru" ? "устаревший пользовательский файл" : "legacy custom file"
+    : language === "ru" ? "пользовательский файл" : "custom file";
+  return language === "ru"
+    ? `Шаблон prompt [${phase}]: ${source} ${template.source.path}.`
+    : `Prompt template [${phase}]: ${source} ${template.source.path}.`;
+};
 
 const directSkillReference = /\$([A-Za-z0-9][A-Za-z0-9-]*)/gu;
 
@@ -76,59 +246,74 @@ ${constraints}
 `;
 };
 
+const renderEditableTemplate = (
+  template: string,
+  replacements: Readonly<Record<string, string>>,
+  agent: AgentProvider,
+): string => {
+  let rendered = template;
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    rendered = rendered.replaceAll(`{{${placeholder}}}`, value);
+  }
+  return expandSkillPlaceholders(agent, rendered).trimEnd();
+};
+
+const reviewProtocol = (
+  findingsPath: string,
+  language: Language,
+): string => language === "ru"
+  ? `Не сообщай LFI замечания в свободной форме: единственный канал замечаний — указанный JSON-файл.
+
+Findings file: ${findingsPath}
+
+До завершения запиши в Findings file JSON-массив. Каждый элемент должен быть объектом ровно с тремя полями: "axis" ("standards" или "spec"), "severity" ("blocking" или "advisory") и строковым "description". Если замечаний нет, запиши []. Не изменяй worktree и не создавай commit.
+
+${completionContractCopy.ru}`
+  : `Do not report findings to LFI in prose: the findings file is the only findings channel.
+
+Findings file: ${findingsPath}
+
+Before completing, write a JSON array to the Findings file. Every item must be an object with exactly three fields: "axis" ("standards" or "spec"), "severity" ("blocking" or "advisory"), and a string "description". Write [] when there are no findings. Do not modify the worktree or create a commit.
+
+${completionContractCopy.en}`;
+
 export const reviewPrompt = (
   baseRef: string,
   findingsPath: string,
   agent: AgentProvider,
   language: Language = "en",
+  template: string = defaultReviewPrompt(language),
 ): string => {
   if (!isAbsolute(findingsPath)) {
     throw new Error("The review findings file path must be absolute.");
   }
-  const prompt = language === "ru"
-    ? `Проведи независимое ревью уже зафиксированных изменений в текущем worktree.
+  return `${renderEditableTemplate(template, {
+    BASE_REF: baseRef,
+    FINDINGS_FILE: findingsPath,
+  }, agent)}
 
-Используй ${skillPlaceholder("code-review")} для проверки diff относительно указанного base ref. Не сообщай LFI замечания в свободной форме: единственный канал замечаний — указанный JSON-файл.
-
-Base ref: ${baseRef}
-Findings file: ${findingsPath}
-
-До завершения запиши в Findings file JSON-массив. Каждый элемент должен быть объектом ровно с тремя полями: "axis" ("standards" или "spec"), "severity" ("blocking" или "advisory") и строковым "description". Если замечаний нет, запиши []. Не изменяй worktree и не создавай commit.
-
-${completionContractCopy.ru}
-`
-    : `Review the committed changes in the current worktree independently.
-
-Use ${skillPlaceholder("code-review")} to review the diff against the specified base ref. Do not report findings to LFI in prose: the findings file is the only findings channel.
-
-Base ref: ${baseRef}
-Findings file: ${findingsPath}
-
-Before completing, write a JSON array to the Findings file. Every item must be an object with exactly three fields: "axis" ("standards" or "spec"), "severity" ("blocking" or "advisory"), and a string "description". Write [] when there are no findings. Do not modify the worktree or create a commit.
-
-${completionContractCopy.en}
+${reviewProtocol(findingsPath, language)}
 `;
-  return expandSkillPlaceholders(agent, prompt);
 };
 
 export const remediationPrompt = (
   findings: string,
   language: Language = "en",
-): string => language === "ru"
-  ? `Исправь блокирующие замечания независимого ревью в текущем worktree. Не создавай commit: LFI зафиксирует исправления перед повторным ревью.
+  agent: AgentProvider = "codex",
+  template: string = defaultRemediationPrompt(language),
+): string => {
+  const protocol = language === "ru"
+    ? `Не добавляй изменения в индекс и не создавай commit: LFI зафиксирует исправления перед повторным ревью.
 
-Замечания ниже переданы дословно:
-${findings}
+${completionContractCopy.ru}`
+    : `Do not stage or commit the remediation: LFI will commit it before re-review.
 
-${completionContractCopy.ru}
-`
-  : `Remediate the blocking findings from an independent review in the current worktree. Do not create a commit: LFI will commit the remediation before re-review.
+${completionContractCopy.en}`;
+  return `${renderEditableTemplate(template, { FINDINGS: findings }, agent)}
 
-The findings below are passed verbatim:
-${findings}
-
-${completionContractCopy.en}
+${protocol}
 `;
+};
 
 export const reReviewPrompt = (
   baseRef: string,
@@ -136,36 +321,19 @@ export const reReviewPrompt = (
   originalFindings: string,
   agent: AgentProvider,
   language: Language = "en",
+  template: string = defaultReReviewPrompt(language),
 ): string => {
   if (!isAbsolute(findingsPath)) {
     throw new Error("The review findings file path must be absolute.");
   }
-  const prompt = language === "ru"
-    ? `Проведи одно точечное повторное ревью зафиксированного исправления. Проверь только исходные замечания ниже и риск регрессии в исправленной области; не расширяй ревью.
+  return `${renderEditableTemplate(template, {
+    BASE_REF: baseRef,
+    FINDINGS_FILE: findingsPath,
+    FINDINGS: originalFindings,
+  }, agent)}
 
-Base ref: ${baseRef}
-Findings file: ${findingsPath}
-
-Исходные замечания (дословно):
-${originalFindings}
-
-До завершения запиши в Findings file JSON-массив с объектами ровно из полей "axis" ("standards" или "spec"), "severity" ("blocking" или "advisory") и "description". Запиши [] при отсутствии замечаний. Не изменяй worktree и не создавай commit.
-
-${completionContractCopy.ru}
-`
-    : `Perform one targeted re-review of the committed remediation. Check only the original findings below and regression risk in the remediated area; do not broaden the review.
-
-Base ref: ${baseRef}
-Findings file: ${findingsPath}
-
-Original findings (verbatim):
-${originalFindings}
-
-Before completing, write a JSON array to the Findings file. Every item must have exactly the fields "axis" ("standards" or "spec"), "severity" ("blocking" or "advisory"), and "description". Write [] when there are no findings. Do not modify the worktree or create a commit.
-
-${completionContractCopy.en}
+${reviewProtocol(findingsPath, language)}
 `;
-  return expandSkillPlaceholders(agent, prompt);
 };
 
 interface LocalizedConstraint {
@@ -227,6 +395,7 @@ export const mergerPrompt = (
   agent: AgentProvider,
   language: Language = "en",
   allowedPaths?: readonly string[],
+  template: string = defaultMergePrompt(language),
 ): string => {
   const scope = allowedPaths
     ? language === "ru"
@@ -243,30 +412,18 @@ ${allowedPaths.map((path) => `- ${path}`).join("\n")}
 Do not modify paths outside this list.
 `
     : "";
-  if (language === "ru") {
-    return expandSkillPlaceholders(agent, `Разреши текущую проблему интеграции в этом worktree.
+  const protocol = language === "ru"
+    ? `Не добавляй изменения в индекс и не создавай commit: после успешного завершения это сделает LFI.
 
-Используй ${skillPlaceholder("resolving-merge-conflicts")}, когда выполняется merge. Сохрани оба
-намерения, запусти проверку и никогда не прерывай merge, не выполняй deploy,
-не используй SSH, не делай force-push и не затрагивай production. Не добавляй
-изменения в индекс и не создавай commit: после успешного завершения это сделает LFI.
+${completionContractCopy.ru}`
+    : `Do not stage or commit the resolution; LFI records it after you report successful completion.
 
-Контекст:
-${context}
-${scope}
-${completionContractCopy.ru}
-`);
-  }
-  return expandSkillPlaceholders(agent, `Resolve the current integration problem in this worktree.
+${completionContractCopy.en}`;
+  return `${renderEditableTemplate(template, {
+    INTEGRATION_CONTEXT: context,
+    ALLOWED_PATHS: scope,
+  }, agent)}
 
-Use ${skillPlaceholder("resolving-merge-conflicts")} when a merge is in progress. Preserve both
-intents, run validation, and never abort the merge, deploy, use SSH, force-push,
-or touch production. Do not stage or commit the resolution; LFI records it after
-you report successful completion.
-
-Context:
-${context}
-${scope}
-${completionContractCopy.en}
-`);
+${protocol}
+`;
 };

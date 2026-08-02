@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { attemptWork } from "./attempt-work.js";
 import { mapConcurrent } from "./concurrency.js";
@@ -19,7 +19,10 @@ import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
-import { assertNoDirectInstalledSkillReference } from "./prompts.js";
+import {
+  assertNoDirectInstalledSkillReference,
+  loadPromptTemplates,
+} from "./prompts.js";
 import { printDefaultBranchPushed, printDefaultBranchReconciled, printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printPushNote, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
 import { listWork } from "./run-source.js";
@@ -47,9 +50,9 @@ export const runLfi = async (
       ),
     );
   }
-  const taskTemplate = await readFile(join(lfiRoot, "task-prompt.md"), "utf8");
+  const promptTemplates = await loadPromptTemplates(lfiRoot, language);
   assertNoDirectInstalledSkillReference(
-    taskTemplate,
+    promptTemplates.task.content,
     await installedSkillNames(),
     language,
   );
@@ -226,7 +229,8 @@ export const runLfi = async (
             config,
             gitDirectory,
             log,
-            taskTemplate,
+            taskTemplate: promptTemplates.task.content,
+            promptTemplates,
             language,
           });
           if (attempt.unavailableModel) {
@@ -273,6 +277,7 @@ export const runLfi = async (
           config,
           gitDirectory,
           language,
+          promptTemplates,
           onValidationStarted: () => printValidationStarted(output, language),
           beforeDelivery: (integrationPath) =>
             recordLocalCompletion(integrationPath, accepted),

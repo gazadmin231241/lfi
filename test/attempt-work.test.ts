@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { attemptWork } from "../src/attempt-work.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
+import { loadPromptTemplates } from "../src/prompts.js";
 import { runCommand } from "../src/process.js";
 import {
   codexCompletionEvent,
@@ -21,7 +22,13 @@ test("a completed execution is committed and reviewed in a fresh session", async
   const calls = join(root, "codex-calls");
   const args = join(root, "codex-args");
   const prompts = join(root, "codex-prompt");
+  const runLog: string[] = [];
   await mkdir(tools, { recursive: true });
+  await mkdir(join(root, ".lfi", "prompts"), { recursive: true });
+  await writeFile(
+    join(root, ".lfi", "prompts", "review.md"),
+    "CUSTOM REVIEW for {{BASE_REF}} via {{SKILL:code-review}}.\n",
+  );
   const git = async (cwd: string, ...args: string[]) => {
     const result = await runCommand("git", args, { cwd });
     assert.equal(result.exitCode, 0, result.stderr);
@@ -78,8 +85,14 @@ ${codexCompletionEvent("completed", "implemented task")}
         directory: logs,
         startedAt: new Date().toISOString(),
         iteration: 1,
+        output: {
+          log: (message) => runLog.push(message),
+          error: (message) => runLog.push(message),
+          flush: async () => undefined,
+        },
       },
       taskTemplate: "Implement {{TASK_ID}}.",
+      promptTemplates: await loadPromptTemplates(join(root, ".lfi"), "en"),
       language: "en",
     });
 
@@ -94,13 +107,14 @@ ${codexCompletionEvent("completed", "implemented task")}
     assert.match(invocationArgs, /model_reasoning_effort="high"/u);
     assert.equal(await git(worktree, "rev-list", "--count", "main..HEAD"), "1");
     const reviewPrompt = await readFile(`${prompts}.2`, "utf8");
-    assert.match(reviewPrompt, /Use \$code-review/u);
-    assert.match(reviewPrompt, /^Base ref: main$/mu);
+    assert.match(reviewPrompt, /CUSTOM REVIEW for main via \$code-review/u);
     const findingsPath = /^Findings file: (.+)$/mu.exec(reviewPrompt)?.[1];
     assert.ok(findingsPath);
     assert.equal(findingsPath.startsWith(`${worktree}/`), false);
     assert.match(await readFile(join(logs, "LFI-1.log"), "utf8"), /implemented task/u);
     assert.match(await readFile(join(logs, "LFI-1-review.log"), "utf8"), /implemented task/u);
+    assert.match(runLog.join("\n"), /Prompt template \[task\]: built-in default/u);
+    assert.match(runLog.join("\n"), /Prompt template \[review\]: custom file \.lfi\/prompts\/review\.md/u);
   } finally {
     process.env.PATH = originalPath;
   }

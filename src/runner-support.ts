@@ -13,7 +13,11 @@ import {
   redactSensitiveText,
   type RunLogContext,
 } from "./logs.js";
-import { mergerPrompt } from "./prompts.js";
+import {
+  describePromptTemplateSource,
+  mergerPrompt,
+  type ResolvedPromptTemplate,
+} from "./prompts.js";
 import { runProjectCommand } from "./project-command.js";
 import type { IsolationSession } from "./isolation-provider.js";
 
@@ -39,6 +43,7 @@ export const mergeWithAgent = async (options: {
   logName: string;
   language: Language;
   allowedPaths?: readonly string[];
+  promptTemplate?: ResolvedPromptTemplate;
 }): Promise<string> => {
   const startingHead = (await git(options.cwd, ["rev-parse", "HEAD"])).stdout.trim();
   const unmerged = (
@@ -64,6 +69,11 @@ export const mergeWithAgent = async (options: {
       }),
     ),
   );
+  if (options.promptTemplate) {
+    options.log.output?.log(
+      describePromptTemplateSource("merge", options.promptTemplate, options.language),
+    );
+  }
   const result = await runAgent({
     agent: resolveIntegrationModel(options.config).agent,
     cwd: options.cwd,
@@ -72,6 +82,7 @@ export const mergeWithAgent = async (options: {
       resolveIntegrationModel(options.config).agent,
       options.language,
       options.allowedPaths,
+      options.promptTemplate?.content,
     ),
     model: resolveIntegrationModel(options.config).model,
     reasoning: options.config.MERGER_REASONING_EFFORT,

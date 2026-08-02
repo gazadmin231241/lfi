@@ -14,6 +14,7 @@ import {
   localCompletionCommitSubject,
 } from "./local-run-state.js";
 import type { RunLogContext } from "./logs.js";
+import type { PromptTemplates } from "./prompts.js";
 import type { Attempt } from "./runner-types.js";
 import {
   openIsolationSession,
@@ -81,6 +82,7 @@ export const integrateAttempts = async (options: {
   config: LfiConfig;
   gitDirectory: string;
   language: Language;
+  promptTemplates?: PromptTemplates;
   onValidationStarted?: () => void;
   beforeDelivery: (cwd: string) => Promise<void>;
   beforeHostUpdate?: () => Promise<void>;
@@ -115,6 +117,9 @@ export const integrateAttempts = async (options: {
           log: options.log,
           logName: "integration",
           language: options.language,
+          ...(options.promptTemplates
+            ? { promptTemplate: options.promptTemplates.merge }
+            : {}),
         });
       }
     }
@@ -204,6 +209,9 @@ export const integrateAttempts = async (options: {
               logName: "integration",
               language: options.language,
               allowedPaths: integratedPaths,
+              ...(options.promptTemplates
+                ? { promptTemplate: options.promptTemplates.merge }
+                : {}),
             });
           },
         }),

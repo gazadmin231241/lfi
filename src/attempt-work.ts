@@ -23,10 +23,14 @@ import { localize, type Language } from "./i18n.js";
 import type { RunLogContext } from "./logs.js";
 import { appendRunLog, redactSensitiveText } from "./logs.js";
 import {
+  describePromptTemplateSource,
   reReviewPrompt,
   remediationPrompt,
   renderWorkerPrompt,
   reviewPrompt,
+  type PromptPhase,
+  type PromptTemplates,
+  type ResolvedPromptTemplate,
 } from "./prompts.js";
 import { printOriginRefresh } from "./run-display.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
@@ -99,6 +103,7 @@ export const attemptWork = async (options: {
   gitDirectory: string;
   log: RunLogContext;
   taskTemplate: string;
+  promptTemplates?: PromptTemplates;
   language: Language;
 }): Promise<Attempt> => {
   const key = options.task.id.toLowerCase();
@@ -109,6 +114,17 @@ export const attemptWork = async (options: {
     executionTier,
   );
   const reviewer = resolveReviewerModel(options.config, executionTier);
+  const phaseTemplate = (phase: PromptPhase): ResolvedPromptTemplate =>
+    options.promptTemplates?.[phase] ?? {
+      content: phase === "task" ? options.taskTemplate : "",
+      source: { kind: "built-in" },
+    };
+  const logTemplateSource = (phase: PromptPhase): void => {
+    const template = phaseTemplate(phase);
+    options.log.output?.log(
+      describePromptTemplateSource(phase, template, options.language),
+    );
+  };
   try {
     const worktree = await ensureTaskWorktree({
       repoRoot: options.cwd,
@@ -179,6 +195,9 @@ export const attemptWork = async (options: {
               log: options.log,
               logName: "integration",
               language: options.language,
+              ...(options.promptTemplates
+                ? { promptTemplate: options.promptTemplates.merge }
+                : {}),
             });
             if (reusedDirtyWorktree) {
               const evaluation = evaluateWorkerResult({
@@ -210,11 +229,14 @@ export const attemptWork = async (options: {
             }
           }
         }
+        logTemplateSource("task");
+        const taskPromptTemplate = options.promptTemplates?.task.content
+          ?? options.taskTemplate;
         const agent = await runAgent({
           agent: target.agent,
           cwd: worktree.path,
           prompt: renderWorkerPrompt(
-            options.taskTemplate,
+            taskPromptTemplate,
             options.task,
             target.agent,
             options.language,
@@ -270,6 +292,7 @@ export const attemptWork = async (options: {
           ));
         }
         await rm(findingsPath, { force: true });
+        logTemplateSource("review");
         const review = await runAgent({
           agent: reviewer.agent,
           cwd: worktree.path,
@@ -278,6 +301,7 @@ export const attemptWork = async (options: {
             findingsPath,
             reviewer.agent,
             options.language,
+            options.promptTemplates?.review.content,
           ),
           model: reviewer.model,
           reasoning: reviewer.reasoning,
@@ -333,10 +357,16 @@ export const attemptWork = async (options: {
         if (blockingFindings.length > 0) {
           const remediationLogName = `${logName}-remediation`;
           const remediationStart = (await git(worktree.path, ["rev-parse", "HEAD"])).stdout.trim();
+          logTemplateSource("remediation");
           const remediation = await runAgent({
             agent: target.agent,
             cwd: worktree.path,
-            prompt: remediationPrompt(findingsText, options.language),
+            prompt: remediationPrompt(
+              findingsText,
+              options.language,
+              target.agent,
+              options.promptTemplates?.remediation.content,
+            ),
             model: target.model,
             reasoning: target.reasoning,
             gitDirectory: options.gitDirectory,
@@ -380,10 +410,18 @@ export const attemptWork = async (options: {
           const reReviewLogName = `${logName}-re-review`;
           const reReviewFindingsPath = resolve(options.log.directory, `${key}-re-review-findings.json`);
           await rm(reReviewFindingsPath, { force: true });
+          logTemplateSource("re-review");
           const reReview = await runAgent({
             agent: reviewer.agent,
             cwd: worktree.path,
-            prompt: reReviewPrompt(options.baseRef, reReviewFindingsPath, findingsText, reviewer.agent, options.language),
+            prompt: reReviewPrompt(
+              options.baseRef,
+              reReviewFindingsPath,
+              findingsText,
+              reviewer.agent,
+              options.language,
+              options.promptTemplates?.["re-review"].content,
+            ),
             model: reviewer.model,
             reasoning: reviewer.reasoning,
             gitDirectory: options.gitDirectory,

@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
   assertNoDirectInstalledSkillReference,
+  defaultMergePrompt,
+  defaultRemediationPrompt,
+  defaultReReviewPrompt,
+  defaultReviewPrompt,
+  describePromptTemplateSource,
   defaultTaskPrompt,
+  loadPromptTemplates,
   mergerPrompt,
   reReviewPrompt,
   remediationPrompt,
@@ -173,4 +182,124 @@ test("direct references that are not installed skills are allowed", () => {
   assert.doesNotThrow(() =>
     assertNoDirectInstalledSkillReference("The shell expands $HOME.", new Set(["implement"])),
   );
+});
+
+test("phase templates resolve custom files, legacy task fallback, and built-in defaults", async () => {
+  const lfiRoot = await mkdtemp(join(tmpdir(), "lfi-prompts-"));
+  await mkdir(join(lfiRoot, "prompts"));
+  await writeFile(join(lfiRoot, "task-prompt.md"), "Legacy task {{TASK_ID}}.\n");
+  await writeFile(join(lfiRoot, "prompts", "review.md"), "Custom review {{BASE_REF}}.\n");
+
+  const templates = await loadPromptTemplates(lfiRoot, "en");
+
+  assert.equal(templates.task.content, "Legacy task {{TASK_ID}}.\n");
+  assert.equal(templates.task.source.kind, "legacy");
+  assert.equal(templates.review.content, "Custom review {{BASE_REF}}.\n");
+  assert.equal(templates.review.source.kind, "custom");
+  assert.equal(templates.remediation.source.kind, "built-in");
+  assert.equal(templates["re-review"].source.kind, "built-in");
+  assert.equal(templates.merge.source.kind, "built-in");
+  assert.match(
+    describePromptTemplateSource("review", templates.review, "en"),
+    /review.*custom.*\.lfi\/prompts\/review\.md/iu,
+  );
+});
+
+test("a phase file takes precedence over the legacy task template", async () => {
+  const lfiRoot = await mkdtemp(join(tmpdir(), "lfi-task-prompt-"));
+  await mkdir(join(lfiRoot, "prompts"));
+  await writeFile(join(lfiRoot, "task-prompt.md"), "Legacy task.\n");
+  await writeFile(join(lfiRoot, "prompts", "task.md"), "Custom task.\n");
+
+  const templates = await loadPromptTemplates(lfiRoot, "en");
+
+  assert.equal(templates.task.content, "Custom task.\n");
+  assert.equal(templates.task.source.kind, "custom");
+});
+
+test("a missing prompts directory resolves every phase to stock behavior", async () => {
+  const lfiRoot = await mkdtemp(join(tmpdir(), "lfi-stock-prompts-"));
+
+  const templates = await loadPromptTemplates(lfiRoot, "ru");
+
+  assert.equal(templates.task.content, defaultTaskPrompt("ru"));
+  for (const phase of ["task", "review", "remediation", "re-review", "merge"] as const) {
+    assert.equal(templates[phase].source.kind, "built-in");
+  }
+});
+
+test("built-in editable substance excludes runner-owned protocols", () => {
+  const editable = [
+    defaultReviewPrompt("en"),
+    defaultRemediationPrompt("en"),
+    defaultReReviewPrompt("en"),
+    defaultMergePrompt("en"),
+  ];
+
+  for (const template of editable) {
+    assert.doesNotMatch(template, /<lfi:completion>/u);
+    assert.doesNotMatch(template, /Do not (?:stage|modify the worktree)/u);
+  }
+  assert.doesNotMatch(defaultReviewPrompt("en"), /Findings file:/u);
+  assert.doesNotMatch(defaultReviewPrompt("en"), /only findings channel/u);
+  assert.doesNotMatch(defaultReReviewPrompt("en"), /Findings file:/u);
+});
+
+test("custom phase substance receives scoped placeholders while runner protocols remain appended", () => {
+  const findings = '[{"axis":"spec","severity":"blocking","description":"Fix this."}]';
+  const review = reviewPrompt(
+    "main",
+    "/var/tmp/review.json",
+    "pi",
+    "en",
+    "Review {{BASE_REF}} at {{FINDINGS_FILE}} with {{SKILL:code-review}}.",
+  );
+  const taskPrompt = renderWorkerPrompt(
+    "Do {{TASK_ID}} / {{ISSUE_NUMBER}} / {{ISSUE_TITLE}} / {{ISSUE_URL}} with {{SKILL:implement}}.",
+    task,
+    "pi",
+    "en",
+  );
+  const remediation = remediationPrompt(
+    findings,
+    "en",
+    "pi",
+    "Repair verbatim: {{FINDINGS}} using {{SKILL:implement}}.",
+  );
+  const reReview = reReviewPrompt(
+    "origin/main",
+    "/var/tmp/re-review.json",
+    findings,
+    "pi",
+    "en",
+    "Recheck {{BASE_REF}} at {{FINDINGS_FILE}}: {{FINDINGS}} {{SKILL:code-review}}.",
+  );
+  const merge = mergerPrompt(
+    "Resolve conflict A.",
+    "pi",
+    "en",
+    ["one.ts", "two.ts"],
+    "Integrate {{INTEGRATION_CONTEXT}}\n{{ALLOWED_PATHS}}\n{{SKILL:resolving-merge-conflicts}}",
+  );
+
+  assert.match(taskPrompt, /Do LFI-3 \/ 3 \/ Bound autonomous review convergence/u);
+  assert.match(taskPrompt, /\/skill:implement/u);
+  assert.match(review, /Review main at \/var\/tmp\/review\.json with \/skill:code-review/u);
+  assert.match(review, /JSON array/u);
+  assert.match(review, /findings file is the only findings channel/u);
+  assert.match(review, /Do not modify the worktree or create a commit/u);
+  assert.match(remediation, /Repair verbatim: \[\{"axis"/u);
+  assert.match(remediation, /\/skill:implement/u);
+  assert.match(remediation, /Do not stage or commit/u);
+  assert.match(reReview, /Recheck origin\/main at \/var\/tmp\/re-review\.json/u);
+  assert.match(reReview, /Fix this/u);
+  assert.match(reReview, /JSON array/u);
+  assert.match(merge, /Integrate Resolve conflict A\./u);
+  assert.match(merge, /- one\.ts\n- two\.ts/u);
+  assert.match(merge, /\/skill:resolving-merge-conflicts/u);
+  assert.match(merge, /Do not stage or commit/u);
+  for (const prompt of [review, remediation, reReview, merge]) {
+    assert.match(prompt, /<lfi:completion>/u);
+    assert.match(prompt, /<\/lfi:completion>/u);
+  }
 });
