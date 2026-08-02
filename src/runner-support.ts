@@ -15,6 +15,7 @@ import {
 } from "./logs.js";
 import { mergerPrompt } from "./prompts.js";
 import { runProjectCommand } from "./project-command.js";
+import type { IsolationSession } from "./isolation-provider.js";
 
 export const checkpointTracker = async (
   cwd: string,
@@ -177,6 +178,7 @@ export const validateIntegration = async (options: {
   log: RunLogContext;
   phase: "baseline" | "combined";
   repair: (diagnostic: ValidationDiagnostic) => Promise<void>;
+  session?: IsolationSession;
 }): Promise<void> => {
   if (options.config.WORKTREE_SETUP_COMMAND) {
     const setup = await runProjectCommand({
@@ -184,6 +186,7 @@ export const validateIntegration = async (options: {
       cwd: options.cwd,
       gitDirectory: options.gitDirectory,
       isolationProvider: options.config.ISOLATION_PROVIDER,
+      ...(options.session ? { session: options.session } : {}),
     });
     if (setup.exitCode !== 0) {
       throw new Error(
@@ -200,6 +203,7 @@ export const validateIntegration = async (options: {
     cwd: options.cwd,
     gitDirectory: options.gitDirectory,
     isolationProvider: options.config.ISOLATION_PROVIDER,
+    ...(options.session ? { session: options.session } : {}),
   });
   const logValidation = () =>
     appendRunLog(
@@ -225,6 +229,7 @@ export const validateIntegration = async (options: {
       cwd: options.cwd,
       gitDirectory: options.gitDirectory,
       isolationProvider: options.config.ISOLATION_PROVIDER,
+      ...(options.session ? { session: options.session } : {}),
     });
     await logValidation();
   }

@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
+  openIsolationSession,
   sanitizeAgentEnvironment,
-  wrapWithIsolation,
+  withIsolationSession,
 } from "../src/isolation-provider.js";
 
 const stdoutLines: string[] = [];
@@ -27,21 +31,28 @@ const command = {
   ),
 };
 
-test("local isolation wraps a command without spawning a process", () => {
-  const wrapped = wrapWithIsolation(command, {
+test("local isolation session runs commands without changing boundary mechanics", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-isolation-session-"));
+  const gitDirectory = join(root, "repository", ".git");
+  const homeDirectory = join(root, "home", "agent");
+  await Promise.all([
+    mkdir(join(homeDirectory, ".ssh"), { recursive: true }),
+    mkdir(join(homeDirectory, ".config", "gh"), { recursive: true }),
+    mkdir(join(homeDirectory, ".config", "glab-cli"), { recursive: true }),
+    mkdir(gitDirectory, { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(join(homeDirectory, ".git-credentials"), "secret"),
+    writeFile(join(gitDirectory, "config"), "unsafe"),
+  ]);
+  const session = await openIsolationSession({
     provider: "local",
     worktree: "/workspace/task",
-    gitDirectory: "/repository/.git",
-    homeDirectory: "/home/agent",
-    codeHostCredentialDirectories: [
-      "/home/agent/.ssh",
-      "/home/agent/.config/gh",
-      "/home/agent/.config/glab-cli",
-    ],
-    codeHostCredentialFiles: ["/home/agent/.git-credentials"],
-    gitConfigFiles: ["/repository/.git/config"],
-    sanitizedGitConfig: "/repository/.git/lfi-agent/safe-git-config",
+    gitDirectory,
+    homeDirectory,
+    environment: command.environment,
   });
+  const wrapped = session.prepare(command);
 
   assert.equal(wrapped.command, "bwrap");
   assert.deepEqual(wrapped.args.slice(-4), [
@@ -81,8 +92,8 @@ test("local isolation wraps a command without spawning a process", () => {
     wrapped.args.some(
       (value, index) =>
         value === "--bind" &&
-        wrapped.args[index + 1] === "/repository/.git" &&
-        wrapped.args[index + 2] === "/repository/.git",
+        wrapped.args[index + 1] === gitDirectory &&
+        wrapped.args[index + 2] === gitDirectory,
     ),
   );
   assert.ok(
@@ -99,28 +110,37 @@ test("local isolation wraps a command without spawning a process", () => {
         value === "--dev" && wrapped.args[index + 1] === "/dev",
     ),
   );
+  await session.close();
+  await rm(root, { recursive: true, force: true });
 });
 
-test("local isolation hides code-host credentials and exposes package caches", () => {
-  const wrapped = wrapWithIsolation(command, {
+test("local isolation derives credential exclusions and package caches on open", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-isolation-session-"));
+  const gitDirectory = join(root, "repository", ".git");
+  const homeDirectory = join(root, "home", "agent");
+  await Promise.all([
+    mkdir(join(homeDirectory, ".ssh"), { recursive: true }),
+    mkdir(join(homeDirectory, ".config/gh"), { recursive: true }),
+    mkdir(join(homeDirectory, ".config/glab-cli"), { recursive: true }),
+    mkdir(gitDirectory, { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(join(homeDirectory, ".git-credentials"), "secret"),
+    writeFile(join(gitDirectory, "config"), "unsafe"),
+  ]);
+  const session = await openIsolationSession({
     provider: "local",
     worktree: "/workspace/task",
-    gitDirectory: "/repository/.git",
-    homeDirectory: "/home/agent",
-    codeHostCredentialDirectories: [
-      "/home/agent/.ssh",
-      "/home/agent/.config/gh",
-      "/home/agent/.config/glab-cli",
-    ],
-    codeHostCredentialFiles: ["/home/agent/.git-credentials"],
-    gitConfigFiles: ["/repository/.git/config"],
-    sanitizedGitConfig: "/repository/.git/lfi-agent/safe-git-config",
+    gitDirectory,
+    homeDirectory,
+    environment: command.environment,
   });
+  const wrapped = session.prepare(command);
 
   for (const path of [
-    "/home/agent/.ssh",
-    "/home/agent/.config/gh",
-    "/home/agent/.config/glab-cli",
+    join(homeDirectory, ".ssh"),
+    join(homeDirectory, ".config/gh"),
+    join(homeDirectory, ".config/glab-cli"),
   ]) {
     assert.ok(
       wrapped.args.some(
@@ -133,15 +153,14 @@ test("local isolation hides code-host credentials and exposes package caches", (
     wrapped.args.some(
       (value, index) =>
         value === "--bind" &&
-        wrapped.args[index + 1] ===
-          "/repository/.git/lfi-agent/safe-git-config" &&
-        wrapped.args[index + 2] === "/repository/.git/config",
+        wrapped.args[index + 1]?.endsWith("/safe-git-config") &&
+        wrapped.args[index + 2] === join(gitDirectory, "config"),
     ),
   );
   for (const path of [
-    "/home/agent/.npm",
-    "/home/agent/.local/share/pnpm/store",
-    "/home/agent/.cache/node/corepack",
+    join(homeDirectory, ".npm"),
+    join(homeDirectory, ".local/share/pnpm/store"),
+    join(homeDirectory, ".cache/node/corepack"),
   ]) {
     assert.ok(
       wrapped.args.some(
@@ -152,19 +171,36 @@ test("local isolation hides code-host credentials and exposes package caches", (
       ),
     );
   }
+  await session.close();
+  await rm(root, { recursive: true, force: true });
 });
 
-test("none isolation returns the command unchanged", () => {
-  const wrapped = wrapWithIsolation(command, {
+test("none isolation session returns commands unchanged", async () => {
+  const session = await openIsolationSession({
     provider: "none",
     worktree: "/workspace/task",
     gitDirectory: "/repository/.git",
     homeDirectory: "/home/agent",
-    codeHostCredentialDirectories: [],
-    codeHostCredentialFiles: [],
-    gitConfigFiles: [],
-    sanitizedGitConfig: "/repository/.git/lfi-agent/safe-git-config",
+    environment: command.environment,
   });
+  const wrapped = session.prepare(command);
 
   assert.strictEqual(wrapped, command);
+  await session.close();
+});
+
+test("withIsolationSession closes after failure", async () => {
+  let closed = false;
+  await assert.rejects(
+    withIsolationSession(
+      async () => ({
+        prepare: <Command>(value: Command) => value,
+        run: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        close: async () => { closed = true; },
+      }),
+      async () => { throw new Error("command failed"); },
+    ),
+    /command failed/u,
+  );
+  assert.equal(closed, true);
 });

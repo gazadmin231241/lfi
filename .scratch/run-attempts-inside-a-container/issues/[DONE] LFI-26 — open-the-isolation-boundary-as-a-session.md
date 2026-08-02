@@ -45,22 +45,22 @@ implied by a repeated argument.
 
 ## Acceptance criteria
 
-- [ ] The isolation seam is a session: open, run any number of commands, close.
-- [ ] Closing is guaranteed after a failed command and after an abort, not only
+- [x] The isolation seam is a session: open, run any number of commands, close.
+- [x] Closing is guaranteed after a failed command and after an abort, not only
       after normal completion.
-- [ ] One session serves one attempt; the integration step and the merger each
+- [x] One session serves one attempt; the integration step and the merger each
       open their own.
-- [ ] What crosses the boundary is declared once per session in
+- [x] What crosses the boundary is declared once per session in
       provider-independent terms, and each provider derives its own mechanics
       from it.
-- [ ] The process environment is derived by the provider from the same
+- [x] The process environment is derived by the provider from the same
       declaration, with the permitted variables declared in one place.
-- [ ] The boundary configuration is resolved once per session rather than once
+- [x] The boundary configuration is resolved once per session rather than once
       per command.
-- [ ] The local provider's behaviour is byte-for-byte what it is today, and the
+- [x] The local provider's behaviour is byte-for-byte what it is today, and the
       existing boundary integration test passes with its assertions unchanged.
-- [ ] The opt-out still returns commands unchanged.
-- [ ] Agent execution, the merger, the integration worktree, the validation
+- [x] The opt-out still returns commands unchanged.
+- [x] Agent execution, the merger, the integration worktree, the validation
       command, and the worktree setup command all run through the session.
 
 ## Specification

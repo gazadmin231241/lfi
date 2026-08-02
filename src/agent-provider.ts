@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -10,17 +10,16 @@ import {
 import type { ReasoningEffort } from "./config.js";
 import { localize, type Language } from "./i18n.js";
 import {
-  resolveIsolationConfiguration,
-  sanitizeAgentEnvironment,
-  wrapWithIsolation,
+  openIsolationSession,
+  resolveGitIdentity,
   type IsolationProvider,
+  type IsolationSession,
 } from "./isolation-provider.js";
 import {
   formatRunLogSection,
   redactSensitiveText,
   type RunLogContext,
 } from "./logs.js";
-import { runCommand, runCommandLines } from "./process.js";
 
 export type AgentProvider = "codex" | "pi";
 export const defaultAgentProvider: AgentProvider = "codex";
@@ -250,6 +249,7 @@ export const runAgent = async (options: {
   isolationProvider: IsolationProvider;
   prefix: string;
   language: Language;
+  session?: IsolationSession;
 }): Promise<AgentRunResult> => {
   if (
     !options.prompt.includes(completionBlockOpen) ||
@@ -263,8 +263,6 @@ export const runAgent = async (options: {
   }
   await mkdir(options.log.directory, { recursive: true });
   const compactPath = join(options.log.directory, `${options.logName}.log`);
-  const artifacts = await mkdtemp(join(options.gitDirectory, "lfi-agent-"));
-  const sanitizedGitConfig = join(artifacts, "safe-git-config");
   await appendFile(
     compactPath,
     formatRunLogSection(
@@ -293,53 +291,31 @@ export const runAgent = async (options: {
     }
     appendDetail(`${text}\n`);
   };
+  let ownedSession: IsolationSession | undefined;
   try {
-    await writeFile(sanitizedGitConfig, "");
     const agentInvocation = buildAgentInvocation({
       ...options,
     });
-    const isolation = await resolveIsolationConfiguration({
+    const identity =
+      options.session || options.isolationProvider === "none"
+        ? {}
+        : await resolveGitIdentity(options.cwd);
+    const session = options.session ?? await openIsolationSession({
       provider: options.isolationProvider,
       worktree: options.cwd,
       gitDirectory: options.gitDirectory,
       homeDirectory: homedir(),
-      sanitizedGitConfig,
+      environment: process.env,
+      identity,
     });
-    const identity =
-      options.isolationProvider === "none"
-        ? {}
-        : await Promise.all([
-            runCommand("git", ["config", "--get", "user.name"], {
-              cwd: options.cwd,
-            }),
-            runCommand("git", ["config", "--get", "user.email"], {
-              cwd: options.cwd,
-            }),
-          ]).then(([name, email]) => ({
-            ...(name.exitCode === 0 ? { name: name.stdout.trim() } : {}),
-            ...(email.exitCode === 0 ? { email: email.stdout.trim() } : {}),
-          }));
-    const invocation = wrapWithIsolation(
-      {
+    if (!options.session) ownedSession = session;
+    const result = await session.run({
         ...agentInvocation,
         idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
         onStdoutLine: recordEvent,
         onStderrLine: (line) => appendDetail(`${line}\n`),
-        environment:
-          options.isolationProvider === "none"
-            ? process.env
-            : sanitizeAgentEnvironment(process.env, identity),
-      },
-      isolation,
-    );
-    const result = await runCommandLines(invocation.command, invocation.args, {
-      cwd: options.cwd,
-      input: invocation.input,
-      idleTimeoutMs: invocation.idleTimeoutMs,
-      onStdoutLine: invocation.onStdoutLine,
-      onStderrLine: invocation.onStderrLine,
-      env: invocation.environment,
-    });
+        environment: process.env,
+      });
     const parsed = extractCompletionResult(agentMessages.join("\n"));
     const status = parsed.ok ? parsed.status : undefined;
     const parsedSummary = parsed.ok
@@ -374,7 +350,10 @@ export const runAgent = async (options: {
       ),
     };
   } finally {
-    await logWrites;
-    await rm(artifacts, { recursive: true, force: true });
+    try {
+      await logWrites;
+    } finally {
+      await ownedSession?.close();
+    }
   }
 };

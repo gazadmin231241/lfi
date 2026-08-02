@@ -5,9 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  resolveIsolationConfiguration,
-  sanitizeAgentEnvironment,
-  wrapWithIsolation,
+  openIsolationSession,
 } from "../src/isolation-provider.js";
 import { runCommand, runCommandLines } from "../src/process.js";
 
@@ -41,20 +39,21 @@ test(
       await git("commit", "-m", "test: initialize boundary repository");
       await git("worktree", "add", "-b", "boundary-test", worktree);
       const gitDirectory = join(repository, ".git");
-      const artifacts = join(gitDirectory, "lfi-boundary-test");
-      const sanitizedGitConfig = join(artifacts, "safe-git-config");
-      await mkdir(artifacts);
-      await writeFile(sanitizedGitConfig, "");
-      const isolation = await resolveIsolationConfiguration({
+      const isolation = await openIsolationSession({
         provider: "local",
         worktree,
         gitDirectory,
         homeDirectory: homedir(),
-        sanitizedGitConfig,
+        environment: {
+          ...process.env,
+          GH_TOKEN: "code-host-test-value",
+          GIT_CONFIG_PARAMETERS:
+            "'http.https://example.test/.extraheader=authorization: test'",
+        },
+        identity: { name: "LFI Test", email: "lfi@example.test" },
       });
       const lines: string[] = [];
-      const invocation = wrapWithIsolation(
-        {
+      const invocation = isolation.prepare({
           command: "/bin/sh",
           args: [
             "-c",
@@ -74,18 +73,8 @@ printf 'boundary-ok\n'`,
           idleTimeoutMs: 30_000,
           onStdoutLine: (line) => lines.push(line),
           onStderrLine: (line) => lines.push(line),
-          environment: sanitizeAgentEnvironment(
-            {
-              ...process.env,
-              GH_TOKEN: "code-host-test-value",
-              GIT_CONFIG_PARAMETERS:
-                "'http.https://example.test/.extraheader=authorization: test'",
-            },
-            { name: "LFI Test", email: "lfi@example.test" },
-          ),
-        },
-        isolation,
-      );
+          environment: process.env,
+        });
       const result = await runCommandLines(invocation.command, invocation.args, {
         cwd: worktree,
         input: invocation.input,
@@ -102,6 +91,7 @@ printf 'boundary-ok\n'`,
         "worktree write\n",
       );
       assert.equal(await readFile(outside, "utf8"), "host\n");
+      await isolation.close();
     } finally {
       await rm(deviceMarker, { force: true });
       await rm(root, { recursive: true, force: true });

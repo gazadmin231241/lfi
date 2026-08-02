@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -15,10 +16,17 @@ import {
 } from "./git.js";
 import type { Language } from "./i18n.js";
 import type { RunLogContext } from "./logs.js";
+import { redactSensitiveText } from "./logs.js";
 import { renderWorkerPrompt } from "./prompts.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
 import { mergeWithAgent } from "./runner-support.js";
 import { evaluateWorkerResult } from "./worker-result.js";
+import {
+  openIsolationSession,
+  resolveGitIdentity,
+  withIsolationSession,
+} from "./isolation-provider.js";
+import { runProjectCommand } from "./project-command.js";
 
 export const attemptWork = async (options: {
   cwd: string;
@@ -43,68 +51,97 @@ export const attemptWork = async (options: {
       worktreesRoot: options.worktreesRoot,
       taskKey: key,
       baseRef: options.baseRef,
-      setupCommand: options.config.WORKTREE_SETUP_COMMAND,
+      setupCommand: "",
       gitDirectory: options.gitDirectory,
       isolationProvider: options.config.ISOLATION_PROVIDER,
     });
-    if (!worktree.created) {
-      const update = await gitResult(worktree.path, [
-        "merge",
-        options.baseRef,
-        "--no-edit",
-      ]);
-      if (update.exitCode !== 0) {
-        await mergeWithAgent({
+    const identity =
+      options.config.ISOLATION_PROVIDER === "none"
+        ? {}
+        : await resolveGitIdentity(worktree.path);
+    return await withIsolationSession(
+      () => openIsolationSession({
+        provider: options.config.ISOLATION_PROVIDER,
+        worktree: worktree.path,
+        gitDirectory: options.gitDirectory,
+        homeDirectory: homedir(),
+        environment: process.env,
+        identity,
+      }),
+      async (session) => {
+        if (worktree.created && options.config.WORKTREE_SETUP_COMMAND) {
+          const setup = await runProjectCommand({
+            command: options.config.WORKTREE_SETUP_COMMAND,
+            cwd: worktree.path,
+            gitDirectory: options.gitDirectory,
+            isolationProvider: options.config.ISOLATION_PROVIDER,
+            session,
+          });
+          if (setup.exitCode !== 0) {
+            throw new Error(
+              `Worktree setup failed:\n${redactSensitiveText(setup.stderr || setup.stdout)}`,
+            );
+          }
+        }
+        if (!worktree.created) {
+          const update = await gitResult(worktree.path, [
+            "merge",
+            options.baseRef,
+            "--no-edit",
+          ]);
+          if (update.exitCode !== 0) {
+            await mergeWithAgent({
+              cwd: worktree.path,
+              context: `Update ${options.task.id} from ${options.baseRef}.`,
+              config: options.config,
+              gitDirectory: options.gitDirectory,
+              log: options.log,
+              logName: "integration",
+              language: options.language,
+            });
+          }
+        }
+        const agent = await runAgent({
+          agent: target.agent,
           cwd: worktree.path,
-          context: `Update ${options.task.id} from ${options.baseRef}.`,
-          config: options.config,
+          prompt: renderWorkerPrompt(
+            options.taskTemplate,
+            options.task,
+            target.agent,
+            options.language,
+          ),
+          model: target.model,
+          reasoning: options.config.REASONING_EFFORT,
           gitDirectory: options.gitDirectory,
           log: options.log,
-          logName: "integration",
+          logName,
+          idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+          isolationProvider: options.config.ISOLATION_PROVIDER,
+          prefix: key,
           language: options.language,
+          session,
         });
-      }
-    }
-    const agent = await runAgent({
-      agent: target.agent,
-      cwd: worktree.path,
-      prompt: renderWorkerPrompt(
-        options.taskTemplate,
-        options.task,
-        target.agent,
-        options.language,
-      ),
-      model: target.model,
-      reasoning: options.config.REASONING_EFFORT,
-      gitDirectory: options.gitDirectory,
-      log: options.log,
-      logName,
-      idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
-      isolationProvider: options.config.ISOLATION_PROVIDER,
-      prefix: key,
-      language: options.language,
-    });
-    const evaluation = evaluateWorkerResult({
-      processExitCode: agent.exitCode,
-      status: agent.status,
-      commitsAhead: await commitsAhead(worktree.path, options.baseRef),
-      worktreeClean: await worktreeClean(worktree.path),
-    });
-    return {
-      task: options.task,
-      accepted: evaluation.accepted,
-      summary: evaluation.accepted
-        ? agent.summary
-        : `${agent.summary}\n${evaluation.reasons.join(", ")}`,
-      worktreePath: worktree.path,
-      branch: worktree.branch,
-      logName,
-      ...(agent.exitCode !== 0 &&
-      target.model &&
-      agent.unavailableModel
-        ? { unavailableModel: target }
-        : {}),
-    };
+        const evaluation = evaluateWorkerResult({
+          processExitCode: agent.exitCode,
+          status: agent.status,
+          commitsAhead: await commitsAhead(worktree.path, options.baseRef),
+          worktreeClean: await worktreeClean(worktree.path),
+        });
+        return {
+          task: options.task,
+          accepted: evaluation.accepted,
+          summary: evaluation.accepted
+            ? agent.summary
+            : `${agent.summary}\n${evaluation.reasons.join(", ")}`,
+          worktreePath: worktree.path,
+          branch: worktree.branch,
+          logName,
+          ...(agent.exitCode !== 0 && target.model && agent.unavailableModel
+            ? { unavailableModel: target }
+            : {}),
+        };
+      },
+    );
   } catch (error) {
     return {
       task: options.task,

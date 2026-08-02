@@ -1,4 +1,5 @@
 import type { LfiConfig } from "./config.js";
+import { homedir } from "node:os";
 import {
   createIntegrationWorktree,
   git,
@@ -13,6 +14,11 @@ import {
 } from "./local-run-state.js";
 import type { RunLogContext } from "./logs.js";
 import type { Attempt } from "./runner-types.js";
+import {
+  openIsolationSession,
+  resolveGitIdentity,
+  withIsolationSession,
+} from "./isolation-provider.js";
 import {
   mergeWithAgent,
   validateIntegration,
@@ -115,49 +121,83 @@ export const integrateAttempts = async (options: {
     ).stdout
       .split("\0")
       .filter(Boolean);
-    await validateIntegration({
-      cwd: integration.path,
-      config: options.config,
-      gitDirectory: options.gitDirectory,
-      language: options.language,
-      log: options.log,
-      phase: "combined",
-      repair: async (diagnostic) => {
-        const baseline = await createIntegrationWorktree({
-          repoRoot: options.cwd,
-          worktreesRoot: options.worktreesRoot,
-          baseRef: options.baseRef,
-          runId: `${options.runId}-${options.log.iteration}-baseline`,
-        });
-        try {
-          await validateIntegration({
-            cwd: baseline.path,
-            config: options.config,
-            gitDirectory: options.gitDirectory,
-            language: options.language,
-            log: options.log,
-            phase: "baseline",
-            repair: async () => undefined,
-          });
-        } finally {
-          await removeWorktreeAndBranch({
-            repoRoot: options.cwd,
-            path: baseline.path,
-            branch: baseline.branch,
-          }).catch(() => undefined);
-        }
-        await mergeWithAgent({
+    const identity =
+      options.config.ISOLATION_PROVIDER === "none"
+        ? {}
+        : await resolveGitIdentity(integration.path);
+    await withIsolationSession(
+      () =>
+        openIsolationSession({
+          provider: options.config.ISOLATION_PROVIDER,
+          worktree: integration.path,
+          gitDirectory: options.gitDirectory,
+          homeDirectory: homedir(),
+          environment: process.env,
+          identity,
+        }),
+      async (session) =>
+        validateIntegration({
           cwd: integration.path,
-          context: formatValidationDiagnostic(diagnostic),
           config: options.config,
           gitDirectory: options.gitDirectory,
-          log: options.log,
-          logName: "integration",
           language: options.language,
-          allowedPaths: integratedPaths,
-        });
-      },
-    });
+          log: options.log,
+          phase: "combined",
+          session,
+          repair: async (diagnostic) => {
+            const baseline = await createIntegrationWorktree({
+              repoRoot: options.cwd,
+              worktreesRoot: options.worktreesRoot,
+              baseRef: options.baseRef,
+              runId: `${options.runId}-${options.log.iteration}-baseline`,
+            });
+            try {
+              const baselineIdentity =
+                options.config.ISOLATION_PROVIDER === "none"
+                  ? {}
+                  : await resolveGitIdentity(baseline.path);
+              await withIsolationSession(
+                () =>
+                  openIsolationSession({
+                    provider: options.config.ISOLATION_PROVIDER,
+                    worktree: baseline.path,
+                    gitDirectory: options.gitDirectory,
+                    homeDirectory: homedir(),
+                    environment: process.env,
+                    identity: baselineIdentity,
+                  }),
+                async (baselineSession) =>
+                  validateIntegration({
+                    cwd: baseline.path,
+                    config: options.config,
+                    gitDirectory: options.gitDirectory,
+                    language: options.language,
+                    log: options.log,
+                    phase: "baseline",
+                    session: baselineSession,
+                    repair: async () => undefined,
+                  }),
+              );
+            } finally {
+              await removeWorktreeAndBranch({
+                repoRoot: options.cwd,
+                path: baseline.path,
+                branch: baseline.branch,
+              }).catch(() => undefined);
+            }
+            await mergeWithAgent({
+              cwd: integration.path,
+              context: formatValidationDiagnostic(diagnostic),
+              config: options.config,
+              gitDirectory: options.gitDirectory,
+              log: options.log,
+              logName: "integration",
+              language: options.language,
+              allowedPaths: integratedPaths,
+            });
+          },
+        }),
+    );
     await options.beforeDelivery(integration.path);
     await verifyCompletionCheckpoint(
       integration.path,
