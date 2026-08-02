@@ -7,7 +7,9 @@
 Tracker documents live in `.scratch/`. A feature has one `Type: spec` document in
 `.scratch/<feature-slug>/` and its tasks in
 `.scratch/<feature-slug>/issues/`; a task without a specification is directly
-in `.scratch/`. Completed documents stay in place; there is no archive.
+in `.scratch/`. LFI preserves the feature directory name chosen at creation;
+renaming a specification document does not rename or replace its directory.
+Completed documents stay in place; there is no archive.
 
 Every tracker document uses the filename
 `[STATUS] LFI-N — <slug>.md`. `[SPEC]`, `[READY]`, `[RUNNING]`,
@@ -15,6 +17,15 @@ Every tracker document uses the filename
 place status is recorded. `LFI-N` is the stable, repository-wide identifier,
 allocated monotonically even across identifiers found only in Git history. LFI
 renames a document when its status changes.
+
+## Language
+
+Write the content of every tracker document — specifications, tasks, and every
+other type — in English: titles, body text, acceptance criteria, and notes.
+The contract's own vocabulary stays as defined here regardless of language:
+the `[STATUS]` prefix, the `LFI-N` identifier, the `Type:`, `Blocked by:`,
+and `Tier:` marker lines, and their values. Keep `<slug>` in filenames Latin
+kebab-case.
 
 ## Marker lines
 

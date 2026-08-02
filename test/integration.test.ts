@@ -101,9 +101,9 @@ test("integration repair uses the standard model fallback and independent reason
   assert.doesNotMatch(args, /model_reasoning_effort="low"/u);
 });
 
-test("successful merge repair is committed by the agent inside isolation", async () => {
+test("successful merge repair is committed by LFI after the agent resolves it", async () => {
   const fixture = await conflictedRepository(
-    "printf 'resolved\\n' > conflict.txt; git add --all; git commit -m 'agent: resolve integration'",
+    "printf 'resolved\\n' > conflict.txt",
   );
   await repairWithFakeCodex(fixture, "merge-test");
 
@@ -118,7 +118,7 @@ test("successful merge repair is committed by the agent inside isolation", async
   const subject = await runCommand("git", ["log", "-1", "--format=%s"], {
     cwd: fixture.root,
   });
-  assert.equal(subject.stdout.trim(), "agent: resolve integration");
+  assert.equal(subject.stdout.trim(), "chore(lfi): resolve integration");
   assert.match(
     await readFile(join(fixture.logs, "isolation-calls"), "utf8"),
     /\|.*-- codex .*--sandbox workspace-write .*--add-dir/u,

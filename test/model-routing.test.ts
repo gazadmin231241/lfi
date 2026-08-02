@@ -266,7 +266,7 @@ ${codexCompletionEvent("completed", "implemented")}
     runLog,
     /model luna-unavailable for agent codex, configured through the light tier mapping/iu,
   );
-  assert.match(runLog, /LFI-2.+skipped/isu);
+  assert.match(runLog, /LFI-2.+unavailable/isu);
   assert.match(runLog, /Completed: LFI-3/u);
 });
 
@@ -336,7 +336,7 @@ exit 1
   assert.equal(await readFile(join(fixture.root, "implemented.txt"), "utf8"), "implemented by Codex\n");
 });
 
-test("retries preserve the assigned model and user reasoning", async () => {
+test("an incomplete task is attempted only once per run", async () => {
   const fixture = await initializeRoutingRepository({
     tasks: [{ id: 1, tier: "deep" }],
     config: {
@@ -360,16 +360,16 @@ ${codexCompletionEvent("completed", "implemented")}
   const originalPath = process.env.PATH;
   process.env.PATH = `${fixture.tools}:${originalPath ?? ""}`;
   try {
-    assert.equal(await runLfi(fixture.root, "en"), 0);
+    assert.equal(await runLfi(fixture.root, "en"), 1);
   } finally {
     process.env.PATH = originalPath;
   }
 
   const calls = await readFile(fixture.calls, "utf8");
-  assert.equal([...calls.matchAll(/--model sol\b/gu)].length, 2);
+  assert.equal([...calls.matchAll(/--model sol\b/gu)].length, 1);
   assert.equal(
     [...calls.matchAll(/model_reasoning_effort="low"/gu)].length,
-    2,
+    1,
   );
 });
 

@@ -200,8 +200,6 @@ test("local task run commits worker changes, pushes code, and completes the task
     join(tools, "codex"),
     `#!/bin/sh
 printf 'implemented\\n' > implemented.txt
-git add implemented.txt
-git commit -m 'agent: implement local run'
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Implementation is ready."}}'
 ${codexCompletionEvent("completed", "implemented")}
 `,
@@ -328,13 +326,13 @@ exit 97
   const localLog = await runCommand("git", ["log", "--format=%s"], { cwd: root });
   assert.match(localLog.stdout, /docs\(lfi\): update local task tracker/u);
   assert.match(localLog.stdout, /chore\(lfi\): complete LFI-1/u);
-  assert.match(localLog.stdout, /agent: implement local run/u);
+  assert.match(localLog.stdout, /feat\(lfi\): implement LFI-1/u);
   const deliveredLog = await runCommand(
     "git",
     ["log", "origin/main", "--format=%s"],
     { cwd: root },
   );
-  assert.match(deliveredLog.stdout, /agent: implement local run/u);
+  assert.match(deliveredLog.stdout, /feat\(lfi\): implement LFI-1/u);
   const isolationCalls = await readFile(
     join(lfiRoot, "isolation-calls"),
     "utf8",
@@ -399,6 +397,7 @@ exit 97
   );
 
   const failingPath = join(tasks, "[READY] LFI-4 — failing.md");
+  const failingCodexCalls = join(root, "failing-codex-calls");
   await writeFile(
     failingPath,
     serializeTrackerDocument({
@@ -415,6 +414,7 @@ exit 97
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
+printf 'called\n' >> "${failingCodexCalls}"
 printf '%s\\n' '{"type":"item.started","item":{"type":"command_execution","command":"sed -n '\\''1,40p'\\'' failing.txt"}}'
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Could not complete the task."}}'
 printf '%s\\n' 'provider warning' >&2
@@ -444,6 +444,7 @@ ${codexCompletionEvent("incomplete", "blocked")}
   assert.match(failedTaskLog, /exit=0/u);
   assert.match(failedTaskLog, /status=incomplete/u);
   assert.match(failedTaskLog, /blocked/u);
+  assert.equal(await readFile(failingCodexCalls, "utf8"), "called\n");
   const failureOutput = failureTerminal.join("\n");
   assert.match(failureOutput, /Log: \.lfi\/logs\/LFI-4\.log/u);
   assert.doesNotMatch(failureOutput, /Diagnostics:/u);

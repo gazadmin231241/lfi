@@ -29,6 +29,40 @@ const agentProviders: ReadonlySet<string> = new Set([defaultAgentProvider, "pi"]
 export const isAgentProvider = (value: string): value is AgentProvider =>
   agentProviders.has(value);
 
+export interface AgentProfile {
+  paths: readonly string[];
+  skillsDirectory: string;
+}
+
+const profilePathsByAgent: Record<AgentProvider, (homeDirectory: string) => readonly string[]> = {
+  codex: (homeDirectory) => [
+    join(homeDirectory, ".codex", "config.toml"),
+    join(homeDirectory, ".codex", "hooks"),
+    join(homeDirectory, ".codex", "agents"),
+    join(homeDirectory, ".codex", "AGENTS.md"),
+    join(homeDirectory, ".codex", "auth.json"),
+  ],
+  pi: (homeDirectory) => [
+    join(homeDirectory, ".pi", "agent", "settings.json"),
+    join(homeDirectory, ".pi", "agent", "extensions"),
+    join(homeDirectory, ".pi", "agent", "agents"),
+    join(homeDirectory, ".pi", "agent", "subagents.json"),
+    join(homeDirectory, ".pi", "agent", "AGENTS.md"),
+    join(homeDirectory, ".pi", "agent", "auth.json"),
+  ],
+};
+
+const sharedSkillsDirectory = (homeDirectory: string): string =>
+  join(homeDirectory, ".agents", "skills");
+
+export const resolveAgentProfile = (
+  agent: AgentProvider,
+  homeDirectory: string,
+): AgentProfile => ({
+  paths: profilePathsByAgent[agent](homeDirectory),
+  skillsDirectory: sharedSkillsDirectory(homeDirectory),
+});
+
 export const skillPlaceholder = (skill: string): string => `{{SKILL:${skill}}}`;
 
 export const expandSkillPlaceholders = (
@@ -302,6 +336,7 @@ export const runAgent = async (options: {
         : await resolveGitIdentity(options.cwd);
     const session = options.session ?? await openIsolationSession({
       provider: options.isolationProvider,
+      agent: options.agent,
       worktree: options.cwd,
       gitDirectory: options.gitDirectory,
       homeDirectory: homedir(),

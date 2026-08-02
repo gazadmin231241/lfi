@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
+import type { OriginRefresh } from "./git.js";
 import type { RunOutput } from "./logs.js";
 import type { ExecutionTier } from "./execution-tier.js";
 import type { ReasoningEffort } from "./config.js";
@@ -51,6 +52,67 @@ export const printWorkFinished = (
       language,
       accepted ? "Implementation completed" : "Implementation incomplete",
       accepted ? "Реализация завершена" : "Реализация не завершена",
+    )}`,
+  );
+};
+
+export const printOriginRefresh = (
+  output: RunOutput,
+  language: Language,
+  id: string,
+  refresh: OriginRefresh,
+): void => {
+  const { branch } = refresh;
+  if (refresh.outcome === "up-to-date") return;
+  if (refresh.outcome === "fast-forwarded") {
+    output.log(
+      `    ${localize(
+        language,
+        `${id}: worktree fast-forwarded to origin/${branch}`,
+        `${id}: worktree обновлён до origin/${branch}`,
+      )}`,
+    );
+    return;
+  }
+  const reason = {
+    detached: localize(language, "HEAD is detached", "HEAD отсоединён"),
+    dirty: localize(
+      language,
+      "worktree has uncommitted changes",
+      "в worktree есть незакоммиченные изменения",
+    ),
+    "fetch-failed": localize(
+      language,
+      `could not fetch origin/${branch}`,
+      `не удалось получить origin/${branch}`,
+    ),
+    diverged: localize(
+      language,
+      `the branch has diverged from origin/${branch}`,
+      `ветка разошлась с origin/${branch}`,
+    ),
+  }[refresh.reason];
+  output.log(
+    `    ${localize(
+      language,
+      `${id}: reusing the worktree as-is — ${reason}`,
+      `${id}: worktree переиспользуется как есть — ${reason}`,
+    )}`,
+  );
+};
+
+export const printWorktreePreserved = (
+  output: RunOutput,
+  language: Language,
+  id: string,
+  path: string,
+  branch: string,
+): void => {
+  output.log(
+    `    ${localize(
+      language,
+      `${id}: worktree preserved at ${path} — it has uncommitted changes.\n      To review: cd ${path}\n      To clean up: git worktree remove --force ${path} && git branch -D ${branch}`,
+      `${id}: worktree сохранён в ${path} — в нём есть незакоммиченные изменения.\n      Посмотреть: cd ${path}\n      Удалить: git worktree remove --force ${path} && git branch -D ${branch}`,
     )}`,
   );
 };

@@ -2,6 +2,9 @@
 status: accepted
 ---
 
+> Amended by ADR-0003: the claim below that a container-based implementation
+> could be added without changing the interface did not hold.
+
 # Run agents behind a provider seam inside an LFI-owned boundary
 
 LFI was built as an orchestrator of one coding agent. An execution tier resolved

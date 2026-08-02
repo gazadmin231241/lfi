@@ -1,5 +1,6 @@
 import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { resolveAgentProfile, type AgentProvider } from "./agent-provider.js";
 import { runCommand, runCommandLines, type CommandResult } from "./process.js";
 
 export type IsolationProvider = "local" | "none";
@@ -16,6 +17,7 @@ export interface IsolatedCommand {
 
 export interface IsolationSessionOptions {
   provider: IsolationProvider;
+  agent: AgentProvider;
   worktree: string;
   gitDirectory: string;
   homeDirectory: string;
@@ -29,6 +31,8 @@ export interface IsolationDeclaration {
   packageCacheDirectories: readonly string[];
   codeHostCredentialDirectories: readonly string[];
   codeHostCredentialFiles: readonly string[];
+  agentProfilePaths: readonly string[];
+  skillsDirectory: string;
   gitConfigFiles: readonly string[];
   sanitizedGitConfig: string;
   environment: NodeJS.ProcessEnv;
@@ -102,12 +106,12 @@ const packageCaches = (home: string): readonly string[] => [
   homePath(home, ".cache/pnpm"), homePath(home, ".cache/yarn"),
   homePath(home, ".cache/deno"),
 ];
-const credentialDirectories = (home: string): readonly string[] => [
+const localCredentialDirectories = (home: string): readonly string[] => [
   homePath(home, ".ssh"), homePath(home, ".config/gh"),
   homePath(home, ".config/glab-cli"), homePath(home, ".config/hub"),
   homePath(home, ".config/git"), homePath(home, ".gnupg"),
 ];
-const credentialFiles = (home: string): readonly string[] => [
+const localCredentialFiles = (home: string): readonly string[] => [
   homePath(home, ".git-credentials"), homePath(home, ".netrc"),
   homePath(home, ".gitconfig"), homePath(home, ".npmrc"),
 ];
@@ -119,9 +123,10 @@ export const resolveIsolationDeclaration = async (
   options: Omit<IsolationSessionOptions, "provider">,
   sanitizedGitConfig: string,
 ): Promise<IsolationDeclaration> => {
-  const [directories, files, gitConfigFiles] = await Promise.all([
-    existing(credentialDirectories(options.homeDirectory)),
-    existing(credentialFiles(options.homeDirectory)),
+  const profile = resolveAgentProfile(options.agent, options.homeDirectory);
+  const [codeHostCredentialDirectories, codeHostCredentialFiles, gitConfigFiles] = await Promise.all([
+    existing(localCredentialDirectories(options.homeDirectory)),
+    existing(localCredentialFiles(options.homeDirectory)),
     readdir(options.gitDirectory, { recursive: true }).then((paths) =>
       paths
         .filter((path) => ["config", "config.worktree"].includes(basename(path)))
@@ -132,8 +137,10 @@ export const resolveIsolationDeclaration = async (
     worktree: options.worktree,
     gitDirectory: options.gitDirectory,
     packageCacheDirectories: packageCaches(options.homeDirectory),
-    codeHostCredentialDirectories: directories,
-    codeHostCredentialFiles: files,
+    codeHostCredentialDirectories,
+    codeHostCredentialFiles,
+    agentProfilePaths: profile.paths,
+    skillsDirectory: profile.skillsDirectory,
     gitConfigFiles,
     sanitizedGitConfig,
     environment: sanitizeAgentEnvironment(options.environment, options.identity),
@@ -152,15 +159,14 @@ export const openIsolationSession = async (
   }
   const artifacts = await mkdtemp(join(options.gitDirectory, "lfi-isolation-"));
   const sanitizedGitConfig = join(artifacts, "safe-git-config");
-  const declaration = await (async () => {
-    try {
-      await writeFile(sanitizedGitConfig, "");
-      return await resolveIsolationDeclaration(options, sanitizedGitConfig);
-    } catch (error) {
-      await rm(artifacts, { recursive: true, force: true });
-      throw error;
-    }
-  })();
+  let declaration: IsolationDeclaration;
+  try {
+    await writeFile(sanitizedGitConfig, "");
+    declaration = await resolveIsolationDeclaration(options, sanitizedGitConfig);
+  } catch (error) {
+    await rm(artifacts, { recursive: true, force: true });
+    throw error;
+  }
   let closed = false;
   const prepare = <Command extends IsolatedCommand>(command: Command): IsolatedCommand => {
       const args: string[] = [

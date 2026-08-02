@@ -38,21 +38,13 @@ const exists = (path: string): Promise<boolean> =>
     () => false,
   );
 
-const featureDirectories = (tracker: LocalTracker): Map<string, string> => {
-  const used = new Set([TRACKER_ISSUES_DIRECTORY]);
-  const directories = new Map<string, string>();
-  for (const specification of [...tracker.specs].sort(
-    (left, right) => left.number - right.number || left.id.localeCompare(right.id),
-  )) {
-    const base = trackerTitleSlug(specification.title);
-    let directory = base;
-    let suffix = 2;
-    while (used.has(directory)) directory = `${base}-${suffix++}`;
-    used.add(directory);
-    directories.set(specification.id, directory);
-  }
-  return directories;
-};
+const featureDirectories = (tracker: LocalTracker): Map<string, string> =>
+  new Map(
+    tracker.specs.map((specification) => [
+      specification.id,
+      dirname(specification.path),
+    ]),
+  );
 
 export const trackerTargetPath = (
   document: TrackerDocument,
@@ -67,7 +59,7 @@ export const trackerTargetPath = (
   const directories = featureDirectories(tracker);
   const filename = trackerFilename(document, tracker, active);
   if (document.type === "spec") {
-    return join(tracker.root, directories.get(document.id)!, filename);
+    return join(directories.get(document.id)!, filename);
   }
   if (document.spec === undefined) return join(tracker.root, filename);
   const feature = directories.get(document.spec);
@@ -76,7 +68,7 @@ export const trackerTargetPath = (
       `${document.id}: missing spec / отсутствует спецификация ${document.spec}`,
     );
   }
-  return join(tracker.root, feature, TRACKER_ISSUES_DIRECTORY, filename);
+  return join(feature, TRACKER_ISSUES_DIRECTORY, filename);
 };
 
 export const reconcileTrackerFilenames = async (

@@ -15,6 +15,7 @@ import {
   buildAgentInvocation,
   expandSkillPlaceholders,
   isUnavailableModelError,
+  resolveAgentProfile,
   runAgent,
 } from "../src/agent-provider.js";
 
@@ -54,6 +55,60 @@ test("Codex provider builds its invocation without spawning a process", () => {
     "-",
   ]);
   assert.equal(invocation.input, completionInstruction);
+});
+
+test("each agent provider declares only its own configuration profile", () => {
+  const home = "/home/agent";
+  const codex = resolveAgentProfile("codex", home);
+  const pi = resolveAgentProfile("pi", home);
+
+  assert.deepEqual(codex.paths, [
+    "/home/agent/.codex/config.toml",
+    "/home/agent/.codex/hooks",
+    "/home/agent/.codex/agents",
+    "/home/agent/.codex/AGENTS.md",
+    "/home/agent/.codex/auth.json",
+  ]);
+  assert.deepEqual(pi.paths, [
+    "/home/agent/.pi/agent/settings.json",
+    "/home/agent/.pi/agent/extensions",
+    "/home/agent/.pi/agent/agents",
+    "/home/agent/.pi/agent/subagents.json",
+    "/home/agent/.pi/agent/AGENTS.md",
+    "/home/agent/.pi/agent/auth.json",
+  ]);
+  assert.equal(codex.skillsDirectory, "/home/agent/.agents/skills");
+  assert.equal(pi.skillsDirectory, codex.skillsDirectory);
+
+  const excludedPathsByAgent = new Map([
+    [codex, [
+      "/home/agent/.config/gh",
+      "/home/agent/.ssh",
+      "/home/agent/.git-credentials",
+      "/home/agent/.netrc",
+      "/home/agent/.codex/history.jsonl",
+      "/home/agent/.codex/sessions",
+      "/home/agent/.codex/attachments",
+      "/home/agent/.codex/browser",
+      "/home/agent/.codex/cache",
+    ]],
+    [pi, [
+      "/home/agent/.config/gh",
+      "/home/agent/.ssh",
+      "/home/agent/.git-credentials",
+      "/home/agent/.netrc",
+      "/home/agent/.pi/agent/history.jsonl",
+      "/home/agent/.pi/agent/sessions",
+      "/home/agent/.pi/agent/attachments",
+      "/home/agent/.pi/agent/browser",
+      "/home/agent/.pi/agent/cache",
+    ]],
+  ]);
+  for (const [profile, excludedPaths] of excludedPathsByAgent) {
+    for (const path of excludedPaths) {
+      assert.equal(profile.paths.includes(path), false);
+    }
+  }
 });
 
 test("Codex provider expands skill placeholders without spawning a process", () => {

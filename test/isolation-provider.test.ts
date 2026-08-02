@@ -6,9 +6,11 @@ import test from "node:test";
 
 import {
   openIsolationSession,
+  resolveIsolationDeclaration,
   sanitizeAgentEnvironment,
   withIsolationSession,
 } from "../src/isolation-provider.js";
+import { resolveAgentProfile } from "../src/agent-provider.js";
 
 const stdoutLines: string[] = [];
 const stderrLines: string[] = [];
@@ -47,6 +49,7 @@ test("local isolation session runs commands without changing boundary mechanics"
   ]);
   const session = await openIsolationSession({
     provider: "local",
+    agent: "codex",
     worktree: "/workspace/task",
     gitDirectory,
     homeDirectory,
@@ -130,6 +133,7 @@ test("local isolation derives credential exclusions and package caches on open",
   ]);
   const session = await openIsolationSession({
     provider: "local",
+    agent: "codex",
     worktree: "/workspace/task",
     gitDirectory,
     homeDirectory,
@@ -178,6 +182,7 @@ test("local isolation derives credential exclusions and package caches on open",
 test("none isolation session returns commands unchanged", async () => {
   const session = await openIsolationSession({
     provider: "none",
+    agent: "codex",
     worktree: "/workspace/task",
     gitDirectory: "/repository/.git",
     homeDirectory: "/home/agent",
@@ -187,6 +192,50 @@ test("none isolation session returns commands unchanged", async () => {
 
   assert.strictEqual(wrapped, command);
   await session.close();
+});
+
+test("boundary declarations contain only the selected agent profile and shared skills", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-isolation-declaration-"));
+  const gitDirectory = join(root, "repository", ".git");
+  const homeDirectory = join(root, "home", "agent");
+  await Promise.all([
+    mkdir(gitDirectory, { recursive: true }),
+    mkdir(join(homeDirectory, ".ssh"), { recursive: true }),
+    mkdir(join(homeDirectory, ".config", "gh"), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(join(homeDirectory, ".git-credentials"), "code-host credential"),
+    writeFile(join(homeDirectory, ".netrc"), "code-host credential"),
+  ]);
+  const declaration = await resolveIsolationDeclaration({
+    agent: "pi",
+    worktree: "/workspace/task",
+    gitDirectory,
+    homeDirectory,
+    environment: command.environment,
+  }, join(gitDirectory, "safe-git-config"));
+
+  const profile = resolveAgentProfile("pi", homeDirectory);
+  assert.deepEqual(declaration.agentProfilePaths, profile.paths);
+  assert.equal(declaration.skillsDirectory, profile.skillsDirectory);
+  const boundaryPaths = [
+    ...declaration.agentProfilePaths,
+    declaration.skillsDirectory,
+  ];
+  for (const excluded of [
+    join(homeDirectory, ".pi/agent/sessions"),
+    join(homeDirectory, ".pi/agent/cache"),
+    join(homeDirectory, ".pi/agent/attachments"),
+    join(homeDirectory, ".pi/agent/browser"),
+    join(homeDirectory, ".pi/agent/models.json"),
+    join(homeDirectory, ".config/gh"),
+    join(homeDirectory, ".ssh"),
+    join(homeDirectory, ".git-credentials"),
+    join(homeDirectory, ".netrc"),
+  ]) {
+    assert.equal(boundaryPaths.includes(excluded), false);
+  }
+  await rm(root, { recursive: true, force: true });
 });
 
 test("withIsolationSession closes after failure", async () => {

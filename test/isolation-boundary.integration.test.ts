@@ -41,6 +41,7 @@ test(
       const gitDirectory = join(repository, ".git");
       const isolation = await openIsolationSession({
         provider: "local",
+        agent: "codex",
         worktree,
         gitDirectory,
         homeDirectory: homedir(),
@@ -61,6 +62,8 @@ test(
 git rev-parse --git-common-dir >/dev/null
 printf 'worktree write\n' > boundary-written.txt
 printf 'git metadata write' | git hash-object -w --stdin >/dev/null
+git add boundary-written.txt
+git commit -m 'test: commit through isolation boundary' >/dev/null
 if printf 'outside write\n' 2>/dev/null > '${outside}'; then exit 41; fi
 test ! -e '${deviceMarker}'
 test -z "\${GH_TOKEN-}"
@@ -90,6 +93,11 @@ printf 'boundary-ok\n'`,
         await readFile(join(worktree, "boundary-written.txt"), "utf8"),
         "worktree write\n",
       );
+      const committed = await runCommand("git", ["log", "-1", "--format=%s"], {
+        cwd: worktree,
+      });
+      assert.equal(committed.exitCode, 0, committed.stderr);
+      assert.equal(committed.stdout.trim(), "test: commit through isolation boundary");
       assert.equal(await readFile(outside, "utf8"), "host\n");
       await isolation.close();
     } finally {

@@ -32,9 +32,9 @@ export interface InitOptions {
 }
 
 const OPENAI_56_PRESET = {
-  LIGHT_MODEL: "gpt-5.6-luna",
-  STANDARD_MODEL: "gpt-5.6-terra",
-  DEEP_MODEL: "gpt-5.6-sol",
+  LIGHT_MODEL: "codex:gpt-5.6-luna:medium",
+  STANDARD_MODEL: "codex:gpt-5.6-terra:medium",
+  DEEP_MODEL: "codex:gpt-5.6-sol:medium",
 } as const;
 
 const exists = async (path: string) =>
@@ -262,7 +262,7 @@ export const initializeProject = async (
     mkdir(join(lfiRoot, "state"), { recursive: true }),
     mkdir(join(lfiRoot, "worktrees"), { recursive: true }),
   ]);
-  await saveConfig(configPath, config);
+  await saveConfig(configPath, config, options.language);
   await scaffoldWorkerDockerfile(options.cwd);
   await writeFile(
     join(lfiRoot, "task-prompt.md"),

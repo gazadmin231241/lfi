@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 
+import { defaultAgentProvider, type AgentProvider } from "./agent-provider.js";
 import {
   openIsolationSession,
   withIsolationSession,
@@ -13,6 +14,7 @@ export const runProjectCommand = async (options: {
   cwd: string;
   gitDirectory: string;
   isolationProvider: IsolationProvider;
+  agent?: AgentProvider;
   session?: IsolationSession;
 }): Promise<CommandResult> => {
   const run = async (session: IsolationSession): Promise<CommandResult> => {
@@ -30,6 +32,7 @@ export const runProjectCommand = async (options: {
   return await withIsolationSession(
     () => openIsolationSession({
       provider: options.isolationProvider,
+      agent: options.agent ?? defaultAgentProvider,
       worktree: options.cwd,
       gitDirectory: options.gitDirectory,
       homeDirectory: homedir(),

@@ -1,4 +1,4 @@
-import type { LfiConfig } from "./config.js";
+import { resolveIntegrationModel, type LfiConfig } from "./config.js";
 import { homedir } from "node:os";
 import {
   createIntegrationWorktree,
@@ -84,6 +84,7 @@ export const integrateAttempts = async (options: {
   beforeDelivery: (cwd: string) => Promise<void>;
   beforeHostUpdate?: () => Promise<void>;
 }): Promise<{ sha: string; preserveIntegration: boolean }> => {
+  const integrationAgent = resolveIntegrationModel(options.config).agent;
   const integration = await createIntegrationWorktree({
     repoRoot: options.cwd,
     worktreesRoot: options.worktreesRoot,
@@ -129,6 +130,7 @@ export const integrateAttempts = async (options: {
       () =>
         openIsolationSession({
           provider: options.config.ISOLATION_PROVIDER,
+          agent: integrationAgent,
           worktree: integration.path,
           gitDirectory: options.gitDirectory,
           homeDirectory: homedir(),
@@ -160,6 +162,7 @@ export const integrateAttempts = async (options: {
                 () =>
                   openIsolationSession({
                     provider: options.config.ISOLATION_PROVIDER,
+                    agent: integrationAgent,
                     worktree: baseline.path,
                     gitDirectory: options.gitDirectory,
                     homeDirectory: homedir(),

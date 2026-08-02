@@ -22,6 +22,17 @@ export const gitResult = (
   args: readonly string[],
 ) => runCommand("git", args, { cwd });
 
+export const commitWorktreeChanges = async (
+  cwd: string,
+  message: string,
+): Promise<boolean> => {
+  await git(cwd, ["add", "--all"]);
+  const staged = await gitResult(cwd, ["diff", "--cached", "--quiet"]);
+  if (staged.exitCode === 0) return false;
+  await git(cwd, ["commit", "-m", message]);
+  return true;
+};
+
 export const localRepoInfo = async (
   cwd: string,
 ): Promise<{ nameWithOwner: string; defaultBranch: string }> => {
@@ -119,6 +130,46 @@ export const createIntegrationWorktree = async (options: {
 
 export const worktreeClean = async (cwd: string): Promise<boolean> =>
   (await git(cwd, ["status", "--porcelain"])).stdout.trim() === "";
+
+export type OriginRefresh =
+  | { outcome: "fast-forwarded"; branch: string }
+  | { outcome: "up-to-date"; branch: string }
+  | {
+      outcome: "skipped";
+      branch: string;
+      reason: "detached" | "dirty" | "fetch-failed" | "diverged";
+    };
+
+/**
+ * Best-effort refresh of a reused worktree from `origin/<branch>`.
+ *
+ * Never fails the run: an offline fetch, a diverged branch, a detached HEAD
+ * (paused rebase), or uncommitted work all skip the refresh and leave the
+ * worktree exactly as it was. `--ff-only` guarantees the refresh can neither
+ * create a merge commit nor discard unpushed commits.
+ */
+export const fastForwardFromOrigin = async (
+  cwd: string,
+  branch: string,
+): Promise<OriginRefresh> => {
+  const head = await gitResult(cwd, ["symbolic-ref", "--quiet", "HEAD"]);
+  if (head.exitCode !== 0) return { outcome: "skipped", branch, reason: "detached" };
+  if (!(await worktreeClean(cwd)))
+    return { outcome: "skipped", branch, reason: "dirty" };
+  const fetch = await gitResult(cwd, ["fetch", "origin", branch]);
+  if (fetch.exitCode !== 0)
+    return { outcome: "skipped", branch, reason: "fetch-failed" };
+  const before = (await git(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+  const merge = await gitResult(cwd, [
+    "merge",
+    "--ff-only",
+    `origin/${branch}`,
+  ]);
+  if (merge.exitCode !== 0)
+    return { outcome: "skipped", branch, reason: "diverged" };
+  const after = (await git(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+  return { outcome: before === after ? "up-to-date" : "fast-forwarded", branch };
+};
 
 export const commitsAhead = async (
   cwd: string,

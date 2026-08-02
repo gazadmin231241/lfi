@@ -188,7 +188,7 @@ test("feature placement supplies the specification relationship", async () => {
   await assert.rejects(loadLocalTracker(join(root, ".scratch")), /exactly one specification/u);
 });
 
-test("reconciliation follows a specification title change", async () => {
+test("reconciliation preserves the feature directory after a specification title change", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-layout-change-"));
   const feature = join(root, ".scratch", "feature");
   const tasks = join(feature, "issues");
@@ -205,7 +205,8 @@ test("reconciliation follows a specification title change", async () => {
   await reconcileTrackerFilenames(tracker, new Set());
   const reconciled = await loadReconciledLocalTracker(join(root, ".scratch"));
   assert.equal(reconciled.specs[0]?.title, "Renamed feature");
-  assert.match(reconciled.tasks[0]?.path ?? "", /renamed-feature\/issues/u);
+  assert.equal(reconciled.specs[0]?.path, join(feature, "[SPEC] LFI-1 — renamed-feature.md"));
+  assert.equal(reconciled.tasks[0]?.path, taskPath);
   assert.match(await readFile(reconciled.tasks[0]!.path, "utf8"), /LFI-1 — Renamed feature/u);
 });
 

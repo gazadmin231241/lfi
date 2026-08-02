@@ -145,8 +145,12 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Явно отмечай этапы в сообщениях агента: полное ревью, исправления, точечное подтверждение по направлениям, когда оно требуется, и финальная проверка. Не включай в логи секреты, учётные данные, токены, содержащие их prompts или окружение процессов.",
   },
   {
-    en: "Before reporting completion, stage and commit all task changes. LFI accepts only agent-created commits and a clean worktree.",
-    ru: "Перед сообщением о завершении добавь изменения в индекс и создай commit. LFI принимает только commits, созданные агентом, и чистый worktree.",
+    en: "Before reporting that a command is blocked or failed, actually run the command and cite its observed stderr or exit code. Do not infer filesystem restrictions from sandbox descriptions or permission metadata.",
+    ru: "Перед сообщением, что команда заблокирована или завершилась ошибкой, фактически выполни команду и приведи наблюдаемый stderr или exit code. Не делай вывод об ограничениях файловой системы из описания sandbox или метаданных разрешений.",
+  },
+  {
+    en: "Do not stage or commit changes yourself. LFI records the final worktree after you report successful completion.",
+    ru: "Не добавляй изменения в индекс и не создавай commit самостоятельно. LFI зафиксирует итоговый worktree после сообщения об успешном завершении.",
   },
   {
     en: completionContractCopy.en,
@@ -163,6 +167,11 @@ const workerConstraints = (
     language === "ru"
       ? `Работай только над ${identifier}.`
       : `Work only on ${identifier}.`,
+    ...(agent === "codex"
+      ? [language === "ru"
+        ? "При создании review-субагента с full-history fork не передавай agent_type: такой fork наследует тип родительского агента."
+        : "When creating a review subagent with a full-history fork, omit agent_type because that fork inherits the parent agent type."]
+      : []),
     ...workerConstraintCopy.map((copy) => expandSkillPlaceholders(agent, copy[language])),
   ]
     .map((constraint) => `- ${constraint}`)
@@ -194,9 +203,8 @@ Do not modify paths outside this list.
 
 Используй ${skillPlaceholder("resolving-merge-conflicts")}, когда выполняется merge. Сохрани оба
 намерения, запусти проверку и никогда не прерывай merge, не выполняй deploy,
-не используй SSH, не делай force-push и не затрагивай production. Добавь
-разрешение в индекс и создай commit самостоятельно; LFI не создаёт commit за
-агента.
+не используй SSH, не делай force-push и не затрагивай production. Не добавляй
+изменения в индекс и не создавай commit: после успешного завершения это сделает LFI.
 
 Контекст:
 ${context}
@@ -208,8 +216,8 @@ ${completionContractCopy.ru}
 
 Use ${skillPlaceholder("resolving-merge-conflicts")} when a merge is in progress. Preserve both
 intents, run validation, and never abort the merge, deploy, use SSH, force-push,
-or touch production. Stage the resolution and create the commit yourself; LFI
-does not commit for the agent.
+or touch production. Do not stage or commit the resolution; LFI records it after
+you report successful completion.
 
 Context:
 ${context}

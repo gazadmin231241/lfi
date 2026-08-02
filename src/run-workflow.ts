@@ -7,7 +7,7 @@ import {
   loadConfig,
   resolveWorkerModel,
 } from "./config.js";
-import { git, gitCommonDirectory, removeWorktreeAndBranch } from "./git.js";
+import { gitCommonDirectory, removeWorktreeAndBranch } from "./git.js";
 import { localize, type Language } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
 import { configureLocalTrackerStorage } from "./local-setup.js";
@@ -16,7 +16,7 @@ import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
 import { assertNoDirectInstalledSkillReference } from "./prompts.js";
-import { printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, reportUnavailableModelSkip } from "./run-display.js";
+import { printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
 import { listWork } from "./run-source.js";
 import type { Attempt } from "./runner-types.js";
@@ -53,12 +53,6 @@ export const runLfi = async (
   await configureLocalTrackerStorage(cwd);
   await loadReconciledLocalTracker(join(cwd, ".scratch"));
   await checkpointTracker(cwd, "docs(lfi): update local task tracker");
-  await git(cwd, ["fetch", "origin", config.BASE_BRANCH]);
-  await git(cwd, [
-    "merge",
-    `origin/${config.BASE_BRANCH}`,
-    "--no-edit",
-  ]);
   if (selectedIds.length > 0) {
     const tracker = await loadLocalTracker(join(cwd, ".scratch"));
     const blocked = runnableLocalTasks(tracker, selectedIds).blocked;
@@ -113,9 +107,9 @@ export const runLfi = async (
   for (const message of startupErrors) output.error(message);
   try {
     for (let stage = 1; stage <= config.MAX_STAGES; stage++) {
-      await git(cwd, ["fetch", "origin", branch]);
       const candidates = await listWork(cwd, completed, selectedIds);
       const runnable = candidates.flatMap((task) => {
+        if (attempted.has(task.id)) return [];
         if (task.executionTier === undefined) {
           if (!warnedMissingTier.has(task.id)) {
             output.log(
@@ -186,7 +180,7 @@ export const runLfi = async (
               branch: `lfi/${task.id.toLowerCase()}`,
             };
           }
-          printWorkStarted(output, language, task.id, target, config.REASONING_EFFORT);
+          printWorkStarted(output, language, task.id, target, target.reasoning);
           const attempt = await attemptWork({
             cwd,
             worktreesRoot,
@@ -252,6 +246,16 @@ export const runLfi = async (
         printIntegrationCompleted(output, language, branch);
         for (const attempt of accepted) {
           completed.add(attempt.task.id);
+          if (attempt.dirtyWorktree) {
+            printWorktreePreserved(
+              output,
+              language,
+              attempt.task.id,
+              attempt.worktreePath,
+              attempt.branch,
+            );
+            continue;
+          }
           await removeWorktreeAndBranch({
             repoRoot: cwd,
             path: attempt.worktreePath,
