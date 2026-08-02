@@ -94,7 +94,10 @@ ${codexCompletionEvent("completed", "implemented task")}
   }
 });
 
-const runAttemptWithReviewOutput = async (reviewOutput?: string) => {
+const runAttemptWithReviewOutput = async (
+  reviewOutput?: string,
+  remediationCommits = false,
+) => {
   const root = await mkdtemp(join(tmpdir(), "lfi-review-outcome-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
   const worktree = join(worktreesRoot, "lfi-2");
@@ -112,8 +115,11 @@ const runAttemptWithReviewOutput = async (reviewOutput?: string) => {
   await git("add", ".");
   await git("commit", "-m", "test: initialize repository");
   const writeFindings = reviewOutput === undefined
-    ? ""
+    ? ":"
     : `printf '%s' '${reviewOutput}' > "$findings_path"`;
+  const remediationAction = remediationCommits
+    ? `if [ "$call" -eq 3 ]; then printf 'unowned\\n' > remediation.txt; git add remediation.txt; git commit -m 'agent: remediation fixture'; fi`
+    : "";
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
@@ -125,8 +131,9 @@ if [ "$call" -eq 1 ]; then
   printf 'implemented\n' > result.txt
 else
   findings_path=$(printf '%s\n' "$prompt" | sed -n 's/^Findings file: //p')
-  ${writeFindings}
+  if [ -n "$findings_path" ]; then ${writeFindings}; fi
 fi
+${remediationAction}
 ${codexCompletionEvent("completed", "phase completed")}
 `,
   );
@@ -173,20 +180,84 @@ test("advisory-only review findings do not change acceptance", async () => {
   assert.equal(result.logName, "LFI-2");
 });
 
-test("a blocking review finding rejects and preserves the committed worktree", async () => {
+test("blocking findings run one verbatim remediation and clean targeted re-review", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-remediated-attempt-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const worktree = join(worktreesRoot, "lfi-2");
+  const tools = join(root, "tools");
+  const calls = join(root, "codex-calls");
+  const prompts = join(root, "codex-prompts");
+  const findings = '[{ "axis":"spec", "severity":"blocking", "description":"A required behavior is absent." }]';
+  await mkdir(tools, { recursive: true });
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  await writeFile(join(tools, "codex"), `#!/bin/sh
+prompt=$(cat)
+call=1
+if [ -f "${calls}" ]; then call=$(( $(wc -l < "${calls}") + 1 )); fi
+printf '%s\\n' "$call" >> "${calls}"
+printf '%s' "$prompt" > "${prompts}.$call"
+case "$call" in
+  1) printf 'implemented\\n' > result.txt ;;
+  2) findings_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Findings file: //p'); printf '%s' '${findings}' > "$findings_path" ;;
+  3) printf 'remediated\\n' > remediation.txt ;;
+  4) test "$(git status --porcelain)" = ""; findings_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Findings file: //p'); printf '[]' > "$findings_path" ;;
+esac
+${codexCompletionEvent("completed", "phase completed")}
+`);
+  await chmod(join(tools, "codex"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    const result = await attemptWork({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      task: { id: "LFI-2", number: 2, title: "Remediate findings", sourcePath: ".scratch/[READY] LFI-2 — remediation.md", body: "Fix it." },
+      config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none" },
+      gitDirectory: join(root, ".git"),
+      log: { directory: join(root, ".lfi", "logs"), startedAt: new Date().toISOString(), iteration: 1 },
+      taskTemplate: "Implement {{TASK_ID}}.",
+      language: "en",
+    });
+    assert.equal(result.accepted, true, result.summary);
+    assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n");
+    assert.match(await readFile(`${prompts}.3`, "utf8"), new RegExp(findings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.match(await readFile(`${prompts}.4`, "utf8"), /targeted re-review/u);
+    assert.equal(await readFile(join(worktree, "remediation.txt"), "utf8"), "remediated\n");
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test("blockers surviving re-review preserve the worktree without a third review", async () => {
   const { result, worktree, calls } = await runAttemptWithReviewOutput(
-    JSON.stringify([{
-      axis: "spec",
-      severity: "blocking",
-      description: "A required behavior is absent.",
-    }]),
+    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent." }]),
   );
 
   assert.equal(result.accepted, false);
-  assert.match(result.summary, /Review phase/u);
+  assert.match(result.summary, /Re-review phase found blocking findings/u);
   assert.equal(result.worktreePath, worktree);
-  assert.equal(await readFile(join(worktree, "result.txt"), "utf8"), "implemented\n");
-  assert.equal(await readFile(calls, "utf8"), "1\n2\n");
+  assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n");
+});
+
+test("a remediation-created commit is rejected before re-review", async () => {
+  const { result, calls } = await runAttemptWithReviewOutput(
+    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent." }]),
+    true,
+  );
+
+  assert.equal(result.accepted, false);
+  assert.match(result.summary, /Remediation phase failed.*created a commit/u);
+  assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n");
 });
 
 test("a completed review without a findings file is a review failure", async () => {

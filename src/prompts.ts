@@ -111,6 +111,63 @@ ${completionContractCopy.en}
   return expandSkillPlaceholders(agent, prompt);
 };
 
+export const remediationPrompt = (
+  findings: string,
+  language: Language = "en",
+): string => language === "ru"
+  ? `Исправь блокирующие замечания независимого ревью в текущем worktree. Не создавай commit: LFI зафиксирует исправления перед повторным ревью.
+
+Замечания ниже переданы дословно:
+${findings}
+
+${completionContractCopy.ru}
+`
+  : `Remediate the blocking findings from an independent review in the current worktree. Do not create a commit: LFI will commit the remediation before re-review.
+
+The findings below are passed verbatim:
+${findings}
+
+${completionContractCopy.en}
+`;
+
+export const reReviewPrompt = (
+  baseRef: string,
+  findingsPath: string,
+  originalFindings: string,
+  agent: AgentProvider,
+  language: Language = "en",
+): string => {
+  if (!isAbsolute(findingsPath)) {
+    throw new Error("The review findings file path must be absolute.");
+  }
+  const prompt = language === "ru"
+    ? `Проведи одно точечное повторное ревью зафиксированного исправления. Проверь только исходные замечания ниже и риск регрессии в исправленной области; не расширяй ревью.
+
+Base ref: ${baseRef}
+Findings file: ${findingsPath}
+
+Исходные замечания (дословно):
+${originalFindings}
+
+До завершения запиши в Findings file JSON-массив с объектами ровно из полей "axis" ("standards" или "spec"), "severity" ("blocking" или "advisory") и "description". Запиши [] при отсутствии замечаний. Не изменяй worktree и не создавай commit.
+
+${completionContractCopy.ru}
+`
+    : `Perform one targeted re-review of the committed remediation. Check only the original findings below and regression risk in the remediated area; do not broaden the review.
+
+Base ref: ${baseRef}
+Findings file: ${findingsPath}
+
+Original findings (verbatim):
+${originalFindings}
+
+Before completing, write a JSON array to the Findings file. Every item must have exactly the fields "axis" ("standards" or "spec"), "severity" ("blocking" or "advisory"), and "description". Write [] when there are no findings. Do not modify the worktree or create a commit.
+
+${completionContractCopy.en}
+`;
+  return expandSkillPlaceholders(agent, prompt);
+};
+
 interface LocalizedConstraint {
   en: string;
   ru: string;

@@ -5,6 +5,8 @@ import {
   assertNoDirectInstalledSkillReference,
   defaultTaskPrompt,
   mergerPrompt,
+  reReviewPrompt,
+  remediationPrompt,
   reviewPrompt,
   renderWorkerPrompt,
 } from "../src/prompts.js";
@@ -201,6 +203,15 @@ test("review prompt requires an absolute findings path", () => {
     () => reviewPrompt("main", "findings.json", "codex", "en"),
     /absolute/u,
   );
+});
+
+test("remediation and targeted re-review prompts preserve bounded findings context", () => {
+  const findings = '[{ "axis": "spec", "severity": "blocking", "description": "Missing behavior." }]';
+  assert.match(remediationPrompt(findings, "en"), new RegExp(findings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  const prompt = reReviewPrompt("main", "/var/tmp/re-review.json", findings, "codex", "en");
+  assert.match(prompt, /only the original findings/u);
+  assert.match(prompt, /regression risk/u);
+  assert.match(prompt, new RegExp(findings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
 });
 
 test("direct installed skill references are refused with their placeholder", () => {
