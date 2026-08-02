@@ -27,15 +27,15 @@ changes where a command runs, not what the user sees when it fails.
 
 ## Acceptance criteria
 
-- [ ] The project's validation command runs inside the isolation boundary.
-- [ ] The worktree-setup command runs inside the isolation boundary.
-- [ ] Combined validation in the integration worktree and validation repair are
+- [x] The project's validation command runs inside the isolation boundary.
+- [x] The worktree-setup command runs inside the isolation boundary.
+- [x] Combined validation in the integration worktree and validation repair are
       covered.
-- [ ] Dependency installation and test execution succeed under the boundary,
+- [x] Dependency installation and test execution succeed under the boundary,
       verified by running them.
-- [ ] The isolation opt-out applies to these commands as it does to agents.
-- [ ] Failure output is redacted and surfaced exactly as before.
-- [ ] Tests assert that both commands pass through isolation, using a fake
+- [x] The isolation opt-out applies to these commands as it does to agents.
+- [x] Failure output is redacted and surfaced exactly as before.
+- [x] Tests assert that both commands pass through isolation, using a fake
       isolation executable on the path.
 
 ## Specification

@@ -47,5 +47,5 @@ disclosure is not an acceptable price for a stronger one.
 ## Blocked by
 
 - [LFI-17 — Pair each execution tier with an agent](<[DONE] LFI-17 — pair-each-execution-tier-with-an-agent.md>)
-- [LFI-18 — Run tasks with the pi agent](<[BLOCKED] LFI-18 — run-tasks-with-the-pi-agent.md>)
+- [LFI-18 — Run tasks with the pi agent](<[READY] LFI-18 — run-tasks-with-the-pi-agent.md>)
 - [LFI-19 — Confine agent execution to an isolation boundary](<[DONE] LFI-19 — confine-agent-execution-to-an-isolation-boundary.md>)

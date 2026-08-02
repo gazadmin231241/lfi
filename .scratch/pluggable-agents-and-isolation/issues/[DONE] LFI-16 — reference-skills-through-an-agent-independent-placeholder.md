@@ -29,16 +29,16 @@ languages.
 
 ## Acceptance criteria
 
-- [ ] A prompt template references a skill through a placeholder naming it.
-- [ ] Each agent provider expands the placeholder into its own invocation
+- [x] A prompt template references a skill through a placeholder naming it.
+- [x] Each agent provider expands the placeholder into its own invocation
       syntax; expansion is a pure function and is tested per agent.
-- [ ] A template containing a direct reference to an installed skill is refused
+- [x] A template containing a direct reference to an installed skill is refused
       before the run starts, with a message naming the placeholder to use.
-- [ ] A direct reference to something that is not an installed skill does not
+- [x] A direct reference to something that is not an installed skill does not
       trigger the refusal.
-- [ ] Built-in worker and merger prompts use placeholders in English and
+- [x] Built-in worker and merger prompts use placeholders in English and
       Russian.
-- [ ] The mandatory review instruction still reaches the agent for every
+- [x] The mandatory review instruction still reaches the agent for every
       supported agent.
 
 ## Specification

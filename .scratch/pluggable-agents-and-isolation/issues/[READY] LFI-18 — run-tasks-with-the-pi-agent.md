@@ -55,5 +55,5 @@ and the Codex-specific metadata beside each skill is simply ignored by Pi.
 ## Blocked by
 
 - [LFI-15 — Adopt the completion block as the result contract](<[DONE] LFI-15 — adopt-the-completion-block-as-the-result-contract.md>)
-- [LFI-16 — Reference skills through an agent independent placeholder](<[READY] LFI-16 — reference-skills-through-an-agent-independent-placeholder.md>)
+- [LFI-16 — Reference skills through an agent independent placeholder](<[DONE] LFI-16 — reference-skills-through-an-agent-independent-placeholder.md>)
 - [LFI-17 — Pair each execution tier with an agent](<[DONE] LFI-17 — pair-each-execution-tier-with-an-agent.md>)
