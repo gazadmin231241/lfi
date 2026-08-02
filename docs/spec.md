@@ -1,7 +1,7 @@
 # LFI v1 specification
 
 LFI (“Let’s Fucking Implement”) is a bilingual TypeScript CLI for unattended
-implementation of local Markdown tasks with Codex.
+implementation of local Markdown tasks with pluggable coding agents.
 
 ## User workflow
 
@@ -20,8 +20,9 @@ implementation of local Markdown tasks with Codex.
 5. Only documents declaring `Type: task` are executable. Specifications and
    wayfinding documents are not. Unfinished local dependencies declared by the
    task document block execution.
-6. Workers invoke Codex with the configured model/reasoning, the editable
-   `task-prompt.md`, and `$implement`. Local implementation changes are
+6. Each execution tier selects an agent-model pair. Workers invoke that agent
+   with the configured reasoning, the editable `task-prompt.md`, and the
+   agent-specific expansion of the implementation-skill placeholder. Local changes are
    pre-approved; deploy, SSH, production changes, force-push, destructive
    database resets, and secrets remain forbidden.
 7. Each worker performs one complete `$code-review`, consisting of parallel
@@ -31,12 +32,13 @@ implementation of local Markdown tasks with Codex.
    a known blocker may not be ignored: unresolved blockers produce
    `incomplete`. The planned repository-wide validation runs once on the final
    review-adjusted code.
-8. A worker result is accepted only when Codex exits successfully and emits the
-   required tagged completion block with `completed` status. The Codex
-   `workspace-write` sandbox
-   keeps Git metadata read-only, so the LFI host stages and commits successful
-   worker changes. Acceptance then requires commits ahead of the base and a
-   clean worktree.
+8. A worker result is accepted only when the selected agent exits successfully,
+   emits the required tagged completion block with `completed` status, and
+   creates commits ahead of the base. Uncommitted changes never reject an
+   attempt: only committed work reaches integration, and a worktree left dirty
+   is preserved with its path and cleanup command instead of being removed.
+   Agents, setup, and validation commands run inside LFI's isolation boundary;
+   an agent's own sandbox remains enabled inside it.
 9. Successful branches merge into a temporary integration worktree. Conflicts
    invoke the merger model with `$resolving-merge-conflicts`. After a combined
    validation failure, LFI first runs the same command in a separately prepared
@@ -46,8 +48,16 @@ implementation of local Markdown tasks with Codex.
    instead of re-running accepted implementation work.
 10. The validated integration branch is pushed to the configured default
     branch on GitHub.
-11. Successful worktrees/branches are removed; unfinished ones persist and are
-    updated from the latest base before another attempt.
+11. Successful worktrees/branches are removed unless they hold uncommitted
+    changes; unfinished ones persist and are updated from the latest base
+    before another attempt. `lfi run` does not touch the host working tree's
+    branch: it neither fetches nor merges `origin` there, so a dirty or stale
+    checkout never blocks a run, and keeping the base branch current is the
+    operator's call. A reused task worktree is refreshed from
+    `origin/<base branch>` with `merge --ff-only`, and only when it is clean,
+    on its branch, and strictly behind: an unreachable `origin`, a diverged
+    branch, or uncommitted work skips the refresh with a log line instead of
+    failing the run.
 
 ## Operations
 
@@ -60,5 +70,6 @@ implementation of local Markdown tasks with Codex.
 - The pinned `lfi skills` bundle installs eight Matt Pocock skills verbatim,
   including their `agents/openai.yaml`; LFI does not modify upstream skill
   instructions.
-- GitHub auth is provided by `gh auth login`; Codex auth by `codex login`.
+- GitHub auth is provided by `gh auth login`. Each configured agent manages its
+  own authentication; code-host credentials stay outside the isolation boundary.
 - The CLI runs in one foreground terminal and does not open terminal windows.

@@ -18,5 +18,7 @@ export interface Attempt {
   worktreePath: string;
   branch: string;
   logName?: string;
+  /** The agent left uncommitted changes behind; the worktree is preserved. */
+  dirtyWorktree?: boolean;
   unavailableModel?: AgentModel;
 }

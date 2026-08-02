@@ -123,7 +123,9 @@ ${TRACKER_CONTRACT_MARKER}
 Tracker documents live in \`.scratch/\`. A feature has one \`Type: spec\` document in
 \`.scratch/<feature-slug>/\` and its tasks in
 \`.scratch/<feature-slug>/issues/\`; a task without a specification is directly
-in \`.scratch/\`. Completed documents stay in place; there is no archive.
+in \`.scratch/\`. LFI preserves the feature directory name chosen at creation;
+renaming a specification document does not rename or replace its directory.
+Completed documents stay in place; there is no archive.
 
 Every tracker document uses the filename
 \`[STATUS] LFI-N — <slug>.md\`. \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`,
@@ -131,6 +133,15 @@ Every tracker document uses the filename
 place status is recorded. \`LFI-N\` is the stable, repository-wide identifier,
 allocated monotonically even across identifiers found only in Git history. LFI
 renames a document when its status changes.
+
+## Language
+
+Write the content of every tracker document — specifications, tasks, and every
+other type — in English: titles, body text, acceptance criteria, and notes.
+The contract's own vocabulary stays as defined here regardless of language:
+the \`[STATUS]\` prefix, the \`LFI-N\` identifier, the \`Type:\`, \`Blocked by:\`,
+and \`Tier:\` marker lines, and their values. Keep \`<slug>\` in filenames Latin
+kebab-case.
 
 ## Marker lines
 
@@ -164,7 +175,9 @@ ${TRACKER_CONTRACT_MARKER}
 Документы трекера находятся в \`.scratch/\`. У функции один документ \`Type: spec\` в
 \`.scratch/<feature-slug>/\`, а её задачи — в
 \`.scratch/<feature-slug>/issues/\`; задача без спецификации находится прямо в
-\`.scratch/\`. Завершённые документы остаются на месте; каталога архива нет.
+\`.scratch/\`. LFI сохраняет имя каталога функции, выбранное при создании;
+переименование документа спецификации не переименовывает и не заменяет его
+каталог. Завершённые документы остаются на месте; каталога архива нет.
 
 Каждый документ трекера использует имя
 \`[STATUS] LFI-N — <slug>.md\`. \`[SPEC]\`, \`[READY]\`, \`[RUNNING]\`,
@@ -172,6 +185,15 @@ ${TRACKER_CONTRACT_MARKER}
 файла. \`LFI-N\` — стабильный идентификатор в масштабе репозитория, который
 монотонно выделяется с учётом ID, встречающихся только в истории Git. При
 смене статуса LFI переименовывает документ.
+
+## Язык
+
+Содержимое каждого документа трекера — спецификаций, задач и всех остальных
+типов — пиши на русском: заголовки, тело, критерии приёмки и заметки.
+Собственные обозначения контракта остаются такими, как определены здесь,
+независимо от языка: префикс \`[STATUS]\`, идентификатор \`LFI-N\`, строки-маркеры
+\`Type:\`, \`Blocked by:\`, \`Tier:\` и их значения. \`<slug>\` в именах файлов
+записывай латиницей в kebab-case.
 
 ## Строки-маркеры
 

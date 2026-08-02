@@ -11,6 +11,7 @@ import {
 import {
   commitsAhead,
   ensureTaskWorktree,
+  fastForwardFromOrigin,
   gitResult,
   worktreeClean,
 } from "./git.js";
@@ -18,6 +19,7 @@ import type { Language } from "./i18n.js";
 import type { RunLogContext } from "./logs.js";
 import { redactSensitiveText } from "./logs.js";
 import { renderWorkerPrompt } from "./prompts.js";
+import { printOriginRefresh } from "./run-display.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
 import { mergeWithAgent } from "./runner-support.js";
 import { evaluateWorkerResult } from "./worker-result.js";
@@ -84,6 +86,20 @@ export const attemptWork = async (options: {
           }
         }
         if (!worktree.created) {
+          // Reused worktrees hold a local copy of the base that does not move on
+          // its own. Refresh it from origin where that is provably safe; every
+          // other case reuses the worktree exactly as it was.
+          const refresh = await fastForwardFromOrigin(
+            worktree.path,
+            options.baseRef,
+          );
+          if (options.log.output)
+            printOriginRefresh(
+              options.log.output,
+              options.language,
+              options.task.id,
+              refresh,
+            );
           const update = await gitResult(worktree.path, [
             "merge",
             options.baseRef,
@@ -111,7 +127,7 @@ export const attemptWork = async (options: {
             options.language,
           ),
           model: target.model,
-          reasoning: options.config.REASONING_EFFORT,
+          reasoning: target.reasoning,
           gitDirectory: options.gitDirectory,
           log: options.log,
           logName,
@@ -125,8 +141,8 @@ export const attemptWork = async (options: {
           processExitCode: agent.exitCode,
           status: agent.status,
           commitsAhead: await commitsAhead(worktree.path, options.baseRef),
-          worktreeClean: await worktreeClean(worktree.path),
         });
+        const dirtyWorktree = !(await worktreeClean(worktree.path));
         return {
           task: options.task,
           accepted: evaluation.accepted,
@@ -136,6 +152,7 @@ export const attemptWork = async (options: {
           worktreePath: worktree.path,
           branch: worktree.branch,
           logName,
+          ...(dirtyWorktree ? { dirtyWorktree: true } : {}),
           ...(agent.exitCode !== 0 && target.model && agent.unavailableModel
             ? { unavailableModel: target }
             : {}),

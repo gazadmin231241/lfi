@@ -84,8 +84,26 @@ _Avoid_: agent (unqualified), backend, vendor, model provider
 **Isolation provider**:
 The boundary LFI applies itself to confine anything a task causes to run — the
 agent, the validation command, the setup command. Distinct from any sandbox an
-agent brings of its own.
-_Avoid_: sandbox (unqualified), container, jail
+agent brings of its own. A container is one mechanism a provider may use, never
+a name for the boundary itself.
+_Avoid_: sandbox (unqualified), jail; container as a synonym for the boundary
+
+**Isolation session**:
+An opened boundary with a known lifetime, inside which several commands run in
+sequence. One session serves one attempt, and closing it is guaranteed.
+_Avoid_: container, sandbox, environment
+
+**Agent profile**:
+The host configuration an agent provider declares as its own — settings, hooks,
+subagents, instructions, credentials — and which crosses the boundary so the
+agent behaves as the user configured it. Never includes conversation history,
+sessions, or caches.
+_Avoid_: config, dotfiles, home directory
+
+**Worker image**:
+The image an attempt executes in: the project's own toolchain, owned by the
+user, with LFI's layer on top.
+_Avoid_: base image, container, environment
 
 **Completion block**:
 The tagged block an agent emits to declare whether it finished and what it did.
