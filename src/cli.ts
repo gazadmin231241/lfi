@@ -2,7 +2,7 @@
 import { access, readFile, readdir, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-import { isReasoningEffort, loadConfig } from "./config.js";
+import { DEFAULT_CONFIG, isReasoningEffort, loadConfig } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { initializeProject } from "./init.js";
 import { localize, resolveLanguage, saveLanguage, t, type Language } from "./i18n.js";
@@ -85,7 +85,22 @@ const requireConfig = async (language: Language) => {
 const printDoctor = async (
   language: Language,
 ): Promise<number> => {
-  const checks = await runDoctor(cwd, language);
+  const configPath = join(cwd, ".lfi", "config.env");
+  const config = await access(configPath).then(
+    () => loadConfig(configPath),
+    (error: unknown) => {
+      if (
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return DEFAULT_CONFIG;
+      }
+      throw error;
+    },
+  );
+  const checks = await runDoctor(cwd, language, config);
   for (const check of checks) {
     console.log(`${check.ok ? "✓" : check.required ? "✗" : "!"} ${check.name}: ${check.detail}`);
   }

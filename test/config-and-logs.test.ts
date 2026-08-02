@@ -124,11 +124,64 @@ test("configuration rejects reasoning Pi does not accept", () => {
 });
 
 test("doctor requires the commands used by GitHub code delivery", async () => {
-  const checks = await runDoctor(process.cwd(), "en");
+  const root = await mkdtemp(join(tmpdir(), "lfi-doctor-codex-"));
+  const tools = join(root, "bin");
+  await mkdir(tools);
+  for (const command of ["git", "gh", "codex"]) {
+    const path = join(tools, command);
+    await writeFile(path, "#!/bin/sh\nprintf 'SECRET_TOKEN\n'\n");
+    await chmod(path, 0o755);
+  }
+  const checks = await runDoctor(process.cwd(), "en", {
+    ...DEFAULT_CONFIG,
+    ISOLATION_PROVIDER: "none",
+  }, {
+    ...process.env,
+    PATH: tools,
+  });
   const commands = checks.filter((check) => !check.name.startsWith("$"));
 
   assert.deepEqual(commands.map((check) => check.name), ["git", "gh", "codex"]);
   assert.equal(commands.every((check) => check.required), true);
+});
+
+test("doctor checks only configured agents and never reports command output", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-doctor-tools-"));
+  const tools = join(root, "bin");
+  await mkdir(tools);
+  for (const command of ["git", "gh", "pi", "which"]) {
+    const path = join(tools, command);
+    await writeFile(path, "#!/bin/sh\nprintf 'SECRET_TOKEN\n'\n");
+    await chmod(path, 0o755);
+  }
+  const config = {
+    ...DEFAULT_CONFIG,
+    LIGHT_MODEL: "pi:cheap",
+    STANDARD_MODEL: "pi:standard",
+    DEEP_MODEL: "pi:deep",
+    MERGER_MODEL: "pi:merge",
+    ISOLATION_PROVIDER: "none" as const,
+  };
+
+  const checks = await runDoctor(process.cwd(), "en", config, {
+    ...process.env,
+    PATH: tools,
+  });
+  const required = checks.filter((check) => check.required);
+
+  assert.deepEqual(required.map((check) => check.name), ["git", "gh", "pi"]);
+  assert.equal(checks.some((check) => check.name === "$implement"), false);
+  assert.equal(checks.some((check) => check.detail.includes("SECRET_TOKEN")), false);
+  assert.equal(required.every((check) => check.ok), true);
+});
+
+test("doctor checks local isolation and keeps its message actionable", async () => {
+  const checks = await runDoctor(process.cwd(), "en", DEFAULT_CONFIG);
+  const isolation = checks.find((check) => check.name === "bwrap");
+
+  assert.ok(isolation);
+  assert.equal(isolation.required, true);
+  assert.match(isolation.detail, /bwrap/u);
 });
 
 test("config rejects unsafe concurrency and invalid numeric values", () => {

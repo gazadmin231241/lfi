@@ -180,6 +180,14 @@ export const resolveIntegrationModel = (config: LfiConfig): AgentModel =>
     config.MERGER_MODEL || config.STANDARD_MODEL || config.DEFAULT_MODEL,
   );
 
+export const configuredAgents = (config: LfiConfig): ReadonlySet<AgentProvider> =>
+  new Set([
+    resolveWorkerModel(config, "light").agent,
+    resolveWorkerModel(config, "standard").agent,
+    resolveWorkerModel(config, "deep").agent,
+    resolveIntegrationModel(config).agent,
+  ]);
+
 export const validateConfig = (config: LfiConfig): LfiConfig => {
   for (const key of ["MAX_PARALLEL", "MAX_STAGES"] as const) {
     if (!Number.isSafeInteger(config[key]) || config[key] < 1) {
