@@ -20,8 +20,8 @@ import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
 import {
-  assertNoDirectInstalledSkillReference,
   loadPromptTemplates,
+  validatePromptTemplates,
 } from "./prompts.js";
 import { printDefaultBranchPushed, printDefaultBranchReconciled, printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printPushNote, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
@@ -51,8 +51,8 @@ export const runLfi = async (
     );
   }
   const promptTemplates = await loadPromptTemplates(lfiRoot, language);
-  assertNoDirectInstalledSkillReference(
-    promptTemplates.task.content,
+  validatePromptTemplates(
+    promptTemplates,
     await installedSkillNames(),
     language,
   );

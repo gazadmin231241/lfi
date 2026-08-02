@@ -82,6 +82,39 @@ test("local dry-run selects the dependency frontier without GitHub", async () =>
   assert.deepEqual(selected.blocked.map((task) => task.id), ["LFI-3"]);
 });
 
+test("invalid phase templates fail before creating run state or touching tracker tasks", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-invalid-phase-template-run-"));
+  const lfiRoot = join(root, ".lfi");
+  const taskPath = join(root, ".scratch", "[READY] LFI-1 — unchanged.md");
+  await mkdir(join(lfiRoot, "prompts"), { recursive: true });
+  await mkdir(join(root, ".scratch"), { recursive: true });
+  await writeFile(
+    join(lfiRoot, "config.env"),
+    serializeEnvConfig({ ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" }),
+  );
+  await writeFile(join(lfiRoot, "prompts", "merge.md"), "Merge {{TASK_ID}}.\n");
+  const taskDocument = serializeTrackerDocument({
+    id: "LFI-1",
+    number: 1,
+    type: "task",
+    title: "Unchanged",
+    status: "ready",
+    blockedBy: [],
+    body: "Remain untouched.\n",
+    path: taskPath,
+  });
+  await writeFile(taskPath, taskDocument);
+
+  await assert.rejects(
+    () => runLfi(root, "en"),
+    /\.lfi\/prompts\/merge\.md.*\{\{TASK_ID\}\}/u,
+  );
+
+  await assert.rejects(() => stat(join(lfiRoot, "state")));
+  await assert.rejects(() => stat(join(lfiRoot, "worktrees")));
+  assert.equal(await readFile(taskPath, "utf8"), taskDocument);
+});
+
 test("local run does not repeat accepted work after integration fails", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-local-baseline-failure-"));
   const lfiRoot = join(root, ".lfi");

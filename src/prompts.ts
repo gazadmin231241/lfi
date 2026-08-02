@@ -49,6 +49,14 @@ export interface ResolvedPromptTemplate {
 
 export type PromptTemplates = Record<PromptPhase, ResolvedPromptTemplate>;
 
+const promptPhases = [
+  "task",
+  "review",
+  "remediation",
+  "re-review",
+  "merge",
+] as const satisfies readonly PromptPhase[];
+
 export const defaultReviewPrompt = (language: Language): string =>
   language === "ru"
     ? `Проведи независимое ревью уже зафиксированных изменений в текущем worktree.
@@ -201,6 +209,56 @@ export const describePromptTemplateSource = (
 };
 
 const directSkillReference = /\$([A-Za-z0-9][A-Za-z0-9-]*)/gu;
+
+const templatePlaceholder = /\{\{([^{}]*)\}\}/gu;
+
+const phasePlaceholders: Record<PromptPhase, ReadonlySet<string>> = {
+  task: new Set(["ISSUE_URL", "ISSUE_NUMBER", "ISSUE_TITLE", "TASK_ID"]),
+  review: new Set(["BASE_REF", "FINDINGS_FILE"]),
+  remediation: new Set(["FINDINGS"]),
+  "re-review": new Set(["BASE_REF", "FINDINGS_FILE", "FINDINGS"]),
+  merge: new Set(["INTEGRATION_CONTEXT", "ALLOWED_PATHS"]),
+};
+
+const isSkillPlaceholder = (placeholder: string): boolean =>
+  /^SKILL:[A-Za-z0-9][A-Za-z0-9-]*$/u.test(placeholder);
+
+const templateSourcePath = (template: ResolvedPromptTemplate): string =>
+  template.source.kind === "built-in" ? "built-in default" : template.source.path;
+
+export const validatePromptTemplates = (
+  templates: PromptTemplates,
+  installedSkills: ReadonlySet<string>,
+  language: Language = "en",
+): void => {
+  for (const phase of promptPhases) {
+    const template = templates[phase];
+    const sourcePath = templateSourcePath(template);
+    if (template.source.kind !== "built-in" && template.content.trim().length === 0) {
+      throw new Error(
+        language === "ru"
+          ? `Шаблон prompt ${sourcePath} пуст.`
+          : `Prompt template ${sourcePath} is empty.`,
+      );
+    }
+    for (const match of template.content.matchAll(templatePlaceholder)) {
+      const placeholder = match[1] ?? "";
+      if (
+        (phasePlaceholders[phase].has(placeholder) || isSkillPlaceholder(placeholder))
+      ) continue;
+      throw new Error(
+        language === "ru"
+          ? `Шаблон prompt ${sourcePath} содержит неизвестный placeholder {{${placeholder}}} для фазы ${phase}.`
+          : `Prompt template ${sourcePath} contains unknown placeholder {{${placeholder}}} for the ${phase} phase.`,
+      );
+    }
+    assertNoDirectInstalledSkillReference(
+      template.content,
+      installedSkills,
+      language,
+    );
+  }
+};
 
 export const assertNoDirectInstalledSkillReference = (
   template: string,

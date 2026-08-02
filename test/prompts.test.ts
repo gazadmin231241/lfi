@@ -18,6 +18,7 @@ import {
   remediationPrompt,
   reviewPrompt,
   renderWorkerPrompt,
+  validatePromptTemplates,
 } from "../src/prompts.js";
 import type { WorkItem } from "../src/runner-types.js";
 
@@ -181,6 +182,70 @@ test("direct installed skill references are refused with their placeholder", () 
 test("direct references that are not installed skills are allowed", () => {
   assert.doesNotThrow(() =>
     assertNoDirectInstalledSkillReference("The shell expands $HOME.", new Set(["implement"])),
+  );
+});
+
+test("phase template validation rejects unknown scoped placeholders before rendering", async () => {
+  const lfiRoot = await mkdtemp(join(tmpdir(), "lfi-invalid-placeholder-"));
+  await mkdir(join(lfiRoot, "prompts"));
+  await writeFile(join(lfiRoot, "prompts", "review.md"), "Review {{TASK_ID}}.\n");
+
+  await assert.rejects(
+    async () => validatePromptTemplates(await loadPromptTemplates(lfiRoot, "en"), new Set()),
+    /\.lfi\/prompts\/review\.md.*\{\{TASK_ID\}\}/u,
+  );
+});
+
+test("phase template validation rejects empty placeholders", async () => {
+  const lfiRoot = await mkdtemp(join(tmpdir(), "lfi-empty-placeholder-"));
+  await mkdir(join(lfiRoot, "prompts"));
+  await writeFile(join(lfiRoot, "prompts", "review.md"), "Review {{}}.\n");
+
+  await assert.rejects(
+    async () => validatePromptTemplates(await loadPromptTemplates(lfiRoot, "en"), new Set()),
+    /\.lfi\/prompts\/review\.md.*\{\{\}\}/u,
+  );
+});
+
+test("phase template validation rejects empty custom and legacy files", async () => {
+  const customRoot = await mkdtemp(join(tmpdir(), "lfi-empty-custom-prompt-"));
+  await mkdir(join(customRoot, "prompts"));
+  await writeFile(join(customRoot, "prompts", "merge.md"), " \n\t");
+  const legacyRoot = await mkdtemp(join(tmpdir(), "lfi-empty-legacy-prompt-"));
+  await writeFile(join(legacyRoot, "task-prompt.md"), "\n \t");
+
+  await assert.rejects(
+    async () => validatePromptTemplates(await loadPromptTemplates(customRoot, "en"), new Set()),
+    /\.lfi\/prompts\/merge\.md.*empty/u,
+  );
+  await assert.rejects(
+    async () => validatePromptTemplates(await loadPromptTemplates(legacyRoot, "en"), new Set()),
+    /\.lfi\/task-prompt\.md.*empty/u,
+  );
+});
+
+test("phase template validation rejects installed skill references in every phase", async () => {
+  const lfiRoot = await mkdtemp(join(tmpdir(), "lfi-direct-skill-phase-"));
+  await mkdir(join(lfiRoot, "prompts"));
+  await writeFile(join(lfiRoot, "prompts", "re-review.md"), "Use $implement.\n");
+
+  await assert.rejects(
+    async () => validatePromptTemplates(await loadPromptTemplates(lfiRoot, "en"), new Set(["implement"])),
+    /Use \{\{SKILL:implement\}\} instead/u,
+  );
+});
+
+test("valid phase templates pass validation", async () => {
+  const lfiRoot = await mkdtemp(join(tmpdir(), "lfi-valid-phase-prompts-"));
+  await mkdir(join(lfiRoot, "prompts"));
+  await writeFile(join(lfiRoot, "prompts", "task.md"), "Do {{TASK_ID}} with {{SKILL:implement}}.\n");
+  await writeFile(join(lfiRoot, "prompts", "review.md"), "Check {{BASE_REF}} at {{FINDINGS_FILE}}.\n");
+  await writeFile(join(lfiRoot, "prompts", "remediation.md"), "Fix {{FINDINGS}}.\n");
+  await writeFile(join(lfiRoot, "prompts", "re-review.md"), "Recheck {{BASE_REF}} {{FINDINGS_FILE}} {{FINDINGS}}.\n");
+  await writeFile(join(lfiRoot, "prompts", "merge.md"), "Merge {{INTEGRATION_CONTEXT}} {{ALLOWED_PATHS}}.\n");
+
+  await assert.doesNotReject(
+    async () => validatePromptTemplates(await loadPromptTemplates(lfiRoot, "en"), new Set(["implement"])),
   );
 });
 
