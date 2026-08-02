@@ -5,7 +5,7 @@ import {
   resolveIntegrationModel,
   type LfiConfig,
 } from "./config.js";
-import { git, gitResult } from "./git.js";
+import { commitWorktreeChanges, git, gitResult } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import {
@@ -84,6 +84,26 @@ export const mergeWithAgent = async (options: {
     language: options.language,
   });
   if (result.exitCode === 0 && result.status === "completed") {
+    for (const path of unmerged) {
+      const current = await gitResult(options.cwd, [
+        "hash-object",
+        "--no-filters",
+        "--",
+        path,
+      ]);
+      const fingerprint =
+        current.exitCode === 0 ? current.stdout.trim() : undefined;
+      if (fingerprint === fingerprints.get(path)) {
+        throw new Error(
+          localize(
+            options.language,
+            `Merger did not resolve ${path}: the conflicted path was unchanged.`,
+            `Агент слияния не разрешил ${path}: конфликтующий путь не изменился.`,
+          ),
+        );
+      }
+    }
+    await commitWorktreeChanges(options.cwd, "chore(lfi): resolve integration");
     if (options.allowedPaths) {
       const [tracked, untracked] = await Promise.all([
         git(options.cwd, [
@@ -110,25 +130,6 @@ export const mergeWithAgent = async (options: {
             options.language,
             `Merger modified paths outside the integrated diff: ${unexpected.join(", ")}`,
             `Агент слияния изменил пути вне объединённого diff: ${unexpected.join(", ")}`,
-          ),
-        );
-      }
-    }
-    for (const path of unmerged) {
-      const current = await gitResult(options.cwd, [
-        "hash-object",
-        "--no-filters",
-        "--",
-        path,
-      ]);
-      const fingerprint =
-        current.exitCode === 0 ? current.stdout.trim() : undefined;
-      if (fingerprint === fingerprints.get(path)) {
-        throw new Error(
-          localize(
-            options.language,
-            `Merger did not resolve ${path}: the conflicted path was unchanged.`,
-            `Агент слияния не разрешил ${path}: конфликтующий путь не изменился.`,
           ),
         );
       }

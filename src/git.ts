@@ -22,6 +22,17 @@ export const gitResult = (
   args: readonly string[],
 ) => runCommand("git", args, { cwd });
 
+export const commitWorktreeChanges = async (
+  cwd: string,
+  message: string,
+): Promise<boolean> => {
+  await git(cwd, ["add", "--all"]);
+  const staged = await gitResult(cwd, ["diff", "--cached", "--quiet"]);
+  if (staged.exitCode === 0) return false;
+  await git(cwd, ["commit", "-m", message]);
+  return true;
+};
+
 export const localRepoInfo = async (
   cwd: string,
 ): Promise<{ nameWithOwner: string; defaultBranch: string }> => {

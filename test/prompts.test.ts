@@ -47,8 +47,8 @@ test("English worker prompt bounds complete review and validation", () => {
   );
   assert.match(prompt, /<lfi:completion>/u);
   assert.match(prompt, /<\/lfi:completion>/u);
-  assert.match(prompt, /stage and commit/u);
-  assert.doesNotMatch(prompt, /Do not run git add or git commit/u);
+  assert.match(prompt, /Do not stage or commit changes yourself/u);
+  assert.match(prompt, /LFI records the final worktree/u);
 });
 
 test("Russian worker prompt bounds complete review and validation", () => {
@@ -107,13 +107,13 @@ test("English and Russian merger prompts require the completion block", () => {
   }
 });
 
-test("Russian worker prompt requires the agent-created commit", () => {
+test("Russian worker prompt delegates commit creation to LFI", () => {
   const prompt = renderWorkerPrompt("Начни {{TASK_ID}}.", task, "codex", "ru");
 
-  assert.match(prompt, /добавь изменения в индекс и создай commit/u);
+  assert.match(prompt, /Не добавляй изменения в индекс и не создавай commit/u);
+  assert.match(prompt, /LFI зафиксирует итоговый worktree/u);
   assert.match(prompt, /фактически выполни команду/u);
   assert.match(prompt, /stderr или exit code/u);
-  assert.doesNotMatch(prompt, /Не запускай git add или git commit/u);
 });
 
 test("English worker prompt requires command evidence before reporting a failure", () => {

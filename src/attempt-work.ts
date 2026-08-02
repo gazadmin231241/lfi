@@ -9,6 +9,7 @@ import {
   type LfiConfig,
 } from "./config.js";
 import {
+  commitWorktreeChanges,
   commitsAhead,
   ensureTaskWorktree,
   fastForwardFromOrigin,
@@ -137,6 +138,12 @@ export const attemptWork = async (options: {
           language: options.language,
           session,
         });
+        if (agent.exitCode === 0 && agent.status === "completed") {
+          await commitWorktreeChanges(
+            worktree.path,
+            `feat(lfi): implement ${options.task.id}`,
+          );
+        }
         const evaluation = evaluateWorkerResult({
           processExitCode: agent.exitCode,
           status: agent.status,

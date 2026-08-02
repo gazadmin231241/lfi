@@ -200,8 +200,6 @@ test("local task run commits worker changes, pushes code, and completes the task
     join(tools, "codex"),
     `#!/bin/sh
 printf 'implemented\\n' > implemented.txt
-git add implemented.txt
-git commit -m 'agent: implement local run'
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Implementation is ready."}}'
 ${codexCompletionEvent("completed", "implemented")}
 `,
@@ -328,13 +326,13 @@ exit 97
   const localLog = await runCommand("git", ["log", "--format=%s"], { cwd: root });
   assert.match(localLog.stdout, /docs\(lfi\): update local task tracker/u);
   assert.match(localLog.stdout, /chore\(lfi\): complete LFI-1/u);
-  assert.match(localLog.stdout, /agent: implement local run/u);
+  assert.match(localLog.stdout, /feat\(lfi\): implement LFI-1/u);
   const deliveredLog = await runCommand(
     "git",
     ["log", "origin/main", "--format=%s"],
     { cwd: root },
   );
-  assert.match(deliveredLog.stdout, /agent: implement local run/u);
+  assert.match(deliveredLog.stdout, /feat\(lfi\): implement LFI-1/u);
   const isolationCalls = await readFile(
     join(lfiRoot, "isolation-calls"),
     "utf8",
