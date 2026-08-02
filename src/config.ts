@@ -25,6 +25,8 @@ export interface LfiConfig {
   REASONING_EFFORT: ReasoningEffort;
   MERGER_MODEL: string;
   MERGER_REASONING_EFFORT: ReasoningEffort;
+  REVIEWER_MODEL: string;
+  REVIEWER_REASONING_EFFORT: ReasoningEffort;
   MAX_PARALLEL: number;
   MAX_STAGES: number;
   LOG_RETENTION_DAYS: number;
@@ -43,6 +45,8 @@ export const DEFAULT_CONFIG: LfiConfig = {
   REASONING_EFFORT: "medium",
   MERGER_MODEL: "",
   MERGER_REASONING_EFFORT: "medium",
+  REVIEWER_MODEL: "",
+  REVIEWER_REASONING_EFFORT: "medium",
   MAX_PARALLEL: 3,
   MAX_STAGES: 10,
   LOG_RETENTION_DAYS: 3,
@@ -69,6 +73,7 @@ const configComments = {
       STANDARD_MODEL: "model for standard work",
       DEEP_MODEL: "model for deep work",
       MERGER_MODEL: "model for integration and conflicts",
+      REVIEWER_MODEL: "model for review and re-review",
       MAX_PARALLEL: "tasks that may run at once",
       MAX_STAGES: "maximum stages per run",
       LOG_RETENTION_DAYS: "days to keep logs",
@@ -91,6 +96,7 @@ const configComments = {
       STANDARD_MODEL: "модель для стандартной работы",
       DEEP_MODEL: "модель для сложной работы",
       MERGER_MODEL: "модель для интеграции и конфликтов",
+      REVIEWER_MODEL: "модель для ревью и повторного ревью",
       MAX_PARALLEL: "число одновременно выполняемых задач",
       MAX_STAGES: "максимум этапов за запуск",
       LOG_RETENTION_DAYS: "число дней хранения журналов",
@@ -135,6 +141,7 @@ export const serializeEnvConfig = (
     `STANDARD_MODEL=${formatAgentModel(config.STANDARD_MODEL, config.REASONING_EFFORT)} # ${comments.descriptions.STANDARD_MODEL}`,
     `DEEP_MODEL=${formatAgentModel(config.DEEP_MODEL, config.REASONING_EFFORT)} # ${comments.descriptions.DEEP_MODEL}`,
     `MERGER_MODEL=${formatAgentModel(config.MERGER_MODEL, config.MERGER_REASONING_EFFORT)} # ${comments.descriptions.MERGER_MODEL}`,
+    `REVIEWER_MODEL=${formatAgentModel(config.REVIEWER_MODEL, config.REVIEWER_REASONING_EFFORT)} # ${comments.descriptions.REVIEWER_MODEL}`,
     "",
     `# ${comments.execution}`,
     ...envLines(config, comments.descriptions, [
@@ -156,6 +163,7 @@ export const parseEnvConfig = (source: string): LfiConfig => {
   const aliases: Partial<Record<"CODEX_MODEL" | "CODEX_REASONING_EFFORT", string>> = {};
   let serializedWorkerReasoning: ReasoningEffort | undefined;
   let serializedMergerReasoning: ReasoningEffort | undefined;
+  let serializedReviewerReasoning: ReasoningEffort | undefined;
   for (const rawLine of source.split(/\r?\n/u)) {
     const trimmedLine = rawLine.trim();
     if (!trimmedLine || trimmedLine.startsWith("#")) continue;
@@ -168,7 +176,8 @@ export const parseEnvConfig = (source: string): LfiConfig => {
       case "LIGHT_MODEL":
       case "STANDARD_MODEL":
       case "DEEP_MODEL":
-      case "MERGER_MODEL": {
+      case "MERGER_MODEL":
+      case "REVIEWER_MODEL": {
         const reasoningSeparator = value.lastIndexOf(":");
         const possibleReasoning = reasoningSeparator < 0
           ? ""
@@ -176,6 +185,7 @@ export const parseEnvConfig = (source: string): LfiConfig => {
         if (isReasoningEffort(possibleReasoning)) {
           result[key] = value.slice(0, reasoningSeparator);
           if (key === "MERGER_MODEL") serializedMergerReasoning = possibleReasoning;
+          else if (key === "REVIEWER_MODEL") serializedReviewerReasoning = possibleReasoning;
           else serializedWorkerReasoning = possibleReasoning;
         } else result[key] = value;
         canonicalKeys.add(key);
@@ -189,6 +199,7 @@ export const parseEnvConfig = (source: string): LfiConfig => {
         break;
       case "REASONING_EFFORT":
       case "MERGER_REASONING_EFFORT":
+      case "REVIEWER_REASONING_EFFORT":
         if (isReasoningEffort(value)) result[key] = value;
         else {
           throw new Error(
@@ -235,6 +246,9 @@ export const parseEnvConfig = (source: string): LfiConfig => {
   }
   if (!canonicalKeys.has("MERGER_REASONING_EFFORT") && serializedMergerReasoning !== undefined) {
     result.MERGER_REASONING_EFFORT = serializedMergerReasoning;
+  }
+  if (!canonicalKeys.has("REVIEWER_REASONING_EFFORT") && serializedReviewerReasoning !== undefined) {
+    result.REVIEWER_REASONING_EFFORT = serializedReviewerReasoning;
   }
   return validateConfig(result);
 };
@@ -312,12 +326,23 @@ export const resolveIntegrationModel = (config: LfiConfig): AgentModel =>
     config.MERGER_REASONING_EFFORT,
   );
 
+export const resolveReviewerModel = (
+  config: LfiConfig,
+  fallbackTier: ExecutionTier = "standard",
+): AgentModel => {
+  if (config.REVIEWER_MODEL) {
+    return parseAgentModel(config.REVIEWER_MODEL, config.REVIEWER_REASONING_EFFORT);
+  }
+  return resolveWorkerModel(config, fallbackTier);
+};
+
 export const configuredAgents = (config: LfiConfig): ReadonlySet<AgentProvider> =>
   new Set([
     resolveWorkerModel(config, "light").agent,
     resolveWorkerModel(config, "standard").agent,
     resolveWorkerModel(config, "deep").agent,
     resolveIntegrationModel(config).agent,
+    resolveReviewerModel(config).agent,
   ]);
 
 export const validateConfig = (config: LfiConfig): LfiConfig => {
@@ -347,6 +372,7 @@ export const validateConfig = (config: LfiConfig): LfiConfig => {
   if (
     !reasoningEfforts.has(config.REASONING_EFFORT) ||
     !reasoningEfforts.has(config.MERGER_REASONING_EFFORT)
+    || !reasoningEfforts.has(config.REVIEWER_REASONING_EFFORT)
   ) {
     throw new Error(
       "Reasoning effort must be low, medium, high, xhigh, max, or ultra / уровень рассуждений должен быть одним из перечисленных значений.",
@@ -364,6 +390,12 @@ export const validateConfig = (config: LfiConfig): LfiConfig => {
   if (!supportsReasoningEffort(merger.agent, merger.reasoning)) {
     throw new Error(
       `Agent ${merger.agent} cannot honour reasoning=${merger.reasoning} for merger / Агент ${merger.agent} не поддерживает reasoning=${merger.reasoning} для merger.`,
+    );
+  }
+  const reviewer = resolveReviewerModel(config);
+  if (!supportsReasoningEffort(reviewer.agent, reviewer.reasoning)) {
+    throw new Error(
+      `Agent ${reviewer.agent} cannot honour reasoning=${reviewer.reasoning} for reviewer / Агент ${reviewer.agent} не поддерживает reasoning=${reviewer.reasoning} для reviewer.`,
     );
   }
   if (!isIsolationProvider(config.ISOLATION_PROVIDER)) {

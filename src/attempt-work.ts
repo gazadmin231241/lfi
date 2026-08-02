@@ -6,6 +6,7 @@ import {
   runAgent,
 } from "./agent-provider.js";
 import {
+  resolveReviewerModel,
   resolveWorkerModel,
   type LfiConfig,
 } from "./config.js";
@@ -102,10 +103,12 @@ export const attemptWork = async (options: {
 }): Promise<Attempt> => {
   const key = options.task.id.toLowerCase();
   const logName = options.task.id;
+  const executionTier = options.task.executionTier ?? "standard";
   const target = resolveWorkerModel(
     options.config,
-    options.task.executionTier ?? "standard",
+    executionTier,
   );
+  const reviewer = resolveReviewerModel(options.config, executionTier);
   try {
     const worktree = await ensureTaskWorktree({
       repoRoot: options.cwd,
@@ -268,16 +271,16 @@ export const attemptWork = async (options: {
         }
         await rm(findingsPath, { force: true });
         const review = await runAgent({
-          agent: target.agent,
+          agent: reviewer.agent,
           cwd: worktree.path,
           prompt: reviewPrompt(
             options.baseRef,
             findingsPath,
-            target.agent,
+            reviewer.agent,
             options.language,
           ),
-          model: target.model,
-          reasoning: target.reasoning,
+          model: reviewer.model,
+          reasoning: reviewer.reasoning,
           gitDirectory: options.gitDirectory,
           log: options.log,
           logName: reviewLogName,
@@ -300,8 +303,8 @@ export const attemptWork = async (options: {
             worktreePath: worktree.path,
             branch: worktree.branch,
             logName: reviewLogName,
-            ...(review.exitCode !== 0 && target.model && review.unavailableModel
-              ? { unavailableModel: target }
+            ...(review.exitCode !== 0 && reviewer.model && review.unavailableModel
+              ? { unavailableModel: reviewer }
               : {}),
           };
         }
@@ -378,11 +381,11 @@ export const attemptWork = async (options: {
           const reReviewFindingsPath = resolve(options.log.directory, `${key}-re-review-findings.json`);
           await rm(reReviewFindingsPath, { force: true });
           const reReview = await runAgent({
-            agent: target.agent,
+            agent: reviewer.agent,
             cwd: worktree.path,
-            prompt: reReviewPrompt(options.baseRef, reReviewFindingsPath, findingsText, target.agent, options.language),
-            model: target.model,
-            reasoning: target.reasoning,
+            prompt: reReviewPrompt(options.baseRef, reReviewFindingsPath, findingsText, reviewer.agent, options.language),
+            model: reviewer.model,
+            reasoning: reviewer.reasoning,
             gitDirectory: options.gitDirectory,
             log: options.log,
             logName: reReviewLogName,
@@ -401,8 +404,8 @@ export const attemptWork = async (options: {
               worktreePath: worktree.path,
               branch: worktree.branch,
               logName: reReviewLogName,
-              ...(reReview.exitCode !== 0 && target.model && reReview.unavailableModel
-                ? { unavailableModel: target }
+              ...(reReview.exitCode !== 0 && reviewer.model && reReview.unavailableModel
+                ? { unavailableModel: reviewer }
                 : {}),
             };
           }

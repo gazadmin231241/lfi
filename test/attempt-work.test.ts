@@ -19,6 +19,7 @@ test("a completed execution is committed and reviewed in a fresh session", async
   const logs = join(root, ".lfi", "logs");
   const tools = join(root, "tools");
   const calls = join(root, "codex-calls");
+  const args = join(root, "codex-args");
   const prompts = join(root, "codex-prompt");
   await mkdir(tools, { recursive: true });
   const git = async (cwd: string, ...args: string[]) => {
@@ -39,6 +40,7 @@ prompt=$(cat)
 call=1
 if [ -f "${calls}" ]; then call=$(( $(wc -l < "${calls}") + 1 )); fi
 printf '%s\n' "$call" >> "${calls}"
+printf '%s\n' "$*" >> "${args}"
 printf '%s' "$prompt" > "${prompts}.$call"
 if [ "$call" -eq 1 ]; then
   printf 'implemented\n' > result.txt
@@ -65,7 +67,12 @@ ${codexCompletionEvent("completed", "implemented task")}
         sourcePath: ".scratch/[READY] LFI-1 — review.md",
         body: "Implement the task, then review it.",
       },
-      config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none" },
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        STANDARD_MODEL: "codex:worker:low",
+        REVIEWER_MODEL: "codex:reviewer:high",
+      },
       gitDirectory: join(root, ".git"),
       log: {
         directory: logs,
@@ -80,6 +87,11 @@ ${codexCompletionEvent("completed", "implemented task")}
     assert.equal(result.summary, "implemented task");
     assert.equal(result.logName, "LFI-1");
     assert.equal(await readFile(calls, "utf8"), "1\n2\n");
+    const invocationArgs = await readFile(args, "utf8");
+    assert.match(invocationArgs, /--model worker\b/u);
+    assert.match(invocationArgs, /--model reviewer\b/u);
+    assert.match(invocationArgs, /model_reasoning_effort="low"/u);
+    assert.match(invocationArgs, /model_reasoning_effort="high"/u);
     assert.equal(await git(worktree, "rev-list", "--count", "main..HEAD"), "1");
     const reviewPrompt = await readFile(`${prompts}.2`, "utf8");
     assert.match(reviewPrompt, /Use \$code-review/u);
@@ -186,6 +198,7 @@ test("blocking findings run one verbatim remediation and clean targeted re-revie
   const worktree = join(worktreesRoot, "lfi-2");
   const tools = join(root, "tools");
   const calls = join(root, "codex-calls");
+  const args = join(root, "codex-args");
   const prompts = join(root, "codex-prompts");
   const findings = '[{ "axis":"spec", "severity":"blocking", "description":"A required behavior is absent." }]';
   await mkdir(tools, { recursive: true });
@@ -204,6 +217,7 @@ prompt=$(cat)
 call=1
 if [ -f "${calls}" ]; then call=$(( $(wc -l < "${calls}") + 1 )); fi
 printf '%s\\n' "$call" >> "${calls}"
+printf '%s\\n' "$*" >> "${args}"
 printf '%s' "$prompt" > "${prompts}.$call"
 case "$call" in
   1) printf 'implemented\\n' > result.txt ;;
@@ -222,7 +236,12 @@ ${codexCompletionEvent("completed", "phase completed")}
       worktreesRoot,
       baseRef: "main",
       task: { id: "LFI-2", number: 2, title: "Remediate findings", sourcePath: ".scratch/[READY] LFI-2 — remediation.md", body: "Fix it." },
-      config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none" },
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        STANDARD_MODEL: "codex:worker:low",
+        REVIEWER_MODEL: "codex:reviewer:high",
+      },
       gitDirectory: join(root, ".git"),
       log: { directory: join(root, ".lfi", "logs"), startedAt: new Date().toISOString(), iteration: 1 },
       taskTemplate: "Implement {{TASK_ID}}.",
@@ -230,6 +249,11 @@ ${codexCompletionEvent("completed", "phase completed")}
     });
     assert.equal(result.accepted, true, result.summary);
     assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n");
+    const invocationArgs = (await readFile(args, "utf8")).trim().split("\n");
+    assert.match(invocationArgs[0] ?? "", /(?=.*--model worker\b)(?=.*model_reasoning_effort="low")/u);
+    assert.match(invocationArgs[1] ?? "", /(?=.*--model reviewer\b)(?=.*model_reasoning_effort="high")/u);
+    assert.match(invocationArgs[2] ?? "", /(?=.*--model worker\b)(?=.*model_reasoning_effort="low")/u);
+    assert.match(invocationArgs[3] ?? "", /(?=.*--model reviewer\b)(?=.*model_reasoning_effort="high")/u);
     assert.match(await readFile(`${prompts}.3`, "utf8"), new RegExp(findings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
     assert.match(await readFile(`${prompts}.4`, "utf8"), /targeted re-review/u);
     assert.equal(await readFile(join(worktree, "remediation.txt"), "utf8"), "remediated\n");
