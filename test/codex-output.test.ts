@@ -57,6 +57,26 @@ test("Codex provider builds its invocation without spawning a process", () => {
   assert.equal(invocation.input, completionInstruction);
 });
 
+test("Codex provider grants its sandbox explicitly declared output directories", () => {
+  const invocation = buildAgentInvocation({
+    agent: "codex",
+    cwd: "/worktree",
+    gitDirectory: "/repository/.git",
+    model: "gpt-test",
+    reasoning: "high",
+    prompt: completionInstruction,
+    writableDirectories: ["/repository/.lfi/logs"],
+  });
+
+  assert.deepEqual(
+    invocation.args.slice(
+      invocation.args.indexOf("/repository/.git") + 1,
+      invocation.args.indexOf("-c"),
+    ),
+    ["--add-dir", "/repository/.lfi/logs"],
+  );
+});
+
 test("each agent provider declares only its own configuration profile", () => {
   const home = "/home/agent";
   const codex = resolveAgentProfile("codex", home, {});

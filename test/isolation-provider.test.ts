@@ -225,6 +225,39 @@ test("none isolation session returns commands unchanged", async () => {
   await session.close();
 });
 
+test("local isolation binds explicitly declared output directories writable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-isolation-output-"));
+  const gitDirectory = join(root, "repository", ".git");
+  const outputDirectory = join(root, "repository", ".lfi", "logs");
+  await Promise.all([
+    mkdir(gitDirectory, { recursive: true }),
+    mkdir(outputDirectory, { recursive: true }),
+  ]);
+  const session = await openIsolationSession({
+    provider: "local",
+    agent: "codex",
+    worktree: "/workspace/task",
+    gitDirectory,
+    homeDirectory: join(root, "home"),
+    environment: command.environment,
+  });
+  const wrapped = session.prepare({
+    ...command,
+    writableDirectories: [outputDirectory],
+  });
+
+  assert.ok(
+    wrapped.args.some(
+      (value, index) =>
+        value === "--bind" &&
+        wrapped.args[index + 1] === outputDirectory &&
+        wrapped.args[index + 2] === outputDirectory,
+    ),
+  );
+  await session.close();
+  await rm(root, { recursive: true, force: true });
+});
+
 test("boundary declarations contain the selected agent profile and shared skills", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-isolation-declaration-"));
   const gitDirectory = join(root, "repository", ".git");

@@ -19,7 +19,10 @@ import {
 } from "../src/local-tracker.js";
 import { dryRun, runLfi } from "../src/runner.js";
 import { runCommand } from "../src/process.js";
-import { codexCompletionEvent } from "./helpers/agent-events.js";
+import {
+  codexCompletionEvent,
+  completeReviewWithNoFindings,
+} from "./helpers/agent-events.js";
 import { fakeIsolationExecutable } from "./support.js";
 
 const addOrigin = async (
@@ -120,7 +123,7 @@ test("local run does not repeat accepted work after integration fails", async ()
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
-cat >/dev/null
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
 printf 'called\\n' >> "${codexCalls}"
 printf 'implemented\\n' > implemented.txt
 git add implemented.txt
@@ -199,6 +202,7 @@ test("local task run commits worker changes, pushes code, and completes the task
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
 printf 'implemented\\n' > implemented.txt
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Implementation is ready."}}'
 ${codexCompletionEvent("completed", "implemented")}
@@ -477,6 +481,7 @@ ${codexCompletionEvent("incomplete", "blocked")}
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
 printf 'called\\n' >> "${validationCodexCalls}"
 printf 'validation failure\\n' > validation-failure.txt
 git add validation-failure.txt

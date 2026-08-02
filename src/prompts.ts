@@ -1,3 +1,5 @@
+import { isAbsolute } from "node:path";
+
 import {
   completionBlockClose,
   completionBlockOpen,
@@ -72,6 +74,41 @@ ${task.body}
 
 ${constraints}
 `;
+};
+
+export const reviewPrompt = (
+  baseRef: string,
+  findingsPath: string,
+  agent: AgentProvider,
+  language: Language = "en",
+): string => {
+  if (!isAbsolute(findingsPath)) {
+    throw new Error("The review findings file path must be absolute.");
+  }
+  const prompt = language === "ru"
+    ? `Проведи независимое ревью уже зафиксированных изменений в текущем worktree.
+
+Используй ${skillPlaceholder("code-review")} для проверки diff относительно указанного base ref. Не сообщай LFI замечания в свободной форме: единственный канал замечаний — указанный JSON-файл.
+
+Base ref: ${baseRef}
+Findings file: ${findingsPath}
+
+До завершения запиши в Findings file JSON-массив. Каждый элемент должен быть объектом ровно с тремя полями: "axis" ("standards" или "spec"), "severity" ("blocking" или "advisory") и строковым "description". Если замечаний нет, запиши []. Не изменяй worktree и не создавай commit.
+
+${completionContractCopy.ru}
+`
+    : `Review the committed changes in the current worktree independently.
+
+Use ${skillPlaceholder("code-review")} to review the diff against the specified base ref. Do not report findings to LFI in prose: the findings file is the only findings channel.
+
+Base ref: ${baseRef}
+Findings file: ${findingsPath}
+
+Before completing, write a JSON array to the Findings file. Every item must be an object with exactly three fields: "axis" ("standards" or "spec"), "severity" ("blocking" or "advisory"), and a string "description". Write [] when there are no findings. Do not modify the worktree or create a commit.
+
+${completionContractCopy.en}
+`;
+  return expandSkillPlaceholders(agent, prompt);
 };
 
 interface LocalizedConstraint {

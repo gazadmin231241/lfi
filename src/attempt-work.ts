@@ -1,5 +1,6 @@
+import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   runAgent,
@@ -16,10 +17,10 @@ import {
   gitResult,
   worktreeClean,
 } from "./git.js";
-import type { Language } from "./i18n.js";
+import { localize, type Language } from "./i18n.js";
 import type { RunLogContext } from "./logs.js";
 import { redactSensitiveText } from "./logs.js";
-import { renderWorkerPrompt } from "./prompts.js";
+import { renderWorkerPrompt, reviewPrompt } from "./prompts.js";
 import { printOriginRefresh } from "./run-display.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
 import { mergeWithAgent } from "./runner-support.js";
@@ -30,6 +31,19 @@ import {
   withIsolationSession,
 } from "./isolation-provider.js";
 import { runProjectCommand } from "./project-command.js";
+import {
+  parseReviewFindings,
+  type ReviewFinding,
+} from "./review-findings.js";
+
+const pathIsInside = (parent: string, candidate: string): boolean => {
+  const path = relative(resolve(parent), resolve(candidate));
+  return path === "" || (
+    path !== ".." &&
+    !path.startsWith(`..${sep}`) &&
+    !isAbsolute(path)
+  );
+};
 
 export const attemptWork = async (options: {
   cwd: string;
@@ -169,20 +183,116 @@ export const attemptWork = async (options: {
           status: agent.status,
           commitsAhead: await commitsAhead(worktree.path, options.baseRef),
         });
+        if (!evaluation.accepted) {
+          const dirtyWorktree = !(await worktreeClean(worktree.path));
+          return {
+            task: options.task,
+            accepted: false,
+            summary: `${agent.summary}\n${evaluation.reasons.join(", ")}`,
+            worktreePath: worktree.path,
+            branch: worktree.branch,
+            logName,
+            ...(dirtyWorktree ? { dirtyWorktree: true } : {}),
+            ...(agent.exitCode !== 0 && target.model && agent.unavailableModel
+              ? { unavailableModel: target }
+              : {}),
+          };
+        }
+
+        const reviewLogName = `${logName}-review`;
+        const findingsPath = resolve(
+          options.log.directory,
+          `${key}-review-findings.json`,
+        );
+        if (pathIsInside(worktree.path, findingsPath)) {
+          throw new Error(localize(
+            options.language,
+            "The review findings file must be outside the worktree.",
+            "Файл замечаний ревью должен находиться вне worktree.",
+          ));
+        }
+        await rm(findingsPath, { force: true });
+        const review = await runAgent({
+          agent: target.agent,
+          cwd: worktree.path,
+          prompt: reviewPrompt(
+            options.baseRef,
+            findingsPath,
+            target.agent,
+            options.language,
+          ),
+          model: target.model,
+          reasoning: target.reasoning,
+          gitDirectory: options.gitDirectory,
+          log: options.log,
+          logName: reviewLogName,
+          idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+          isolationProvider: options.config.ISOLATION_PROVIDER,
+          prefix: `${key}:review`,
+          language: options.language,
+          session,
+          writableDirectories: [options.log.directory],
+        });
+        if (review.exitCode !== 0 || review.status !== "completed") {
+          return {
+            task: options.task,
+            accepted: false,
+            summary: localize(
+              options.language,
+              `Review phase failed: ${review.summary}`,
+              `Этап ревью завершился ошибкой: ${review.summary}`,
+            ),
+            worktreePath: worktree.path,
+            branch: worktree.branch,
+            logName: reviewLogName,
+            ...(review.exitCode !== 0 && target.model && review.unavailableModel
+              ? { unavailableModel: target }
+              : {}),
+          };
+        }
+        let findings: ReviewFinding[];
+        try {
+          findings = parseReviewFindings(await readFile(findingsPath, "utf8"));
+        } catch {
+          return {
+            task: options.task,
+            accepted: false,
+            summary: localize(
+              options.language,
+              "Review phase failed: the findings file is missing or invalid.",
+              "Этап ревью завершился ошибкой: файл замечаний отсутствует или некорректен.",
+            ),
+            worktreePath: worktree.path,
+            branch: worktree.branch,
+            logName: reviewLogName,
+          };
+        }
+        const blockingFindings = findings.filter(
+          (finding) => finding.severity === "blocking",
+        );
+        if (blockingFindings.length > 0) {
+          return {
+            task: options.task,
+            accepted: false,
+            summary: localize(
+              options.language,
+              `Review phase found blocking findings: ${blockingFindings.length}.`,
+              `Этап ревью выявил блокирующие замечания: ${blockingFindings.length}.`,
+            ),
+            worktreePath: worktree.path,
+            branch: worktree.branch,
+            logName: reviewLogName,
+          };
+        }
         const dirtyWorktree = !(await worktreeClean(worktree.path));
         return {
           task: options.task,
-          accepted: evaluation.accepted,
-          summary: evaluation.accepted
-            ? agent.summary
-            : `${agent.summary}\n${evaluation.reasons.join(", ")}`,
+          accepted: true,
+          summary: agent.summary,
           worktreePath: worktree.path,
           branch: worktree.branch,
           logName,
           ...(dirtyWorktree ? { dirtyWorktree: true } : {}),
-          ...(agent.exitCode !== 0 && target.model && agent.unavailableModel
-            ? { unavailableModel: target }
-            : {}),
         };
       },
     );

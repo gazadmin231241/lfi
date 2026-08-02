@@ -26,3 +26,13 @@ export const piCompletionEvent = (
       }],
     },
   })}'`;
+
+export const completeReviewWithNoFindings = (
+  completionEvent: string,
+): string => `prompt=$(cat)
+findings_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Findings file: //p')
+if [ -n "$findings_path" ]; then
+  printf '[]' > "$findings_path"
+  ${completionEvent}
+  exit 0
+fi`;

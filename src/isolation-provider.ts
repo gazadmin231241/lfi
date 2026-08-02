@@ -13,6 +13,7 @@ export interface IsolatedCommand {
   onStdoutLine: (line: string) => void;
   onStderrLine: (line: string) => void;
   environment: NodeJS.ProcessEnv;
+  writableDirectories?: readonly string[];
 }
 
 export interface IsolationSessionOptions {
@@ -184,6 +185,7 @@ export const openIsolationSession = async (
       ];
       for (const path of declaration.gitConfigFiles) args.push("--bind", declaration.sanitizedGitConfig, path);
       for (const path of declaration.packageCacheDirectories) args.push("--bind-try", path, path);
+      for (const path of command.writableDirectories ?? []) args.push("--bind", path, path);
       for (const path of declaration.codeHostCredentialDirectories) args.push("--tmpfs", path);
       for (const path of declaration.codeHostCredentialFiles) args.push("--ro-bind", "/dev/null", path);
       // The agent CLI needs its state home writable (sqlite state, logs,

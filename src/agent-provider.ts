@@ -133,6 +133,7 @@ export interface AgentInvocationOptions {
   model: string;
   reasoning: ReasoningEffort;
   gitDirectory: string;
+  writableDirectories?: readonly string[];
 }
 
 export interface AgentInvocation {
@@ -168,13 +169,18 @@ export const buildAgentInvocation = (
     "workspace-write",
     "--add-dir",
     options.gitDirectory,
+  ];
+  for (const directory of options.writableDirectories ?? []) {
+    args.push("--add-dir", directory);
+  }
+  args.push(
     "-c",
     `model_reasoning_effort="${options.reasoning}"`,
     "-c",
     "sandbox_workspace_write.network_access=true",
     "-C",
     options.cwd,
-  ];
+  );
   if (options.model) args.push("--model", options.model);
   args.push("-");
   return { command: options.agent, args, input: options.prompt };
@@ -301,6 +307,7 @@ export const runAgent = async (options: {
   prefix: string;
   language: Language;
   session?: IsolationSession;
+  writableDirectories?: readonly string[];
 }): Promise<AgentRunResult> => {
   if (
     !options.prompt.includes(completionBlockOpen) ||
@@ -363,6 +370,9 @@ export const runAgent = async (options: {
     if (!options.session) ownedSession = session;
     const result = await session.run({
         ...agentInvocation,
+        ...(options.writableDirectories
+          ? { writableDirectories: options.writableDirectories }
+          : {}),
         idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
         onStdoutLine: recordEvent,
         onStderrLine: (line) => appendDetail(`${line}\n`),

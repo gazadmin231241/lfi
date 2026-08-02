@@ -5,6 +5,7 @@ import {
   assertNoDirectInstalledSkillReference,
   defaultTaskPrompt,
   mergerPrompt,
+  reviewPrompt,
   renderWorkerPrompt,
 } from "../src/prompts.js";
 import type { WorkItem } from "../src/runner-types.js";
@@ -173,6 +174,33 @@ test("built-in templates name skills through placeholders", () => {
     assert.match(prompt, /\{\{SKILL:implement\}\}/u);
     assert.doesNotMatch(prompt, /\$implement/u);
   }
+});
+
+test("review prompt identifies the diff and external findings channel per provider", () => {
+  const findingsPath = "/var/tmp/lfi-3-review-findings.json";
+  const codex = reviewPrompt("main", findingsPath, "codex", "en");
+  const pi = reviewPrompt("origin/main", findingsPath, "pi", "en");
+  const russian = reviewPrompt("main", findingsPath, "codex", "ru");
+
+  assert.match(codex, /Use \$code-review/u);
+  assert.match(codex, /Base ref: main/u);
+  assert.match(codex, /Findings file: \/var\/tmp\/lfi-3-review-findings\.json/u);
+  assert.match(codex, /JSON array/u);
+  assert.match(codex, /"standards" or "spec"/u);
+  assert.match(codex, /"blocking" or "advisory"/u);
+  assert.match(codex, /<lfi:completion>/u);
+  assert.match(pi, /Use \/skill:code-review/u);
+  assert.match(pi, /Base ref: origin\/main/u);
+  assert.match(russian, /Используй \$code-review/u);
+  assert.match(russian, /единственный канал замечаний/u);
+  assert.match(russian, /Заверши финальный ответ этим блоком завершения LFI/u);
+});
+
+test("review prompt requires an absolute findings path", () => {
+  assert.throws(
+    () => reviewPrompt("main", "findings.json", "codex", "en"),
+    /absolute/u,
+  );
 });
 
 test("direct installed skill references are refused with their placeholder", () => {

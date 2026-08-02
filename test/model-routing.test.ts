@@ -15,7 +15,11 @@ import type { ExecutionTier } from "../src/execution-tier.js";
 import { serializeTrackerDocument } from "../src/local-tracker.js";
 import { runCommand } from "../src/process.js";
 import { runLfi } from "../src/runner.js";
-import { codexCompletionEvent, piCompletionEvent } from "./helpers/agent-events.js";
+import {
+  codexCompletionEvent,
+  completeReviewWithNoFindings,
+  piCompletionEvent,
+} from "./helpers/agent-events.js";
 
 const initializeRoutingRepository = async (options: {
   tasks: Array<{ id: number; tier?: ExecutionTier }>;
@@ -115,6 +119,7 @@ test("run routes task tiers to models while preserving configured reasoning", as
       REASONING_EFFORT: "low",
     },
     codexScript: `#!/bin/sh
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
 model=""
 printf '%s\\n' "$*" >> "{{CALLS}}"
 while [ "$#" -gt 0 ]; do
@@ -124,7 +129,6 @@ while [ "$#" -gt 0 ]; do
   fi
   shift
 done
-cat >/dev/null
 printf '%s\\n' "$model" >> "{{CALLS}}"
 printf 'implemented\\n' > "implemented-$(basename "$PWD").txt"
 git add --all
@@ -181,7 +185,7 @@ test("run starts repeated-model tasks up to the configured parallel limit", asyn
       STANDARD_MODEL: "terra",
     },
     codexScript: `#!/bin/sh
-cat >/dev/null
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
 printf 'started\n' >> "{{CALLS}}"
 attempt=0
 while [ "$(wc -l < "{{CALLS}}")" -lt 3 ] && [ "$attempt" -lt 20 ]; do
@@ -223,6 +227,7 @@ test("run reports an unavailable model and continues other tiers", async () => {
       MAX_STAGES: 3,
     },
     codexScript: `#!/bin/sh
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
 model=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--model" ]; then
@@ -231,7 +236,6 @@ while [ "$#" -gt 0 ]; do
   fi
   shift
 done
-cat >/dev/null
 printf '%s\\n' "$model" >> "{{CALLS}}"
 if [ "$model" = "luna-unavailable" ]; then
   printf '%s\\n' "model luna-unavailable is not available for this account" >&2
@@ -276,7 +280,7 @@ test("run accepts a Pi tier through staging, integration, and delivery", async (
     config: { STANDARD_MODEL: "pi:openai/gpt-test" },
     codexScript: "#!/bin/sh\nexit 1\n",
     piScript: `#!/bin/sh
-cat >/dev/null
+${completeReviewWithNoFindings(piCompletionEvent("completed", "reviewed"))}
 printf 'implemented by Pi\\n' > implemented.txt
 git add --all
 git commit -m 'agent: implement Pi task'
@@ -310,7 +314,7 @@ test("an unavailable Pi model does not skip the same model under Codex", async (
       MAX_STAGES: 1,
     },
     codexScript: `#!/bin/sh
-cat >/dev/null
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
 printf 'implemented by Codex\\n' > implemented.txt
 git add --all
 git commit -m 'agent: implement Codex task'
@@ -382,6 +386,7 @@ test("Russian run logs missing tiers and unavailable configured models", async (
       MAX_STAGES: 1,
     },
     codexScript: `#!/bin/sh
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
 model=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--model" ]; then
@@ -390,7 +395,6 @@ while [ "$#" -gt 0 ]; do
   fi
   shift
 done
-cat >/dev/null
 printf '%s\\n' "$model" >> "{{CALLS}}"
 if [ "$model" = "luna-unavailable" ]; then
   printf '%s\\n' "model luna-unavailable is not available" >&2
