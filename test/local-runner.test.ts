@@ -177,6 +177,7 @@ test("local task run commits worker changes, pushes code, and completes the task
       ...DEFAULT_CONFIG,
       MAX_PARALLEL: 1,
       MAX_STAGES: 2,
+      WORKTREE_SETUP_COMMAND: "test -f .git",
       VALIDATE_COMMAND:
         "printf 'validation detail: implemented.txt exists github_pat_EXAMPLE_SECRET_123456\\n' && test -f implemented.txt",
     }),
@@ -339,6 +340,12 @@ exit 97
     "utf8",
   );
   assert.match(isolationCalls, /worktrees\/lfi-1\|.*-- codex /u);
+  assert.match(isolationCalls, /worktrees\/lfi-1\|.*-- .* -lc test -f \.git/u);
+  assert.match(isolationCalls, /worktrees\/integration-.*\|.*-- .* -lc test -f \.git/u);
+  assert.match(
+    isolationCalls,
+    /worktrees\/integration-.*\|.*-- .* -lc printf 'validation detail/u,
+  );
   assert.match(isolationCalls, /--sandbox workspace-write/u);
   assert.match(isolationCalls, /--add-dir/u);
   await assert.rejects(readFile(ghCalls, "utf8"));

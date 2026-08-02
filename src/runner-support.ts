@@ -14,7 +14,7 @@ import {
   type RunLogContext,
 } from "./logs.js";
 import { mergerPrompt } from "./prompts.js";
-import { runShell } from "./process.js";
+import { runProjectCommand } from "./project-command.js";
 
 export const checkpointTracker = async (
   cwd: string,
@@ -172,14 +172,18 @@ export interface ValidationDiagnostic {
 export const validateIntegration = async (options: {
   cwd: string;
   config: LfiConfig;
+  gitDirectory: string;
   language: Language;
   log: RunLogContext;
   phase: "baseline" | "combined";
   repair: (diagnostic: ValidationDiagnostic) => Promise<void>;
 }): Promise<void> => {
   if (options.config.WORKTREE_SETUP_COMMAND) {
-    const setup = await runShell(options.config.WORKTREE_SETUP_COMMAND, {
+    const setup = await runProjectCommand({
+      command: options.config.WORKTREE_SETUP_COMMAND,
       cwd: options.cwd,
+      gitDirectory: options.gitDirectory,
+      isolationProvider: options.config.ISOLATION_PROVIDER,
     });
     if (setup.exitCode !== 0) {
       throw new Error(
@@ -191,8 +195,11 @@ export const validateIntegration = async (options: {
       );
     }
   }
-  let validation = await runShell(options.config.VALIDATE_COMMAND, {
+  let validation = await runProjectCommand({
+    command: options.config.VALIDATE_COMMAND,
     cwd: options.cwd,
+    gitDirectory: options.gitDirectory,
+    isolationProvider: options.config.ISOLATION_PROVIDER,
   });
   const logValidation = () =>
     appendRunLog(
@@ -213,8 +220,11 @@ export const validateIntegration = async (options: {
       stdout: redactSensitiveText(validation.stdout),
       stderr: redactSensitiveText(validation.stderr),
     });
-    validation = await runShell(options.config.VALIDATE_COMMAND, {
+    validation = await runProjectCommand({
+      command: options.config.VALIDATE_COMMAND,
       cwd: options.cwd,
+      gitDirectory: options.gitDirectory,
+      isolationProvider: options.config.ISOLATION_PROVIDER,
     });
     await logValidation();
   }

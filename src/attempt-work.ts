@@ -44,6 +44,8 @@ export const attemptWork = async (options: {
       taskKey: key,
       baseRef: options.baseRef,
       setupCommand: options.config.WORKTREE_SETUP_COMMAND,
+      gitDirectory: options.gitDirectory,
+      isolationProvider: options.config.ISOLATION_PROVIDER,
     });
     if (!worktree.created) {
       const update = await gitResult(worktree.path, [

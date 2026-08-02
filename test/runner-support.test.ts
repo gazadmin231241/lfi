@@ -23,6 +23,7 @@ test("baseline validation failure does not invoke repair", async () => {
         ...DEFAULT_CONFIG,
         VALIDATE_COMMAND: "printf 'baseline is broken\\n' >&2; exit 1",
       },
+      gitDirectory: root,
       language: "en",
       log: {
         directory: logs,
@@ -59,6 +60,7 @@ test("combined validation repair receives exact redacted diagnostics", async () 
         ...DEFAULT_CONFIG,
         VALIDATE_COMMAND: command,
       },
+      gitDirectory: root,
       language: "en",
       log: {
         directory: logs,
@@ -89,4 +91,31 @@ test("combined validation repair receives exact redacted diagnostics", async () 
     integrationLog,
     /github_pat_EXAMPLE_SECRET_123456/u,
   );
+});
+
+test("worktree setup and validation honour the isolation opt-out", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-validation-opt-out-"));
+  const logs = join(root, "logs");
+  await mkdir(logs);
+
+  await validateIntegration({
+    cwd: root,
+    config: {
+      ...DEFAULT_CONFIG,
+      ISOLATION_PROVIDER: "none",
+      WORKTREE_SETUP_COMMAND: "printf 'setup\\n' > setup.txt",
+      VALIDATE_COMMAND: "test -f setup.txt",
+    },
+    gitDirectory: root,
+    language: "en",
+    log: {
+      directory: logs,
+      startedAt: "2026-07-30T13:44:12.749Z",
+      iteration: 1,
+    },
+    phase: "combined",
+    repair: async () => undefined,
+  });
+
+  assert.equal(await readFile(join(root, "setup.txt"), "utf8"), "setup\n");
 });
