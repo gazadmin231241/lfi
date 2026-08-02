@@ -27,6 +27,8 @@ export interface LfiConfig {
   MERGER_REASONING_EFFORT: ReasoningEffort;
   REVIEWER_MODEL: string;
   REVIEWER_REASONING_EFFORT: ReasoningEffort;
+  REVIEW_ENABLED: boolean;
+  MAX_REMEDIATION_ROUNDS: number;
   MAX_PARALLEL: number;
   MAX_STAGES: number;
   LOG_RETENTION_DAYS: number;
@@ -47,6 +49,8 @@ export const DEFAULT_CONFIG: LfiConfig = {
   MERGER_REASONING_EFFORT: "medium",
   REVIEWER_MODEL: "",
   REVIEWER_REASONING_EFFORT: "medium",
+  REVIEW_ENABLED: true,
+  MAX_REMEDIATION_ROUNDS: 1,
   MAX_PARALLEL: 3,
   MAX_STAGES: 10,
   LOG_RETENTION_DAYS: 3,
@@ -74,6 +78,8 @@ const configComments = {
       DEEP_MODEL: "model for deep work",
       MERGER_MODEL: "model for integration and conflicts",
       REVIEWER_MODEL: "model for review and re-review",
+      REVIEW_ENABLED: "runs review, remediation, and re-review",
+      MAX_REMEDIATION_ROUNDS: "maximum remediation rounds after blocking review findings",
       MAX_PARALLEL: "tasks that may run at once",
       MAX_STAGES: "maximum stages per run",
       LOG_RETENTION_DAYS: "days to keep logs",
@@ -97,6 +103,8 @@ const configComments = {
       DEEP_MODEL: "модель для сложной работы",
       MERGER_MODEL: "модель для интеграции и конфликтов",
       REVIEWER_MODEL: "модель для ревью и повторного ревью",
+      REVIEW_ENABLED: "запускает ревью, исправление и повторное ревью",
+      MAX_REMEDIATION_ROUNDS: "максимум раундов исправления после блокирующих замечаний ревью",
       MAX_PARALLEL: "число одновременно выполняемых задач",
       MAX_STAGES: "максимум этапов за запуск",
       LOG_RETENTION_DAYS: "число дней хранения журналов",
@@ -147,6 +155,8 @@ export const serializeEnvConfig = (
     ...envLines(config, comments.descriptions, [
       "MAX_PARALLEL",
       "MAX_STAGES",
+      "REVIEW_ENABLED",
+      "MAX_REMEDIATION_ROUNDS",
       "LOG_RETENTION_DAYS",
       "IDLE_TIMEOUT_MINUTES",
     ]),
@@ -197,6 +207,15 @@ export const parseEnvConfig = (source: string): LfiConfig => {
         result[key] = value;
         canonicalKeys.add(key);
         break;
+      case "REVIEW_ENABLED":
+        if (value === "true") result.REVIEW_ENABLED = true;
+        else if (value === "false") result.REVIEW_ENABLED = false;
+        else {
+          throw new Error(
+            `REVIEW_ENABLED must be true or false / должен иметь значение true или false: ${value}`,
+          );
+        }
+        break;
       case "REASONING_EFFORT":
       case "MERGER_REASONING_EFFORT":
       case "REVIEWER_REASONING_EFFORT":
@@ -222,6 +241,7 @@ export const parseEnvConfig = (source: string): LfiConfig => {
         break;
       case "MAX_PARALLEL":
       case "MAX_STAGES":
+      case "MAX_REMEDIATION_ROUNDS":
       case "LOG_RETENTION_DAYS":
       case "IDLE_TIMEOUT_MINUTES":
         result[key] = Number(value);
@@ -352,6 +372,19 @@ export const validateConfig = (config: LfiConfig): LfiConfig => {
         `${key} must be a positive integer / должен быть положительным целым числом.`,
       );
     }
+  }
+  if (typeof config.REVIEW_ENABLED !== "boolean") {
+    throw new Error(
+      "REVIEW_ENABLED must be true or false / должен иметь значение true или false.",
+    );
+  }
+  if (
+    !Number.isSafeInteger(config.MAX_REMEDIATION_ROUNDS) ||
+    config.MAX_REMEDIATION_ROUNDS < 0
+  ) {
+    throw new Error(
+      "MAX_REMEDIATION_ROUNDS must be zero or greater / должен быть не меньше нуля.",
+    );
   }
   if (
     !Number.isFinite(config.LOG_RETENTION_DAYS) ||

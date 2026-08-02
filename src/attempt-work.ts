@@ -94,6 +94,32 @@ const validateAttempt = async (options: {
   );
 };
 
+const finishAcceptedAttempt = async (options: {
+  task: WorkItem;
+  summary: string;
+  worktreePath: string;
+  branch: string;
+  cwd: string;
+  config: LfiConfig;
+  gitDirectory: string;
+  language: Language;
+  log: RunLogContext;
+  logName: string;
+  session: Awaited<ReturnType<typeof openIsolationSession>>;
+}): Promise<Attempt> => {
+  const validationFailure = await validateAttempt(options);
+  const dirtyWorktree = !(await worktreeClean(options.worktreePath));
+  return {
+    task: options.task,
+    accepted: !validationFailure,
+    summary: validationFailure ?? options.summary,
+    worktreePath: options.worktreePath,
+    branch: options.branch,
+    logName: options.logName,
+    ...(dirtyWorktree ? { dirtyWorktree: true } : {}),
+  };
+};
+
 export const attemptWork = async (options: {
   cwd: string;
   worktreesRoot: string;
@@ -113,7 +139,6 @@ export const attemptWork = async (options: {
     options.config,
     executionTier,
   );
-  const reviewer = resolveReviewerModel(options.config, executionTier);
   const phaseTemplate = (phase: PromptPhase): ResolvedPromptTemplate =>
     options.promptTemplates?.[phase] ?? {
       content: phase === "task" ? options.taskTemplate : "",
@@ -279,6 +304,23 @@ export const attemptWork = async (options: {
           };
         }
 
+        if (!options.config.REVIEW_ENABLED) {
+          return finishAcceptedAttempt({
+            task: options.task,
+            summary: agent.summary,
+            worktreePath: worktree.path,
+            branch: worktree.branch,
+            cwd: worktree.path,
+            config: options.config,
+            gitDirectory: options.gitDirectory,
+            language: options.language,
+            log: options.log,
+            logName,
+            session,
+          });
+        }
+
+        const reviewer = resolveReviewerModel(options.config, executionTier);
         const reviewLogName = `${logName}-review`;
         const findingsPath = resolve(
           options.log.directory,
@@ -355,123 +397,180 @@ export const attemptWork = async (options: {
           (finding) => finding.severity === "blocking",
         );
         if (blockingFindings.length > 0) {
-          const remediationLogName = `${logName}-remediation`;
-          const remediationStart = (await git(worktree.path, ["rev-parse", "HEAD"])).stdout.trim();
-          logTemplateSource("remediation");
-          const remediation = await runAgent({
-            agent: target.agent,
-            cwd: worktree.path,
-            prompt: remediationPrompt(
-              findingsText,
-              options.language,
-              target.agent,
-              options.promptTemplates?.remediation.content,
-            ),
-            model: target.model,
-            reasoning: target.reasoning,
-            gitDirectory: options.gitDirectory,
-            log: options.log,
-            logName: remediationLogName,
-            idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
-            isolationProvider: options.config.ISOLATION_PROVIDER,
-            prefix: `${key}:remediation`,
-            language: options.language,
-            session,
-          });
-          if (remediation.exitCode !== 0 || remediation.status !== "completed") {
-            return {
-              task: options.task,
-              accepted: false,
-              summary: localize(options.language, `Remediation phase failed: ${remediation.summary}`, `Этап исправления завершился ошибкой: ${remediation.summary}`),
-              worktreePath: worktree.path,
-              branch: worktree.branch,
-              logName: remediationLogName,
-              ...(remediation.exitCode !== 0 && target.model && remediation.unavailableModel
-                ? { unavailableModel: target }
-              : {}),
-            };
-          }
-          const remediationEnd = (await git(worktree.path, ["rev-parse", "HEAD"])).stdout.trim();
-          if (remediationEnd !== remediationStart) {
+          if (options.config.MAX_REMEDIATION_ROUNDS === 0) {
             return {
               task: options.task,
               accepted: false,
               summary: localize(
                 options.language,
-                "Remediation phase failed: the remediation session created a commit.",
-                "Этап исправления завершился ошибкой: сессия исправления создала commit.",
+                `Review phase found blocking findings: ${blockingFindings.length}.`,
+                `Этап ревью выявил блокирующие замечания: ${blockingFindings.length}.`,
               ),
               worktreePath: worktree.path,
               branch: worktree.branch,
+              logName: reviewLogName,
+            };
+          }
+          for (
+            let round = 1;
+            round <= options.config.MAX_REMEDIATION_ROUNDS;
+            round += 1
+          ) {
+            const remediationLogName = `${logName}-remediation`;
+            const remediationStart = (await git(
+              worktree.path,
+              ["rev-parse", "HEAD"],
+            )).stdout.trim();
+            logTemplateSource("remediation");
+            const remediation = await runAgent({
+              agent: target.agent,
+              cwd: worktree.path,
+              prompt: remediationPrompt(
+                findingsText,
+                options.language,
+                target.agent,
+                options.promptTemplates?.remediation.content,
+              ),
+              model: target.model,
+              reasoning: target.reasoning,
+              gitDirectory: options.gitDirectory,
+              log: options.log,
               logName: remediationLogName,
-            };
-          }
-          await commitWorktreeChanges(worktree.path, `fix(lfi): remediate ${options.task.id}`);
-          const reReviewLogName = `${logName}-re-review`;
-          const reReviewFindingsPath = resolve(options.log.directory, `${key}-re-review-findings.json`);
-          await rm(reReviewFindingsPath, { force: true });
-          logTemplateSource("re-review");
-          const reReview = await runAgent({
-            agent: reviewer.agent,
-            cwd: worktree.path,
-            prompt: reReviewPrompt(
-              options.baseRef,
-              reReviewFindingsPath,
-              findingsText,
-              reviewer.agent,
-              options.language,
-              options.promptTemplates?.["re-review"].content,
-            ),
-            model: reviewer.model,
-            reasoning: reviewer.reasoning,
-            gitDirectory: options.gitDirectory,
-            log: options.log,
-            logName: reReviewLogName,
-            idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
-            isolationProvider: options.config.ISOLATION_PROVIDER,
-            prefix: `${key}:re-review`,
-            language: options.language,
-            session,
-            writableDirectories: [options.log.directory],
-          });
-          if (reReview.exitCode !== 0 || reReview.status !== "completed") {
-            return {
-              task: options.task,
-              accepted: false,
-              summary: localize(options.language, `Re-review phase failed: ${reReview.summary}`, `Этап повторного ревью завершился ошибкой: ${reReview.summary}`),
-              worktreePath: worktree.path,
-              branch: worktree.branch,
+              idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+              isolationProvider: options.config.ISOLATION_PROVIDER,
+              prefix: `${key}:remediation`,
+              language: options.language,
+              session,
+            });
+            if (remediation.exitCode !== 0 || remediation.status !== "completed") {
+              return {
+                task: options.task,
+                accepted: false,
+                summary: localize(
+                  options.language,
+                  `Remediation phase failed: ${remediation.summary}`,
+                  `Этап исправления завершился ошибкой: ${remediation.summary}`,
+                ),
+                worktreePath: worktree.path,
+                branch: worktree.branch,
+                logName: remediationLogName,
+                ...(remediation.exitCode !== 0 && target.model && remediation.unavailableModel
+                  ? { unavailableModel: target }
+                  : {}),
+              };
+            }
+            const remediationEnd = (await git(
+              worktree.path,
+              ["rev-parse", "HEAD"],
+            )).stdout.trim();
+            if (remediationEnd !== remediationStart) {
+              return {
+                task: options.task,
+                accepted: false,
+                summary: localize(
+                  options.language,
+                  "Remediation phase failed: the remediation session created a commit.",
+                  "Этап исправления завершился ошибкой: сессия исправления создала commit.",
+                ),
+                worktreePath: worktree.path,
+                branch: worktree.branch,
+                logName: remediationLogName,
+              };
+            }
+            await commitWorktreeChanges(
+              worktree.path,
+              `fix(lfi): remediate ${options.task.id}`,
+            );
+            const reReviewLogName = `${logName}-re-review`;
+            const reReviewFindingsPath = resolve(
+              options.log.directory,
+              `${key}-re-review-findings.json`,
+            );
+            await rm(reReviewFindingsPath, { force: true });
+            logTemplateSource("re-review");
+            const reReview = await runAgent({
+              agent: reviewer.agent,
+              cwd: worktree.path,
+              prompt: reReviewPrompt(
+                options.baseRef,
+                reReviewFindingsPath,
+                findingsText,
+                reviewer.agent,
+                options.language,
+                options.promptTemplates?.["re-review"].content,
+              ),
+              model: reviewer.model,
+              reasoning: reviewer.reasoning,
+              gitDirectory: options.gitDirectory,
+              log: options.log,
               logName: reReviewLogName,
-              ...(reReview.exitCode !== 0 && reviewer.model && reReview.unavailableModel
-                ? { unavailableModel: reviewer }
-                : {}),
-            };
-          }
-          try {
-            findings = parseReviewFindings(await readFile(reReviewFindingsPath, "utf8"));
-          } catch {
-            return {
-              task: options.task,
-              accepted: false,
-              summary: localize(options.language, "Re-review phase failed: the findings file is missing or invalid.", "Этап повторного ревью завершился ошибкой: файл замечаний отсутствует или некорректен."),
-              worktreePath: worktree.path,
-              branch: worktree.branch,
-              logName: reReviewLogName,
-            };
-          }
-          const remainingBlockers = findings.filter((finding) => finding.severity === "blocking");
-          if (remainingBlockers.length > 0) {
-            return {
-              task: options.task,
-              accepted: false,
-              summary: localize(options.language, `Re-review phase found blocking findings: ${remainingBlockers.length}.`, `Этап повторного ревью выявил блокирующие замечания: ${remainingBlockers.length}.`),
-              worktreePath: worktree.path,
-              branch: worktree.branch,
-              logName: reReviewLogName,
-            };
+              idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+              isolationProvider: options.config.ISOLATION_PROVIDER,
+              prefix: `${key}:re-review`,
+              language: options.language,
+              session,
+              writableDirectories: [options.log.directory],
+            });
+            if (reReview.exitCode !== 0 || reReview.status !== "completed") {
+              return {
+                task: options.task,
+                accepted: false,
+                summary: localize(
+                  options.language,
+                  `Re-review phase failed: ${reReview.summary}`,
+                  `Этап повторного ревью завершился ошибкой: ${reReview.summary}`,
+                ),
+                worktreePath: worktree.path,
+                branch: worktree.branch,
+                logName: reReviewLogName,
+                ...(reReview.exitCode !== 0 && reviewer.model && reReview.unavailableModel
+                  ? { unavailableModel: reviewer }
+                  : {}),
+              };
+            }
+            try {
+              findingsText = await readFile(reReviewFindingsPath, "utf8");
+              findings = parseReviewFindings(findingsText);
+            } catch {
+              return {
+                task: options.task,
+                accepted: false,
+                summary: localize(
+                  options.language,
+                  "Re-review phase failed: the findings file is missing or invalid.",
+                  "Этап повторного ревью завершился ошибкой: файл замечаний отсутствует или некорректен.",
+                ),
+                worktreePath: worktree.path,
+                branch: worktree.branch,
+                logName: reReviewLogName,
+              };
+            }
+            const remainingBlockers = findings.filter(
+              (finding) => finding.severity === "blocking",
+            );
+            if (remainingBlockers.length > 0) {
+              if (round < options.config.MAX_REMEDIATION_ROUNDS) continue;
+              return {
+                task: options.task,
+                accepted: false,
+                summary: localize(
+                  options.language,
+                  `Re-review phase found blocking findings: ${remainingBlockers.length}.`,
+                  `Этап повторного ревью выявил блокирующие замечания: ${remainingBlockers.length}.`,
+                ),
+                worktreePath: worktree.path,
+                branch: worktree.branch,
+                logName: reReviewLogName,
+              };
+            }
+            break;
           }
         }
-        const validationFailure = await validateAttempt({
+        return finishAcceptedAttempt({
+          task: options.task,
+          summary: agent.summary,
+          worktreePath: worktree.path,
+          branch: worktree.branch,
           cwd: worktree.path,
           config: options.config,
           gitDirectory: options.gitDirectory,
@@ -480,16 +579,6 @@ export const attemptWork = async (options: {
           logName,
           session,
         });
-        const dirtyWorktree = !(await worktreeClean(worktree.path));
-        return {
-          task: options.task,
-          accepted: !validationFailure,
-          summary: validationFailure ?? agent.summary,
-          worktreePath: worktree.path,
-          branch: worktree.branch,
-          logName,
-          ...(dirtyWorktree ? { dirtyWorktree: true } : {}),
-        };
       },
     );
   } catch (error) {
