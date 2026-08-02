@@ -71,3 +71,129 @@ ${codexCompletionEvent("completed", "resolved existing work")}
     process.env.PATH = originalPath;
   }
 });
+
+test("attempt validation gates acceptance and records its observed result", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-attempt-validation-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const tools = join(root, "tools");
+  const logs = join(root, ".lfi", "logs");
+  await mkdir(tools);
+  const git = async (cwd: string, ...args: string[]) => {
+    const result = await runCommand("git", args, { cwd });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.name", "LFI Test");
+  await git(root, "config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git(root, "add", ".");
+  await git(root, "commit", "-m", "test: initialize repository");
+  await writeFile(
+    join(tools, "codex"),
+    [
+      "#!/bin/sh",
+      "printf 'implemented\\n' > implemented.txt",
+      "git add implemented.txt",
+      "git commit -m 'agent: implement fixture'",
+      codexCompletionEvent("completed", "implemented"),
+      "",
+    ].join("\n"),
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    const result = await attemptWork({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      task: {
+        id: "LFI-2",
+        number: 2,
+        title: "Validate attempt",
+        sourcePath: ".scratch/[READY] LFI-2 — validate.md",
+        body: "Create implemented.txt.",
+      },
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        VALIDATE_COMMAND: "test -f implemented.txt; printf 'attempt validation output\\n'",
+      },
+      gitDirectory: join(root, ".git"),
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      taskTemplate: "Implement {{TASK_ID}}.",
+      language: "en",
+    });
+    assert.equal(result.accepted, true, result.summary);
+    const log = await readFile(join(logs, "LFI-2-validation.log"), "utf8");
+    assert.match(log, /\$ test -f implemented\.txt/u);
+    assert.match(log, /attempt validation output/u);
+    assert.match(log, /exit=0/u);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test("a failing observed validation rejects an agent-reported success and preserves the worktree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-attempt-validation-failure-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const tools = join(root, "tools");
+  const logs = join(root, ".lfi", "logs");
+  await mkdir(tools);
+  const git = async (cwd: string, ...args: string[]) => {
+    const result = await runCommand("git", args, { cwd });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.name", "LFI Test");
+  await git(root, "config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git(root, "add", ".");
+  await git(root, "commit", "-m", "test: initialize repository");
+  await writeFile(
+    join(tools, "codex"),
+    [
+      "#!/bin/sh",
+      "printf 'implemented\\n' > implemented.txt",
+      "git add implemented.txt",
+      "git commit -m 'agent: implement fixture'",
+      codexCompletionEvent("completed", "validation passed"),
+      "",
+    ].join("\n"),
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    const result = await attemptWork({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      task: {
+        id: "LFI-3",
+        number: 3,
+        title: "Reject failed validation",
+        sourcePath: ".scratch/[READY] LFI-3 — reject.md",
+        body: "Create implemented.txt.",
+      },
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        VALIDATE_COMMAND: "printf 'validation failure output\\n' >&2; exit 7",
+      },
+      gitDirectory: join(root, ".git"),
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      taskTemplate: "Implement {{TASK_ID}}.",
+      language: "en",
+    });
+    assert.equal(result.accepted, false);
+    assert.match(result.summary, /Validation failed/u);
+    assert.match(result.summary, /validation failure output/u);
+    assert.equal(await readFile(join(result.worktreePath, "implemented.txt"), "utf8"), "implemented\n");
+    const log = await readFile(join(logs, "LFI-3-validation.log"), "utf8");
+    assert.match(log, /validation failure output/u);
+    assert.match(log, /exit=7/u);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
