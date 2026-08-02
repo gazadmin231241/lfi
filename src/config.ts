@@ -66,7 +66,7 @@ export const parseEnvConfig = (source: string): LfiConfig => {
     const separator = rawLine.indexOf("=");
     if (separator < 0) continue;
     const key = rawLine.slice(0, separator).trim();
-    const value = rawLine.slice(separator + 1);
+    const value = rawLine.slice(separator + 1).replace(/\s+#.*$/u, "").trimEnd();
     switch (key) {
       case "DEFAULT_MODEL":
       case "LIGHT_MODEL":

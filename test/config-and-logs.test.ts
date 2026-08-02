@@ -36,6 +36,50 @@ test("config round-trips defaults", () => {
   assert.equal("GITHUB_REPO" in parsed, false);
 });
 
+test("configuration ignores whitespace-prefixed trailing comments", () => {
+  const withoutComments = parseEnvConfig(
+    "DEFAULT_MODEL=codex:gpt-test\nMAX_PARALLEL=7\n",
+  );
+  const withComments = parseEnvConfig(
+    "DEFAULT_MODEL=codex:gpt-test # shared model\nMAX_PARALLEL=7 # tasks at once\n",
+  );
+
+  assert.equal(withComments.DEFAULT_MODEL, withoutComments.DEFAULT_MODEL);
+  assert.equal(withComments.MAX_PARALLEL, withoutComments.MAX_PARALLEL);
+  assert.equal(Number.isNaN(withComments.MAX_PARALLEL), false);
+});
+
+test("configuration preserves hashes inside values and trims comment-adjacent whitespace", () => {
+  const config = parseEnvConfig(
+    "VALIDATE_COMMAND=pnpm validate#ci   # run before merge\n",
+  );
+
+  assert.equal(config.VALIDATE_COMMAND, "pnpm validate#ci");
+});
+
+test("configuration round-trips non-default values", () => {
+  const config = {
+    ...DEFAULT_CONFIG,
+    DEFAULT_MODEL: "codex:default",
+    LIGHT_MODEL: "codex:light",
+    STANDARD_MODEL: "codex:standard",
+    DEEP_MODEL: "codex:deep",
+    REASONING_EFFORT: "high" as const,
+    MERGER_MODEL: "codex:merger",
+    MERGER_REASONING_EFFORT: "xhigh" as const,
+    MAX_PARALLEL: 7,
+    MAX_STAGES: 12,
+    LOG_RETENTION_DAYS: 9,
+    IDLE_TIMEOUT_MINUTES: 30,
+    BASE_BRANCH: "trunk",
+    VALIDATE_COMMAND: "pnpm validate#ci",
+    WORKTREE_SETUP_COMMAND: "pnpm install --frozen-lockfile",
+    ISOLATION_PROVIDER: "none" as const,
+  };
+
+  assert.deepEqual(parseEnvConfig(serializeEnvConfig(config)), config);
+});
+
 test("isolation defaults to local and supports an explicit opt-out", () => {
   assert.equal(parseEnvConfig("").ISOLATION_PROVIDER, "local");
   assert.equal(
@@ -91,7 +135,7 @@ test("configuration reads agent prefixes, preserves model syntax, and rewrites d
       parseEnvConfig("LIGHT_MODEL=codex:provider:model:thinking \n"),
       "light",
     ),
-    { agent: "codex", model: "provider:model:thinking " },
+    { agent: "codex", model: "provider:model:thinking" },
   );
   assert.equal(
     agentModelKey({ agent: "codex", model: "gpt-5.6:high" }),
