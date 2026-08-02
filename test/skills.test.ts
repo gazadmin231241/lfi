@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
 
-import { installSkills, SKILL_PATHS } from "../src/skills.js";
+import { installedSkillNames, installSkills, SKILL_PATHS } from "../src/skills.js";
 
 const skillName = (path: string): string => basename(path);
 
@@ -38,6 +38,15 @@ const filesUnder = async (root: string, directory = root): Promise<string[]> => 
   }
   return files;
 };
+
+test("installed skill discovery ignores directories without SKILL.md", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
+  await mkdir(join(root, "implement"));
+  await writeFile(join(root, "implement", "SKILL.md"), upstreamSkill("implement"));
+  await mkdir(join(root, "not-a-skill"));
+
+  assert.deepEqual(await installedSkillNames(root), new Set(["implement"]));
+});
 
 test("skill installation copies every upstream skill byte-for-byte", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));

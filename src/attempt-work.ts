@@ -69,6 +69,7 @@ export const attemptWork = async (options: {
       prompt: renderWorkerPrompt(
         options.taskTemplate,
         options.task,
+        target.agent,
         options.language,
       ),
       model: target.model,

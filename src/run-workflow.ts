@@ -15,6 +15,7 @@ import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
+import { assertNoDirectInstalledSkillReference } from "./prompts.js";
 import { printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, reportUnavailableModelSkip } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
 import { listWork } from "./run-source.js";
@@ -23,6 +24,7 @@ import {
   checkpointTracker,
   ValidationFailure,
 } from "./runner-support.js";
+import { installedSkillNames } from "./skills.js";
 import { loadReconciledLocalTracker } from "./tracker-files.js";
 
 export const runLfi = async (
@@ -41,6 +43,12 @@ export const runLfi = async (
       ),
     );
   }
+  const taskTemplate = await readFile(join(lfiRoot, "task-prompt.md"), "utf8");
+  assertNoDirectInstalledSkillReference(
+    taskTemplate,
+    await installedSkillNames(),
+    language,
+  );
   const startupErrors: string[] = [];
   await configureLocalTrackerStorage(cwd);
   await loadReconciledLocalTracker(join(cwd, ".scratch"));
@@ -97,7 +105,6 @@ export const runLfi = async (
   const branch = config.BASE_BRANCH;
   const baseRef = branch;
   const gitDirectory = await gitCommonDirectory(cwd);
-  const taskTemplate = await readFile(join(lfiRoot, "task-prompt.md"), "utf8");
   await pruneExpiredRunLogs(logsRoot, {
     retentionDays: config.LOG_RETENTION_DAYS,
     activeRunName: runId,

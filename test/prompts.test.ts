@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergerPrompt, renderWorkerPrompt } from "../src/prompts.js";
+import {
+  assertNoDirectInstalledSkillReference,
+  defaultTaskPrompt,
+  mergerPrompt,
+  renderWorkerPrompt,
+} from "../src/prompts.js";
 import type { WorkItem } from "../src/runner-types.js";
 
 const task: WorkItem = {
@@ -16,6 +21,7 @@ test("English worker prompt bounds complete review and validation", () => {
   const prompt = renderWorkerPrompt(
     "Start {{TASK_ID}}.",
     task,
+    "codex",
     "en",
   );
 
@@ -49,6 +55,7 @@ test("Russian worker prompt bounds complete review and validation", () => {
   const prompt = renderWorkerPrompt(
     "Начни {{TASK_ID}}.",
     task,
+    "codex",
     "ru",
   );
 
@@ -85,8 +92,8 @@ test("Russian worker prompt bounds complete review and validation", () => {
 });
 
 test("English and Russian merger prompts require the completion block", () => {
-  const english = mergerPrompt("Resolve integration.", "en");
-  const russian = mergerPrompt("Разреши интеграцию.", "ru");
+  const english = mergerPrompt("Resolve integration.", "codex", "en");
+  const russian = mergerPrompt("Разреши интеграцию.", "codex", "ru");
 
   assert.match(english, /End your final response with this LFI completion block/u);
   assert.match(english, /"status":"completed"/u);
@@ -101,15 +108,15 @@ test("English and Russian merger prompts require the completion block", () => {
 });
 
 test("Russian worker prompt requires the agent-created commit", () => {
-  const prompt = renderWorkerPrompt("Начни {{TASK_ID}}.", task, "ru");
+  const prompt = renderWorkerPrompt("Начни {{TASK_ID}}.", task, "codex", "ru");
 
   assert.match(prompt, /добавь изменения в индекс и создай commit/u);
   assert.doesNotMatch(prompt, /Не запускай git add или git commit/u);
 });
 
 test("worker prompt defines axis-scoped confirmation paths", () => {
-  const english = renderWorkerPrompt("Implement.", task, "en");
-  const russian = renderWorkerPrompt("Реализуй.", task, "ru");
+  const english = renderWorkerPrompt("Implement.", task, "codex", "en");
+  const russian = renderWorkerPrompt("Реализуй.", task, "codex", "ru");
 
   assert.match(english, /No relevant findings: do not run confirmation/u);
   assert.match(
@@ -139,5 +146,32 @@ test("worker prompt defines axis-scoped confirmation paths", () => {
   assert.match(
     russian,
     /Замечания от обоих направлений: оба подтверждения запускаются параллельно/u,
+  );
+});
+
+test("built-in templates name skills through placeholders", () => {
+  const english = defaultTaskPrompt("en");
+  const russian = defaultTaskPrompt("ru");
+
+  for (const prompt of [english, russian]) {
+    assert.match(prompt, /\{\{SKILL:implement\}\}/u);
+    assert.doesNotMatch(prompt, /\$implement/u);
+  }
+});
+
+test("direct installed skill references are refused with their placeholder", () => {
+  assert.throws(
+    () => assertNoDirectInstalledSkillReference("Use $implement.", new Set(["implement"])),
+    /Use \{\{SKILL:implement\}\} instead/u,
+  );
+  assert.throws(
+    () => assertNoDirectInstalledSkillReference("Используй $implement.", new Set(["implement"]), "ru"),
+    /\{\{SKILL:implement\}\}/u,
+  );
+});
+
+test("direct references that are not installed skills are allowed", () => {
+  assert.doesNotThrow(() =>
+    assertNoDirectInstalledSkillReference("The shell expands $HOME.", new Set(["implement"])),
   );
 });

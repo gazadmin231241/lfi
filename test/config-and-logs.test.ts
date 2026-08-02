@@ -251,7 +251,7 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
   assert.doesNotMatch(gitignore, /!\.lfi\/tasks/u);
   assert.match(
     await readFile(join(root, ".lfi", "task-prompt.md"), "utf8"),
-    /Use \$implement/u,
+    /Use \{\{SKILL:implement\}\}/u,
   );
   const trackerGuide = await readFile(
     join(root, "docs", "agents", "issue-tracker.md"),

@@ -13,6 +13,7 @@ import test from "node:test";
 
 import {
   buildAgentInvocation,
+  expandSkillPlaceholders,
   isUnavailableModelError,
   runAgent,
 } from "../src/agent-provider.js";
@@ -53,6 +54,13 @@ test("Codex provider builds its invocation without spawning a process", () => {
     "-",
   ]);
   assert.equal(invocation.input, completionInstruction);
+});
+
+test("Codex provider expands skill placeholders without spawning a process", () => {
+  assert.equal(
+    expandSkillPlaceholders("codex", "Use {{SKILL:implement}} then {{SKILL:code-review}}."),
+    "Use $implement then $code-review.",
+  );
 });
 
 test("Codex provider recognises unavailable-model errors without spawning", () => {

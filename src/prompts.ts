@@ -2,6 +2,11 @@ import {
   completionBlockClose,
   completionBlockOpen,
 } from "./completion-result.js";
+import {
+  expandSkillPlaceholders,
+  skillPlaceholder,
+  type AgentProvider,
+} from "./agent-provider.js";
 import type { Language } from "./i18n.js";
 import type { WorkItem } from "./runner-types.js";
 
@@ -20,24 +25,44 @@ ${completionBlockClose}
 
 export const defaultTaskPrompt = (language: "en" | "ru"): string =>
   language === "ru"
-    ? `Приступай к реализации: {{TASK_ID}}\n\nИспользуй $implement.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n`
-    : `Start implementing: {{TASK_ID}}\n\nUse $implement.\n\nAll local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n`;
+    ? `Приступай к реализации: {{TASK_ID}}\n\nИспользуй ${skillPlaceholder("implement")}.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n`
+    : `Start implementing: {{TASK_ID}}\n\nUse ${skillPlaceholder("implement")}.\n\nAll local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n`;
+
+const directSkillReference = /\$([A-Za-z0-9][A-Za-z0-9-]*)/gu;
+
+export const assertNoDirectInstalledSkillReference = (
+  template: string,
+  installedSkills: ReadonlySet<string>,
+  language: Language = "en",
+): void => {
+  for (const match of template.matchAll(directSkillReference)) {
+    const skill = match[1];
+    if (!skill || !installedSkills.has(skill)) continue;
+    const placeholder = skillPlaceholder(skill);
+    throw new Error(
+      language === "ru"
+        ? `Шаблон prompt напрямую ссылается на установленный skill $${skill}. Используйте вместо него ${placeholder}.`
+        : `Prompt template directly references installed skill $${skill}. Use ${placeholder} instead.`,
+    );
+  }
+};
 
 export const renderWorkerPrompt = (
   template: string,
   task: WorkItem,
+  agent: AgentProvider,
   language: Language = "en",
 ): string => {
   const identifier = task.id;
-  const constraints = workerConstraints(identifier, language);
+  const constraints = workerConstraints(identifier, agent, language);
   const taskHeading = language === "ru" ? "Задача" : "Task";
   const constraintsHeading =
     language === "ru" ? "Ограничения LFI" : "LFI constraints";
-  return `${template
+  return `${expandSkillPlaceholders(agent, template
   .replaceAll("{{ISSUE_URL}}", task.sourcePath)
   .replaceAll("{{ISSUE_NUMBER}}", String(task.number))
   .replaceAll("{{ISSUE_TITLE}}", task.title)
-  .replaceAll("{{TASK_ID}}", identifier)}
+  .replaceAll("{{TASK_ID}}", identifier))}
 
 # ${taskHeading}
 
@@ -68,12 +93,12 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Никогда не выполняй deploy, не используй production SSH, не изменяй production-данные, не удаляй тома баз данных, не раскрывай секреты и не делай force-push.",
   },
   {
-    en: "Use $implement and TDD where appropriate. During implementation, use focused tests and typechecking as feedback.",
-    ru: "Используй $implement и TDD, где это уместно. Во время реализации используй узкие тесты и typecheck как быструю обратную связь.",
+    en: `Use ${skillPlaceholder("implement")} and TDD where appropriate. During implementation, use focused tests and typechecking as feedback.`,
+    ru: `Используй ${skillPlaceholder("implement")} и TDD, где это уместно. Во время реализации используй узкие тесты и typecheck как быструю обратную связь.`,
   },
   {
-    en: "After implementation, invoke $code-review exactly once. This is one complete two-axis review with the Standards and Spec reviewers in parallel.",
-    ru: "После реализации вызови $code-review ровно один раз. Это одно полное двухосевое ревью: запусти reviewer-ов Standards и Spec параллельно.",
+    en: `After implementation, invoke ${skillPlaceholder("code-review")} exactly once. This is one complete two-axis review with the Standards and Spec reviewers in parallel.`,
+    ru: `После реализации вызови ${skillPlaceholder("code-review")} ровно один раз. Это одно полное двухосевое ревью: запусти reviewer-ов Standards и Spec параллельно.`,
   },
   {
     en: "Aggregate the review findings before editing, then fix all blocking findings and only local, in-scope advisory findings as one coherent remediation batch.",
@@ -104,8 +129,8 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Точечное подтверждение проверяет исходные замечания, исправления, риск ближайших регрессий и подтверждающие результаты. Для каждого исходного замечания укажи результат: устранено, не устранено или заменено регрессией из-за исправления; добавь направление ревью и результат в сообщение агента. Подтверждение не должно заново исследовать весь diff или запускать новый цикл advisory-рефакторинга.",
   },
   {
-    en: 'Do not invoke $code-review a second time. A new blocker found inside the remediation scope must still be resolved; if it cannot be resolved and evidenced within this bounded protocol, return status "incomplete" and preserve the worktree.',
-    ru: 'Не вызывай $code-review второй раз. Новый blocker внутри области исправлений всё равно должен быть устранён; если его нельзя устранить и подтвердить в рамках этого ограниченного протокола, верни статус "incomplete" и сохрани worktree.',
+    en: `Do not invoke ${skillPlaceholder("code-review")} a second time. A new blocker found inside the remediation scope must still be resolved; if it cannot be resolved and evidenced within this bounded protocol, return status "incomplete" and preserve the worktree.`,
+    ru: `Не вызывай ${skillPlaceholder("code-review")} второй раз. Новый blocker внутри области исправлений всё равно должен быть устранён; если его нельзя устранить и подтвердить в рамках этого ограниченного протокола, верни статус "incomplete" и сохрани worktree.`,
   },
   {
     en: "Never report completion with a known blocking finding. When no finding requires confirmation under the rules above, skip confirmation.",
@@ -131,19 +156,21 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
 
 const workerConstraints = (
   identifier: string,
+  agent: AgentProvider,
   language: Language,
 ): string =>
   [
     language === "ru"
       ? `Работай только над ${identifier}.`
       : `Work only on ${identifier}.`,
-    ...workerConstraintCopy.map((copy) => copy[language]),
+    ...workerConstraintCopy.map((copy) => expandSkillPlaceholders(agent, copy[language])),
   ]
     .map((constraint) => `- ${constraint}`)
     .join("\n");
 
 export const mergerPrompt = (
   context: string,
+  agent: AgentProvider,
   language: Language = "en",
   allowedPaths?: readonly string[],
 ): string => {
@@ -163,9 +190,9 @@ Do not modify paths outside this list.
 `
     : "";
   if (language === "ru") {
-    return `Разреши текущую проблему интеграции в этом worktree.
+    return expandSkillPlaceholders(agent, `Разреши текущую проблему интеграции в этом worktree.
 
-Используй $resolving-merge-conflicts, когда выполняется merge. Сохрани оба
+Используй ${skillPlaceholder("resolving-merge-conflicts")}, когда выполняется merge. Сохрани оба
 намерения, запусти проверку и никогда не прерывай merge, не выполняй deploy,
 не используй SSH, не делай force-push и не затрагивай production. Добавь
 разрешение в индекс и создай commit самостоятельно; LFI не создаёт commit за
@@ -175,11 +202,11 @@ Do not modify paths outside this list.
 ${context}
 ${scope}
 ${completionContractCopy.ru}
-`;
+`);
   }
-  return `Resolve the current integration problem in this worktree.
+  return expandSkillPlaceholders(agent, `Resolve the current integration problem in this worktree.
 
-Use $resolving-merge-conflicts when a merge is in progress. Preserve both
+Use ${skillPlaceholder("resolving-merge-conflicts")} when a merge is in progress. Preserve both
 intents, run validation, and never abort the merge, deploy, use SSH, force-push,
 or touch production. Stage the resolution and create the commit yourself; LFI
 does not commit for the agent.
@@ -188,5 +215,5 @@ Context:
 ${context}
 ${scope}
 ${completionContractCopy.en}
-`;
+`);
 };

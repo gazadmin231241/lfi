@@ -1,4 +1,4 @@
-import { access, cp, mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -84,6 +84,21 @@ export const listSkillStatus = async (): Promise<
       };
     }),
   );
+
+export const installedSkillNames = async (
+  skillRoot = defaultSkillRoot,
+): Promise<Set<string>> => {
+  const entries = await readdir(skillRoot, { withFileTypes: true }).catch(() => []);
+  const installed = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) =>
+        (await exists(join(skillRoot, entry.name, "SKILL.md")))
+          ? entry.name
+          : undefined),
+  );
+  return new Set(installed.filter((name): name is string => name !== undefined));
+};
 
 export const installSkills = async (
   options: {

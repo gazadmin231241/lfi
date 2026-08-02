@@ -30,6 +30,19 @@ const agentProviders: ReadonlySet<string> = new Set([defaultAgentProvider]);
 export const isAgentProvider = (value: string): value is AgentProvider =>
   agentProviders.has(value);
 
+export const skillPlaceholder = (skill: string): string => `{{SKILL:${skill}}}`;
+
+export const expandSkillPlaceholders = (
+  agent: AgentProvider,
+  prompt: string,
+): string =>
+  prompt.replaceAll(/\{\{SKILL:([A-Za-z0-9][A-Za-z0-9-]*)\}\}/gu, (_placeholder, skill: string) => {
+    switch (agent) {
+      case "codex":
+        return `$${skill}`;
+    }
+  });
+
 export const supportsReasoningEffort = (
   agent: AgentProvider,
   reasoning: ReasoningEffort,

@@ -68,6 +68,7 @@ export const mergeWithAgent = async (options: {
     cwd: options.cwd,
     prompt: mergerPrompt(
       options.context,
+      resolveIntegrationModel(options.config).agent,
       options.language,
       options.allowedPaths,
     ),
