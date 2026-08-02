@@ -1,8 +1,13 @@
 ---
 status: accepted
+superseded-in-part-by: 0002
 ---
 
 # Route task workers by execution tier
+
+> Superseded in part by ADR-0002. A tier now resolves to an agent and a model
+> rather than a model alone, and the restriction to the Codex execution boundary
+> stated below no longer holds. Every other decision here stands.
 
 LFI assigns every executable task a model-independent execution tier of
 `light`, `standard`, or `deep`. The task-creation agent proposes the tier from
