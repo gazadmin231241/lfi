@@ -512,24 +512,16 @@ ${codexCompletionEvent("completed", "implemented")}
     1,
   );
   assert.doesNotMatch(validationOutput, /validation-line-[1-6](?:\D|$)/u);
-  assert.match(validationOutput, /validation-line-7/u);
-  assert.match(validationOutput, /validation-line-25/u);
-  assert.match(validationOutput, /Validation command: i=1; while/u);
-  assert.match(validationOutput, /Full output: \.lfi\/logs\/integration\.log/u);
-  assert.match(
-    validationOutput,
-    /Preserved integration branch lfi\/integration-.+ at .+\/integration-/u,
-  );
+  assert.match(validationOutput, /LFI-5: Validation failed:/u);
+  assert.match(validationOutput, /Log: \.lfi\/logs\/LFI-5\.log/u);
   assert.ok(
-    (await readdir(join(lfiRoot, "worktrees"))).some((name) =>
-      name.startsWith("integration-"),
-    ),
+    (await readdir(join(lfiRoot, "worktrees"))).includes("lfi-5"),
   );
-  const integrationLog = await readFile(
-    join(lfiRoot, "logs", "integration.log"),
+  const validationLog = await readFile(
+    join(lfiRoot, "logs", "LFI-5-validation.log"),
     "utf8",
   );
-  assert.match(integrationLog, /validation-line-1/u);
-  assert.match(integrationLog, /validation-line-25/u);
+  assert.match(validationLog, /validation-line-1/u);
+  assert.match(validationLog, /validation-line-25/u);
   await assert.rejects(stat(join(lfiRoot, "logs", "failures")));
 });

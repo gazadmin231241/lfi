@@ -19,7 +19,7 @@ import {
 } from "./git.js";
 import { localize, type Language } from "./i18n.js";
 import type { RunLogContext } from "./logs.js";
-import { redactSensitiveText } from "./logs.js";
+import { appendRunLog, redactSensitiveText } from "./logs.js";
 import { renderWorkerPrompt, reviewPrompt } from "./prompts.js";
 import { printOriginRefresh } from "./run-display.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
@@ -42,6 +42,44 @@ const pathIsInside = (parent: string, candidate: string): boolean => {
     path !== ".." &&
     !path.startsWith(`..${sep}`) &&
     !isAbsolute(path)
+  );
+};
+
+const validateAttempt = async (options: {
+  cwd: string;
+  config: LfiConfig;
+  gitDirectory: string;
+  language: Language;
+  log: RunLogContext;
+  logName: string;
+  session: Awaited<ReturnType<typeof openIsolationSession>>;
+}): Promise<string | undefined> => {
+  if (!options.config.VALIDATE_COMMAND) return undefined;
+  const validation = await runProjectCommand({
+    command: options.config.VALIDATE_COMMAND,
+    cwd: options.cwd,
+    gitDirectory: options.gitDirectory,
+    isolationProvider: options.config.ISOLATION_PROVIDER,
+    session: options.session,
+  });
+  await appendRunLog(
+    options.log,
+    `${options.logName}-validation`,
+    [
+      "$ " + options.config.VALIDATE_COMMAND,
+      validation.stdout,
+      validation.stderr,
+      "exit=" + validation.exitCode,
+    ].filter(Boolean),
+  );
+  if (validation.exitCode === 0) return undefined;
+  const output = redactSensitiveText(
+    [validation.stdout, validation.stderr].filter(Boolean).join("\n"),
+  );
+  return localize(
+    options.language,
+    "Validation failed:\n" + (output || "exit=" + validation.exitCode),
+    "Проверка завершилась с ошибкой:\n" + (output || "exit=" + validation.exitCode),
   );
 };
 
@@ -139,12 +177,23 @@ export const attemptWork = async (options: {
                 status: "completed",
                 commitsAhead: await commitsAhead(worktree.path, options.baseRef),
               });
+              const validationFailure = evaluation.accepted
+                ? await validateAttempt({
+                  cwd: worktree.path,
+                  config: options.config,
+                  gitDirectory: options.gitDirectory,
+                  language: options.language,
+                  log: options.log,
+                  logName,
+                  session,
+                })
+                : undefined;
               return {
                 task: options.task,
-                accepted: evaluation.accepted,
-                summary: evaluation.accepted
+                accepted: evaluation.accepted && !validationFailure,
+                summary: validationFailure ?? (evaluation.accepted
                   ? summary
-                  : `${summary}\n${evaluation.reasons.join(", ")}`,
+                  : `${summary}\n${evaluation.reasons.join(", ")}`),
                 worktreePath: worktree.path,
                 branch: worktree.branch,
                 logName: "integration",
@@ -284,11 +333,20 @@ export const attemptWork = async (options: {
             logName: reviewLogName,
           };
         }
+        const validationFailure = await validateAttempt({
+          cwd: worktree.path,
+          config: options.config,
+          gitDirectory: options.gitDirectory,
+          language: options.language,
+          log: options.log,
+          logName,
+          session,
+        });
         const dirtyWorktree = !(await worktreeClean(worktree.path));
         return {
           task: options.task,
-          accepted: true,
-          summary: agent.summary,
+          accepted: !validationFailure,
+          summary: validationFailure ?? agent.summary,
           worktreePath: worktree.path,
           branch: worktree.branch,
           logName,
