@@ -119,7 +119,8 @@ Use `lfi init --advanced` to edit those values interactively during setup.
 ## Safety and completion
 
 Each task gets a persistent worktree. A branch is eligible for integration
-only after Codex reports structured completion. Codex edits and validates files
+only after Codex reports completion through the tagged LFI completion block.
+Codex edits and validates files
 inside its `workspace-write` sandbox; because that sandbox intentionally keeps
 Git metadata read-only, the LFI host stages and commits a successful worker's
 changes. The combined integration branch must pass the configured validation

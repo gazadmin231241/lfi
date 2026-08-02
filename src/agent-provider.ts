@@ -1,31 +1,19 @@
-import {
-  appendFile,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import {
+  completionBlockClose,
+  completionBlockOpen,
+  extractCompletionResult,
+} from "./completion-result.js";
 import type { ReasoningEffort } from "./config.js";
+import { localize, type Language } from "./i18n.js";
 import {
   formatRunLogSection,
   redactSensitiveText,
   type RunLogContext,
 } from "./logs.js";
 import { runCommand } from "./process.js";
-
-const workerSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    status: { type: "string", enum: ["completed", "incomplete"] },
-    summary: { type: "string" },
-  },
-  required: ["status", "summary"],
-};
 
 export type AgentProvider = "codex";
 export const defaultAgentProvider: AgentProvider = "codex";
@@ -54,9 +42,6 @@ export interface AgentInvocationOptions {
   model: string;
   reasoning: ReasoningEffort;
   gitDirectory: string;
-  finalPath: string;
-  schemaPath: string;
-  structured?: boolean;
 }
 
 export interface AgentInvocation {
@@ -83,37 +68,17 @@ export const buildAgentInvocation = (
     "sandbox_workspace_write.network_access=true",
     "-C",
     options.cwd,
-    "-o",
-    options.finalPath,
   ];
   if (options.model) args.push("--model", options.model);
-  if (options.structured !== false) {
-    args.push("--output-schema", options.schemaPath);
-  }
   args.push("-");
   return { command: options.agent, args, input: options.prompt };
 };
 
-const parseFinal = (
-  source: string,
-): {
-  status: "completed" | "incomplete" | undefined;
-  summary: string;
-} => {
-  try {
-    const parsed = JSON.parse(source) as {
-      status?: "completed" | "incomplete";
-      summary?: string;
-    };
-    return { status: parsed.status, summary: parsed.summary ?? "" };
-  } catch {
-    return { status: undefined, summary: source.trim() };
-  }
-};
-
 const eventSummary = (
   line: string,
-): { text: string; showInTerminal: boolean } | undefined => {
+):
+  | { text: string; showInTerminal: boolean; agentMessage: boolean }
+  | undefined => {
   try {
     const event = JSON.parse(line) as {
       type?: string;
@@ -124,18 +89,21 @@ const eventSummary = (
       return {
         text: event.item.text ?? "",
         showInTerminal: true,
+        agentMessage: true,
       };
     }
     if (event.type === "item.started" && event.item?.type === "command_execution") {
       return {
         text: `$ ${event.item.command ?? "command"}`,
         showInTerminal: false,
+        agentMessage: false,
       };
     }
     if (event.type === "turn.completed") {
       return {
         text: `turn.completed input=${event.usage?.input_tokens ?? "?"} output=${event.usage?.output_tokens ?? "?"}`,
         showInTerminal: false,
+        agentMessage: false,
       };
     }
   } catch {
@@ -154,14 +122,21 @@ export const runAgent = async (options: {
   log: RunLogContext;
   logName: string;
   idleTimeoutMinutes: number;
-  structured?: boolean;
   prefix: string;
+  language: Language;
 }): Promise<AgentRunResult> => {
+  if (
+    !options.prompt.includes(completionBlockOpen) ||
+    !options.prompt.includes(completionBlockClose)
+  ) {
+    throw new Error(localize(
+      options.language,
+      `The prompt must instruct the agent to emit an LFI completion block using ${completionBlockOpen} and ${completionBlockClose}.`,
+      `Prompt должен требовать от агента блок завершения LFI с тегами ${completionBlockOpen} и ${completionBlockClose}.`,
+    ));
+  }
   await mkdir(options.log.directory, { recursive: true });
   const compactPath = join(options.log.directory, `${options.logName}.log`);
-  const artifacts = await mkdtemp(join(tmpdir(), "lfi-codex-"));
-  const finalPath = join(artifacts, "result.json");
-  const schemaPath = join(artifacts, "schema.json");
   await appendFile(
     compactPath,
     formatRunLogSection(
@@ -171,6 +146,7 @@ export const runAgent = async (options: {
     ),
   );
   let lineBuffer = "";
+  const agentMessages: string[] = [];
   let logWrites = Promise.resolve();
   const appendDetail = (content: string): void => {
     const redacted = redactSensitiveText(content);
@@ -179,6 +155,7 @@ export const runAgent = async (options: {
   const recordEvent = (line: string): void => {
     const summary = eventSummary(line);
     if (!summary) return;
+    if (summary.agentMessage) agentMessages.push(summary.text);
     const text = redactSensitiveText(summary.text);
     if (summary.showInTerminal) {
       const message = `[${options.prefix}] ${text}`;
@@ -188,13 +165,8 @@ export const runAgent = async (options: {
     appendDetail(`${text}\n`);
   };
   try {
-    if (options.structured !== false) {
-      await writeFile(schemaPath, `${JSON.stringify(workerSchema, null, 2)}\n`);
-    }
     const invocation = buildAgentInvocation({
       ...options,
-      finalPath,
-      schemaPath,
     });
     const result = await runCommand(invocation.command, invocation.args, {
       cwd: options.cwd,
@@ -211,20 +183,37 @@ export const runAgent = async (options: {
       },
     });
     if (lineBuffer) recordEvent(lineBuffer);
-    const finalSource = await readFile(finalPath, "utf8").catch(() => "");
-    const parsed = parseFinal(finalSource);
-    const summary = redactSensitiveText(parsed.summary || result.stderr);
+    const parsed = extractCompletionResult(agentMessages.join("\n"));
+    const status = parsed.ok ? parsed.status : undefined;
+    const parsedSummary = parsed.ok
+      ? parsed.summary
+      : localize(
+          options.language,
+          parsed.summary,
+          parsed.failure === "missing_block"
+            ? "В выводе агента отсутствует блок завершения LFI."
+            : parsed.failure === "malformed_json"
+              ? "Последний блок завершения LFI не содержит допустимый JSON."
+              : 'Последний блок завершения LFI должен содержать только строковые поля "status" ("completed" или "incomplete") и "summary".',
+        );
+    const detail =
+      !parsed.ok && result.stderr
+        ? `${parsedSummary}\n${result.stderr}`
+        : parsedSummary || result.stderr;
+    const summary = redactSensitiveText(detail);
     appendDetail(
-      `\nexit=${result.exitCode}\nstatus=${parsed.status ?? "missing"}\n${summary}\n`,
+      `\nexit=${result.exitCode}\nstatus=${status ?? "missing"}\n${summary}\n`,
     );
     return {
       exitCode: result.exitCode,
-      status: parsed.status,
+      status,
       summary,
-      unavailableModel: isUnavailableModelError(options.agent, summary),
+      unavailableModel: isUnavailableModelError(
+        options.agent,
+        `${agentMessages.join("\n")}\n${result.stderr}`,
+      ),
     };
   } finally {
     await logWrites;
-    await rm(artifacts, { recursive: true, force: true });
   }
 };

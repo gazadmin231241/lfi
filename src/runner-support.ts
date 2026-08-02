@@ -14,6 +14,7 @@ import {
   type RunLogContext,
 } from "./logs.js";
 import { runShell } from "./process.js";
+import { mergerPrompt } from "./prompts.js";
 
 export const checkpointTracker = async (
   cwd: string,
@@ -64,34 +65,21 @@ export const mergeWithAgent = async (options: {
   const result = await runAgent({
     agent: defaultAgentProvider,
     cwd: options.cwd,
-    prompt: `Resolve the current integration problem in this worktree.
-
-Use $resolving-merge-conflicts when a merge is in progress. Preserve both
-intents, run validation, and never abort the merge, deploy, use SSH, force-push,
-or touch production. Do not run git add or git commit; the LFI host commits a
-successful resolution because the Codex sandbox protects Git metadata.
-
-Context:
-${options.context}
-${options.allowedPaths
-  ? `
-Validation repair scope:
-${options.allowedPaths.map((path) => `- ${path}`).join("\n")}
-
-Do not modify paths outside this list.
-`
-  : ""}
-`,
+    prompt: mergerPrompt(
+      options.context,
+      options.language,
+      options.allowedPaths,
+    ),
     model: resolveIntegrationModel(options.config),
     reasoning: options.config.MERGER_REASONING_EFFORT,
     gitDirectory: options.gitDirectory,
     log: options.log,
     logName: options.logName,
     idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
-    structured: false,
     prefix: "merge",
+    language: options.language,
   });
-  if (result.exitCode === 0) {
+  if (result.exitCode === 0 && result.status === "completed") {
     if (options.allowedPaths) {
       const [tracked, untracked] = await Promise.all([
         git(options.cwd, ["diff", "--name-only", "-z", "HEAD"]),
@@ -144,7 +132,7 @@ Do not modify paths outside this list.
   }
   const clean =
     (await git(options.cwd, ["status", "--porcelain"])).stdout.trim() === "";
-  if (result.exitCode !== 0 || !clean) {
+  if (result.exitCode !== 0 || result.status !== "completed" || !clean) {
     throw new Error(
       localize(
         options.language,

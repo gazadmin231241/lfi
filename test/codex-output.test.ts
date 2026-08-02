@@ -17,6 +17,11 @@ import {
   runAgent,
 } from "../src/agent-provider.js";
 
+const completionInstruction = `End your response with this block:
+<lfi:completion>
+{"status":"completed","summary":"Describe the result."}
+</lfi:completion>`;
+
 test("Codex provider builds its invocation without spawning a process", () => {
   const invocation = buildAgentInvocation({
     agent: "codex",
@@ -24,9 +29,7 @@ test("Codex provider builds its invocation without spawning a process", () => {
     gitDirectory: "/repository/.git",
     model: "gpt-test",
     reasoning: "high",
-    prompt: "Implement the task.",
-    finalPath: "/tmp/result.json",
-    schemaPath: "/tmp/schema.json",
+    prompt: completionInstruction,
   });
 
   assert.equal(invocation.command, "codex");
@@ -45,15 +48,11 @@ test("Codex provider builds its invocation without spawning a process", () => {
     "sandbox_workspace_write.network_access=true",
     "-C",
     "/worktree",
-    "-o",
-    "/tmp/result.json",
     "--model",
     "gpt-test",
-    "--output-schema",
-    "/tmp/schema.json",
     "-",
   ]);
-  assert.equal(invocation.input, "Implement the task.");
+  assert.equal(invocation.input, completionInstruction);
 });
 
 test("Codex provider recognises unavailable-model errors without spawning", () => {
@@ -89,20 +88,12 @@ test("runAgent streams readable task details to a flat task log", async () => {
   await writeFile(
     codex,
     `#!/bin/sh
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
 printf '%s\\n' '{"type":"item.started","item":{"type":"command_execution","command":"sed -n '\\''1,40p'\\'' src/codex.ts"}}'
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Проверяю формат логов."}}'
 while [ ! -f "${release}" ]; do read -r _ < /dev/null || true; done
+printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Готово.\\n<lfi:completion>\\n{\\"status\\":\\"completed\\",\\"summary\\":\\"Готово.\\"}\\n</lfi:completion>"}}'
 printf '%s' '{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":30}}'
 printf '%s\\n' 'failed to refresh available models' >&2
-printf '%s\\n' '{"status":"completed","summary":"Готово."}' > "$output"
 `,
   );
   await chmod(codex, 0o755);
@@ -119,7 +110,7 @@ printf '%s\\n' '{"status":"completed","summary":"Готово."}' > "$output"
     running = runAgent({
       agent: "codex",
       cwd: root,
-      prompt: "Implement.",
+      prompt: completionInstruction,
       model: "",
       reasoning: "medium",
       gitDirectory: root,
@@ -131,6 +122,7 @@ printf '%s\\n' '{"status":"completed","summary":"Готово."}' > "$output"
       logName: "LFI-2",
       idleTimeoutMinutes: 1,
       prefix: "lfi-2",
+      language: "en",
     });
 
     const liveLog = await waitForFileContent(
@@ -148,7 +140,13 @@ printf '%s\\n' '{"status":"completed","summary":"Готово."}' > "$output"
     process.env.PATH = originalPath;
   }
 
-  assert.deepEqual(terminal, ["[lfi-2] Проверяю формат логов."]);
+  assert.deepEqual(terminal, [
+    "[lfi-2] Проверяю формат логов.",
+    `[lfi-2] Готово.
+<lfi:completion>
+{"status":"completed","summary":"Готово."}
+</lfi:completion>`,
+  ]);
   const taskLog = await readFile(join(logs, "LFI-2.log"), "utf8");
   assert.match(
     taskLog,
@@ -165,4 +163,43 @@ printf '%s\\n' '{"status":"completed","summary":"Готово."}' > "$output"
     ),
     [],
   );
+});
+
+test("runAgent rejects a prompt missing the completion contract before starting Codex", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-codex-preflight-"));
+  const bin = join(root, "bin");
+  const marker = join(root, "codex-started");
+  await mkdir(bin);
+  const codex = join(bin, "codex");
+  await writeFile(codex, `#!/bin/sh\nprintf started > "${marker}"\n`);
+  await chmod(codex, 0o755);
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${bin}:${originalPath ?? ""}`;
+  try {
+    await assert.rejects(
+      runAgent({
+        agent: "codex",
+        cwd: root,
+        prompt: "Implement the task.",
+        model: "",
+        reasoning: "medium",
+        gitDirectory: root,
+        log: {
+          directory: join(root, "logs"),
+          startedAt: "2026-07-30T13:44:12.749Z",
+          iteration: 1,
+        },
+        logName: "LFI-2",
+        idleTimeoutMinutes: 1,
+        prefix: "lfi-2",
+        language: "en",
+      }),
+      /prompt must instruct the agent to emit an LFI completion block/u,
+    );
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  await assert.rejects(readFile(marker, "utf8"), /ENOENT/u);
 });
