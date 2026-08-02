@@ -1,6 +1,7 @@
 import {
   access,
   mkdir,
+  readFile,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,7 +11,10 @@ import {
   DEFAULT_CONFIG,
   isIsolationProvider,
   isReasoningEffort,
+  loadConfig,
   saveConfig,
+  serializeEnvConfig,
+  updateConfig,
   type LfiConfig,
   type ReasoningEffort,
 } from "./config.js";
@@ -52,7 +56,7 @@ const exists = async (path: string) =>
 const writeDefaultPromptTemplates = async (
   lfiRoot: string,
   language: Language,
-): Promise<void> => {
+): Promise<boolean> => {
   const promptsDirectory = join(lfiRoot, "prompts");
   await mkdir(promptsDirectory, { recursive: true });
   const templates = [
@@ -63,16 +67,61 @@ const writeDefaultPromptTemplates = async (
     ["merge.md", defaultMergePrompt(language)],
   ] as const;
   const legacyTaskPromptExists = await exists(join(lfiRoot, "task-prompt.md"));
-  await Promise.all(templates.map(async ([filename, content]) => {
-    if (filename === "task.md" && legacyTaskPromptExists) return;
+  const results = await Promise.all(templates.map(async ([filename, content]) => {
+    const path = join(promptsDirectory, filename);
+    if (filename === "task.md" && legacyTaskPromptExists && !(await exists(path))) {
+      const legacy = await readFile(join(lfiRoot, "task-prompt.md"), "utf8");
+      const isStock = [defaultTaskPrompt("en"), defaultTaskPrompt("ru")].includes(legacy);
+      if (!isStock) return false;
+    }
+    if (await exists(path)) {
+      const current = await readFile(path, "utf8");
+      const stock = filename === "task.md"
+        ? [defaultTaskPrompt("en"), defaultTaskPrompt("ru")]
+        : filename === "review.md"
+          ? [defaultReviewPrompt("en"), defaultReviewPrompt("ru")]
+          : filename === "remediation.md"
+            ? [defaultRemediationPrompt("en"), defaultRemediationPrompt("ru")]
+            : filename === "re-review.md"
+              ? [defaultReReviewPrompt("en"), defaultReReviewPrompt("ru")]
+              : [defaultMergePrompt("en"), defaultMergePrompt("ru")];
+      if (!stock.includes(current) || current === content) return false;
+      await writeFile(path, content);
+      return true;
+    }
     try {
-      await writeFile(join(promptsDirectory, filename), content, { flag: "wx" });
+      await writeFile(path, content, { flag: "wx" });
+      return true;
     } catch (error) {
       if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
         throw error;
       }
+      return false;
     }
   }));
+  return results.some(Boolean);
+};
+
+const reconcileConfig = async (configPath: string, language: Language): Promise<boolean> => {
+  const source = await readFile(configPath, "utf8");
+  const present = new Set(
+    source.split(/\r?\n/u)
+      .map((line) => /^\s*([A-Z_]+)=/u.exec(line)?.[1])
+      .filter((key): key is string => key !== undefined),
+  );
+  const current = await loadConfig(configPath);
+  const missing = serializeEnvConfig(current, language)
+    .split("\n")
+    .filter((line) => {
+      const key = /^([A-Z_]+)=/u.exec(line)?.[1];
+      return key !== undefined && !present.has(key);
+    });
+  if (missing.length === 0) return false;
+  const heading = language === "ru"
+    ? "# Добавлено повторным `lfi init`"
+    : "# Added by repeated `lfi init`";
+  await writeFile(configPath, `${source.trimEnd()}\n\n${heading}\n${missing.join("\n")}\n`);
+  return true;
 };
 
 const askRetention = async (language: Language): Promise<number> => {
@@ -210,7 +259,42 @@ export const initializeProject = async (
   const lfiRoot = join(options.cwd, ".lfi");
   const configPath = join(lfiRoot, "config.env");
   if (await exists(configPath)) {
-    await writeDefaultPromptTemplates(lfiRoot, options.language);
+    const reconfigure = options.model !== undefined ||
+      options.reasoning !== undefined ||
+      options.retentionDays !== undefined ||
+      (options.advanced === true && process.stdin.isTTY && !options.yes);
+    if (reconfigure) {
+      const existing = await loadConfig(configPath);
+      let config: LfiConfig = {
+        ...existing,
+        ...(options.model === undefined
+          ? {}
+          : {
+              DEFAULT_MODEL: options.model,
+              LIGHT_MODEL: options.model,
+              STANDARD_MODEL: options.model,
+              DEEP_MODEL: options.model,
+            }),
+        ...(options.reasoning === undefined
+          ? {}
+          : {
+              REASONING_EFFORT: options.reasoning,
+              MERGER_REASONING_EFFORT: options.reasoning,
+              REVIEWER_REASONING_EFFORT: options.reasoning,
+            }),
+        ...(options.retentionDays === undefined
+          ? {}
+          : { LOG_RETENTION_DAYS: options.retentionDays }),
+      };
+      if (options.advanced && process.stdin.isTTY && !options.yes) {
+        config = await askAdvanced(config, options.language);
+      }
+      await updateConfig(configPath, config, options.language);
+    }
+    await Promise.all([
+      writeDefaultPromptTemplates(lfiRoot, options.language),
+      reconfigure ? Promise.resolve(false) : reconcileConfig(configPath, options.language),
+    ]);
     await configureLocalTracker(options.cwd, options.language);
     return "exists";
   }

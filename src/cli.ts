@@ -52,7 +52,7 @@ const printHelp = (language: Language) => {
       ? `LFI — Let's Fucking Implement
 
 Использование:
-  lfi init [--advanced] [--yes] [--model MODEL] [--reasoning EFFORT]
+  lfi init [--lang en|ru] [--advanced] [--yes] [--model MODEL] [--reasoning EFFORT]
   lfi doctor
   lfi run [LFI-ID...] [--dry-run]
   lfi status [--all|--ready|--blocked|--completed]
@@ -63,7 +63,7 @@ const printHelp = (language: Language) => {
       : `LFI — Let's Fucking Implement
 
 Usage:
-  lfi init [--advanced] [--yes] [--model MODEL] [--reasoning EFFORT]
+  lfi init [--lang en|ru] [--advanced] [--yes] [--model MODEL] [--reasoning EFFORT]
   lfi doctor
   lfi run [LFI-ID...] [--dry-run]
   lfi status [--all|--ready|--blocked|--completed]
@@ -187,8 +187,12 @@ const main = async (): Promise<number> => {
       return 0;
     }
   }
-  const language = await resolveLanguage(option("--lang"));
   const command = positional[0];
+  const language = await resolveLanguage(
+    option("--lang"),
+    process.stdin.isTTY,
+    command === "init" && !has("--yes"),
+  );
   if (!command || command === "--help" || command === "-h") {
     printHelp(language);
     return 0;
@@ -216,7 +220,9 @@ const main = async (): Promise<number> => {
       yes: has("--yes"),
       advanced: has("--advanced"),
     });
-    console.log(t(language, result === "created" ? "initialized" : "alreadyInitialized"));
+    console.log(t(language, result === "created"
+      ? "initialized"
+      : "updated"));
     console.log(
       localize(
         language,

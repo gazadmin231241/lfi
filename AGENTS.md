@@ -12,9 +12,9 @@ local Markdown tasks and Git worktrees.
 - Do not publish packages or mutate a user's remote repository from tests.
 
 <!-- lfi:agent-tracker:begin -->
-## Agent skills
+## Навыки агентов
 
-### Issue tracker
+### Трекер задач
 
-Tasks and specs use LFI Local Markdown. See `docs/agents/issue-tracker.md`.
+Задачи и спецификации используют LFI Local Markdown. См. `docs/agents/issue-tracker.md`.
 <!-- lfi:agent-tracker:end -->

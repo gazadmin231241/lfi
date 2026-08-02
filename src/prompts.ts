@@ -64,12 +64,20 @@ export const defaultReviewPrompt = (language: Language): string =>
 Используй ${skillPlaceholder("code-review")} для проверки diff относительно указанного base ref.
 
 Base ref: {{BASE_REF}}
+
+Прочитай применимые файлы AGENTS.md до начала ревью. Оценивай каждое замечание по его оси: "standards" — изменение нарушает применимые AGENTS.md или конвенции окружающего кода; "spec" — изменение не делает того, что требует его задача.
+
+Не требуй украшательств: предпочитай замечания, которые снижают сложность или исправляют реальные дефекты, и не проси хитроумности, спекулятивной общности или стилистических правок, которым не следует окружающий код.
 `
     : `Review the committed changes in the current worktree independently.
 
 Use ${skillPlaceholder("code-review")} to review the diff against the specified base ref.
 
 Base ref: {{BASE_REF}}
+
+Read the applicable AGENTS.md files before reviewing. Judge each finding on its axis: "standards" means the change violates the applicable AGENTS.md files or the conventions of the surrounding code; "spec" means the change does not do what its task asks.
+
+Do not demand embellishments: prefer findings that reduce complexity or fix real defects, and do not ask for cleverness, speculative generality, or style changes the surrounding code does not follow.
 `;
 
 export const defaultRemediationPrompt = (language: Language): string =>

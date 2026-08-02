@@ -39,20 +39,25 @@ export const saveLanguage = async (language: Language): Promise<void> => {
 export const resolveLanguage = async (
   requested?: string,
   interactive = process.stdin.isTTY === true,
+  askAgain = false,
 ): Promise<Language> => {
   if (requested === "en" || requested === "ru") {
     await saveLanguage(requested);
     return requested;
   }
   const stored = await loadLanguage();
-  if (stored) return stored;
+  if (stored && !askAgain) return stored;
   if (!interactive) return detectLanguage();
   const input = createInterface({ input: process.stdin, output: process.stdout });
   const answer = await input.question(
     "Choose language / Выберите язык\n1. English\n2. Русский\n> ",
   );
   input.close();
-  const language: Language = answer.trim() === "1" ? "en" : "ru";
+  const language: Language = answer.trim() === "1"
+    ? "en"
+    : answer.trim() === "2"
+      ? "ru"
+      : stored ?? detectLanguage();
   await saveLanguage(language);
   return language;
 };
@@ -60,6 +65,7 @@ export const resolveLanguage = async (
 const messages = {
   en: {
     initialized: "LFI initialized.",
+    updated: "LFI project is up to date.",
     alreadyInitialized: "LFI is already initialized in this project.",
     noConfig: "No .lfi/config.env found. Run `lfi init` first.",
     noIssues: "No runnable issues found.",
@@ -69,6 +75,7 @@ const messages = {
   },
   ru: {
     initialized: "LFI инициализирован.",
+    updated: "Проект LFI приведён к актуальному состоянию.",
     alreadyInitialized: "LFI уже инициализирован в этом проекте.",
     noConfig: "Файл .lfi/config.env не найден. Сначала выполните `lfi init`.",
     noIssues: "Нет доступных для выполнения задач.",

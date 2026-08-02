@@ -1,51 +1,52 @@
 <!-- lfi:tracker-contract:begin -->
 <!-- lfi:tracker-contract -->
-# Issue tracker: LFI
+# Трекер задач: LFI
 
-## Documents
+## Документы
 
-Tracker documents live in `.scratch/`. A feature has one `Type: spec` document in
-`.scratch/<feature-slug>/` and its tasks in
-`.scratch/<feature-slug>/issues/`; a task without a specification is directly
-in `.scratch/`. LFI preserves the feature directory name chosen at creation;
-renaming a specification document does not rename or replace its directory.
-Completed documents stay in place; there is no archive.
+Документы трекера находятся в `.scratch/`. У функции один документ `Type: spec` в
+`.scratch/<feature-slug>/`, а её задачи — в
+`.scratch/<feature-slug>/issues/`; задача без спецификации находится прямо в
+`.scratch/`. LFI сохраняет имя каталога функции, выбранное при создании;
+переименование документа спецификации не переименовывает и не заменяет его
+каталог. Завершённые документы остаются на месте; каталога архива нет.
 
-Every tracker document uses the filename
+Каждый документ трекера использует имя
 `[STATUS] LFI-N — <slug>.md`. `[SPEC]`, `[READY]`, `[RUNNING]`,
-`[BLOCKED]`, and `[DONE]` are the status values; this filename is the only
-place status is recorded. `LFI-N` is the stable, repository-wide identifier,
-allocated monotonically even across identifiers found only in Git history. LFI
-renames a document when its status changes.
+`[BLOCKED]` и `[DONE]` — значения статуса; статус записывается только в имени
+файла. `LFI-N` — стабильный идентификатор в масштабе репозитория, который
+монотонно выделяется с учётом ID, встречающихся только в истории Git. При
+смене статуса LFI переименовывает документ.
 
-## Language
+## Язык
 
-Write the content of every tracker document — specifications, tasks, and every
-other type — in English: titles, body text, acceptance criteria, and notes.
-The contract's own vocabulary stays as defined here regardless of language:
-the `[STATUS]` prefix, the `LFI-N` identifier, the `Type:`, `Blocked by:`,
-and `Tier:` marker lines, and their values. Keep `<slug>` in filenames Latin
-kebab-case.
+Содержимое каждого документа трекера — спецификаций, задач и всех остальных
+типов — пиши на русском: заголовки, тело, критерии приёмки и заметки.
+Собственные обозначения контракта остаются такими, как определены здесь,
+независимо от языка: префикс `[STATUS]`, идентификатор `LFI-N`, строки-маркеры
+`Type:`, `Blocked by:`, `Tier:` и их значения. `<slug>` в именах файлов
+записывай латиницей в kebab-case.
 
-## Marker lines
+## Строки-маркеры
 
-Every document has a mandatory `Type:` line: `spec`, `task`, `research`,
-`prototype`, or `grilling`. Only `Type: task` is executable; every other
-type is non-executable. A missing `Type:` line is an error.
+В каждом документе обязательна строка `Type:`: `spec`, `task`,
+`research`, `prototype` или `grilling`. Исполняется только `Type: task`;
+все остальные типы неисполнимы. Отсутствующая строка `Type:` — ошибка.
 
-`Blocked by:` lists comma-separated blocking `LFI-N` identifiers, or `None`
-when there are none. A `Type: task` document also has `Tier: light`,
-`Tier: standard`, or `Tier: deep`; the tier expresses required judgment and
-cost of error, and LFI configuration maps it to a model.
+`Blocked by:` содержит разделённые запятыми идентификаторы блокирующих
+`LFI-N` или `None`, если их нет. Документ `Type: task` также содержит
+`Tier: light`, `Tier: standard` или `Tier: deep`; уровень выражает
+требуемое качество суждения и цену ошибки, а конфигурация LFI сопоставляет его
+с моделью.
 
-## Wayfinding operations
+## Операции wayfinding
 
-Used by `$wayfinder`. A wayfinding map is a tracker document at
-`.scratch/<effort-slug>/[STATUS] LFI-N — map-<slug>.md`; its decision tickets
-are tracker documents at
-`.scratch/<effort-slug>/issues/[STATUS] LFI-N — <slug>.md`. The map uses a
-non-task `Type:`; a decision ticket uses `Type: research`, `prototype`,
-`grilling`, or `task`. A ticket changed to `Type: task` becomes executable
-without moving it. Blocking and the frontier use the `Blocked by:` and status
-rules above.
+Используются `$wayfinder`. Карта wayfinding — это документ трекера в
+`.scratch/<effort-slug>/[STATUS] LFI-N — map-<slug>.md`; её билеты-решения —
+документы трекера в
+`.scratch/<effort-slug>/issues/[STATUS] LFI-N — <slug>.md`. У карты
+неисполняемый `Type:`; билет-решение использует `Type: research`,
+`prototype`, `grilling` или `task`. Билет, изменённый на `Type: task`,
+становится исполняемым без перемещения. Блокировки и frontier используют
+указанные выше правила `Blocked by:` и статуса.
 <!-- lfi:tracker-contract:end -->
