@@ -98,11 +98,11 @@ test("run routes task tiers to models while preserving configured reasoning", as
       { id: 3, tier: "deep" },
     ],
     config: {
-      CODEX_MODEL: "legacy",
+      DEFAULT_MODEL: "legacy",
       LIGHT_MODEL: "luna",
       STANDARD_MODEL: "terra",
       DEEP_MODEL: "sol",
-      CODEX_REASONING_EFFORT: "low",
+      REASONING_EFFORT: "low",
     },
     codexScript: `#!/bin/sh
 output=""
@@ -153,7 +153,7 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
     assert.match(
       runLog,
       new RegExp(
-        `${id}\\n    Work started\\n    ${model} · low\\b`,
+        `${id}\\n    Work started\\n    codex:${model} · low\\b`,
         "u",
       ),
     );
@@ -264,7 +264,7 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
   assert.match(runLog, /luna-unavailable.+unavailable/isu);
   assert.match(
     runLog,
-    /model luna-unavailable configured through the light tier mapping/iu,
+    /model luna-unavailable for agent codex, configured through the light tier mapping/iu,
   );
   assert.match(runLog, /LFI-2.+skipped/isu);
   assert.match(runLog, /Completed: LFI-3/u);
@@ -275,7 +275,7 @@ test("retries preserve the assigned model and user reasoning", async () => {
     tasks: [{ id: 1, tier: "deep" }],
     config: {
       DEEP_MODEL: "sol",
-      CODEX_REASONING_EFFORT: "low",
+      REASONING_EFFORT: "low",
       MAX_STAGES: 2,
     },
     codexScript: `#!/bin/sh
@@ -359,10 +359,10 @@ printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
   assert.match(runLog, /LFI-2: уровень выполнения не указан/u);
   assert.match(
     runLog,
-    /LFI-2\n    Работа началась\n    terra · medium\b/u,
+    /LFI-2\n    Работа началась\n    codex:terra · medium\b/u,
   );
   assert.match(
     runLog,
-    /модель luna-unavailable, настроенная маршрутизацией уровня light, недоступна/u,
+    /модель luna-unavailable для агента codex, настроенная маршрутизацией уровня light, недоступна/u,
   );
 });

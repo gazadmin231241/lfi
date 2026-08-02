@@ -1,4 +1,5 @@
 import type { ExecutionTier } from "./execution-tier.js";
+import type { AgentModel } from "./config.js";
 
 export interface WorkItem {
   id: string;
@@ -17,5 +18,5 @@ export interface Attempt {
   worktreePath: string;
   branch: string;
   logName?: string;
-  unavailableModel?: string;
+  unavailableModel?: AgentModel;
 }

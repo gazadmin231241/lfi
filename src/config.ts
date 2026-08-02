@@ -1,14 +1,25 @@
 import { readFile, writeFile } from "node:fs/promises";
 
+import {
+  defaultAgentProvider,
+  isAgentProvider,
+  supportsReasoningEffort,
+  type AgentProvider,
+} from "./agent-provider.js";
 import type { ExecutionTier } from "./execution-tier.js";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export interface AgentModel {
+  agent: AgentProvider;
+  model: string;
+}
+
 export interface LfiConfig {
-  CODEX_MODEL: string;
+  DEFAULT_MODEL: string;
   LIGHT_MODEL: string;
   STANDARD_MODEL: string;
   DEEP_MODEL: string;
-  CODEX_REASONING_EFFORT: ReasoningEffort;
+  REASONING_EFFORT: ReasoningEffort;
   MERGER_MODEL: string;
   MERGER_REASONING_EFFORT: ReasoningEffort;
   MAX_PARALLEL: number;
@@ -21,11 +32,11 @@ export interface LfiConfig {
 }
 
 export const DEFAULT_CONFIG: LfiConfig = {
-  CODEX_MODEL: "",
+  DEFAULT_MODEL: "",
   LIGHT_MODEL: "",
   STANDARD_MODEL: "",
   DEEP_MODEL: "",
-  CODEX_REASONING_EFFORT: "medium",
+  REASONING_EFFORT: "medium",
   MERGER_MODEL: "",
   MERGER_REASONING_EFFORT: "medium",
   MAX_PARALLEL: 3,
@@ -44,15 +55,17 @@ export const serializeEnvConfig = (config: LfiConfig): string =>
 
 export const parseEnvConfig = (source: string): LfiConfig => {
   const result: LfiConfig = { ...DEFAULT_CONFIG };
+  const canonicalKeys = new Set<string>();
+  const aliases: Partial<Record<"CODEX_MODEL" | "CODEX_REASONING_EFFORT", string>> = {};
   for (const rawLine of source.split(/\r?\n/u)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const separator = line.indexOf("=");
+    const trimmedLine = rawLine.trim();
+    if (!trimmedLine || trimmedLine.startsWith("#")) continue;
+    const separator = rawLine.indexOf("=");
     if (separator < 0) continue;
-    const key = line.slice(0, separator);
-    const value = line.slice(separator + 1);
+    const key = rawLine.slice(0, separator).trim();
+    const value = rawLine.slice(separator + 1);
     switch (key) {
-      case "CODEX_MODEL":
+      case "DEFAULT_MODEL":
       case "LIGHT_MODEL":
       case "STANDARD_MODEL":
       case "DEEP_MODEL":
@@ -61,8 +74,9 @@ export const parseEnvConfig = (source: string): LfiConfig => {
       case "VALIDATE_COMMAND":
       case "WORKTREE_SETUP_COMMAND":
         result[key] = value;
+        canonicalKeys.add(key);
         break;
-      case "CODEX_REASONING_EFFORT":
+      case "REASONING_EFFORT":
       case "MERGER_REASONING_EFFORT":
         if (isReasoningEffort(value)) result[key] = value;
         else {
@@ -70,6 +84,11 @@ export const parseEnvConfig = (source: string): LfiConfig => {
             `${key} has an unsupported value / содержит неподдерживаемое значение: ${value}`,
           );
         }
+        canonicalKeys.add(key);
+        break;
+      case "CODEX_MODEL":
+      case "CODEX_REASONING_EFFORT":
+        aliases[key] = value;
         break;
       case "MAX_PARALLEL":
       case "MAX_STAGES":
@@ -81,7 +100,18 @@ export const parseEnvConfig = (source: string): LfiConfig => {
         break;
     }
   }
-  return result;
+  if (!canonicalKeys.has("DEFAULT_MODEL") && aliases.CODEX_MODEL !== undefined) {
+    result.DEFAULT_MODEL = aliases.CODEX_MODEL;
+  }
+  if (!canonicalKeys.has("REASONING_EFFORT") && aliases.CODEX_REASONING_EFFORT !== undefined) {
+    if (!isReasoningEffort(aliases.CODEX_REASONING_EFFORT)) {
+      throw new Error(
+        `CODEX_REASONING_EFFORT has an unsupported value / содержит неподдерживаемое значение: ${aliases.CODEX_REASONING_EFFORT}`,
+      );
+    }
+    result.REASONING_EFFORT = aliases.CODEX_REASONING_EFFORT;
+  }
+  return validateConfig(result);
 };
 
 const reasoningEfforts = new Set<ReasoningEffort>([
@@ -101,20 +131,39 @@ export const isReasoningEffort = (value: string): value is ReasoningEffort =>
   value === "max" ||
   value === "ultra";
 
+export const parseAgentModel = (value: string): AgentModel => {
+  const separator = value.indexOf(":");
+  const agent = separator < 0 ? defaultAgentProvider : value.slice(0, separator);
+  if (!isAgentProvider(agent)) {
+    throw new Error(
+      `Unknown agent in model value ${value} / Неизвестный агент в значении модели ${value}.`,
+    );
+  }
+  return {
+    agent,
+    model: separator < 0 ? value : value.slice(separator + 1),
+  };
+};
+
+export const agentModelKey = ({ agent, model }: AgentModel): string =>
+  `${agent}\0${model}`;
+
 export const resolveWorkerModel = (
   config: LfiConfig,
   tier: ExecutionTier,
-): string => {
+): AgentModel => {
   const modelByTier: Record<ExecutionTier, string> = {
     light: config.LIGHT_MODEL,
     standard: config.STANDARD_MODEL,
     deep: config.DEEP_MODEL,
   };
-  return modelByTier[tier] || config.CODEX_MODEL;
+  return parseAgentModel(modelByTier[tier] || config.DEFAULT_MODEL);
 };
 
-export const resolveIntegrationModel = (config: LfiConfig): string =>
-  config.MERGER_MODEL || config.STANDARD_MODEL || config.CODEX_MODEL;
+export const resolveIntegrationModel = (config: LfiConfig): AgentModel =>
+  parseAgentModel(
+    config.MERGER_MODEL || config.STANDARD_MODEL || config.DEFAULT_MODEL,
+  );
 
 export const validateConfig = (config: LfiConfig): LfiConfig => {
   for (const key of ["MAX_PARALLEL", "MAX_STAGES"] as const) {
@@ -141,11 +190,29 @@ export const validateConfig = (config: LfiConfig): LfiConfig => {
     );
   }
   if (
-    !reasoningEfforts.has(config.CODEX_REASONING_EFFORT) ||
+    !reasoningEfforts.has(config.REASONING_EFFORT) ||
     !reasoningEfforts.has(config.MERGER_REASONING_EFFORT)
   ) {
     throw new Error(
       "Reasoning effort must be low, medium, high, xhigh, max, or ultra / уровень рассуждений должен быть одним из перечисленных значений.",
+    );
+  }
+  const workerAgents = new Set(
+    (["light", "standard", "deep"] as const).map(
+      (tier) => resolveWorkerModel(config, tier).agent,
+    ),
+  );
+  for (const agent of workerAgents) {
+    if (!supportsReasoningEffort(agent, config.REASONING_EFFORT)) {
+      throw new Error(
+        `Agent ${agent} cannot honour REASONING_EFFORT=${config.REASONING_EFFORT} / Агент ${agent} не поддерживает REASONING_EFFORT=${config.REASONING_EFFORT}.`,
+      );
+    }
+  }
+  const mergerAgent = resolveIntegrationModel(config).agent;
+  if (!supportsReasoningEffort(mergerAgent, config.MERGER_REASONING_EFFORT)) {
+    throw new Error(
+      `Agent ${mergerAgent} cannot honour MERGER_REASONING_EFFORT=${config.MERGER_REASONING_EFFORT} / Агент ${mergerAgent} не поддерживает MERGER_REASONING_EFFORT=${config.MERGER_REASONING_EFFORT}.`,
     );
   }
   return config;

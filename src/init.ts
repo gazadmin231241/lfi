@@ -78,7 +78,7 @@ const askAdvanced = async (
     String(current);
   const codexReasoning = await ask(
     label("Codex reasoning", "Уровень рассуждений Codex"),
-    config.CODEX_REASONING_EFFORT,
+    config.REASONING_EFFORT,
   );
   const mergerReasoning = await ask(
     label("Merger reasoning", "Уровень рассуждений при слиянии"),
@@ -95,9 +95,9 @@ const askAdvanced = async (
   }
   const result: LfiConfig = {
     ...config,
-    CODEX_MODEL: await ask(
-      label("Fallback Codex model", "Резервная модель Codex"),
-      config.CODEX_MODEL,
+    DEFAULT_MODEL: await ask(
+      label("Fallback model", "Резервная модель"),
+      config.DEFAULT_MODEL,
     ),
     LIGHT_MODEL: await ask(
       label("Model for light tier mapping", "Модель для маршрутизации light"),
@@ -111,7 +111,7 @@ const askAdvanced = async (
       label("Model for deep tier mapping", "Модель для маршрутизации deep"),
       config.DEEP_MODEL,
     ),
-    CODEX_REASONING_EFFORT: codexReasoning,
+    REASONING_EFFORT: codexReasoning,
     MERGER_MODEL: await ask(
       label("Merger model", "Модель для слияния"),
       config.MERGER_MODEL,
@@ -169,7 +169,7 @@ export const initializeProject = async (
     (await askRecommendedModelPreset(options.language));
   let config: LfiConfig = {
     ...DEFAULT_CONFIG,
-    CODEX_MODEL: options.model ?? DEFAULT_CONFIG.CODEX_MODEL,
+    DEFAULT_MODEL: options.model ?? DEFAULT_CONFIG.DEFAULT_MODEL,
     LIGHT_MODEL:
       options.model ??
       (useRecommendedPreset
@@ -185,8 +185,8 @@ export const initializeProject = async (
       (useRecommendedPreset
         ? OPENAI_56_PRESET.DEEP_MODEL
         : DEFAULT_CONFIG.DEEP_MODEL),
-    CODEX_REASONING_EFFORT:
-      options.reasoning ?? DEFAULT_CONFIG.CODEX_REASONING_EFFORT,
+    REASONING_EFFORT:
+      options.reasoning ?? DEFAULT_CONFIG.REASONING_EFFORT,
     MERGER_REASONING_EFFORT:
       options.reasoning ?? DEFAULT_CONFIG.MERGER_REASONING_EFFORT,
     LOG_RETENTION_DAYS: retentionDays,
@@ -203,9 +203,9 @@ export const initializeProject = async (
       ? [
           `Репозиторий: ${repo.nameWithOwner}`,
           `Ветка: ${config.BASE_BRANCH}`,
-          `Модель: ${config.CODEX_MODEL || "модель Codex по умолчанию"}`,
+          `Модель: ${config.DEFAULT_MODEL || "модель Codex по умолчанию"}`,
           `Маршрутизация: light=${config.LIGHT_MODEL || "fallback"}, standard=${config.STANDARD_MODEL || "fallback"}, deep=${config.DEEP_MODEL || "fallback"}`,
-          `Уровень рассуждений: ${config.CODEX_REASONING_EFFORT}`,
+          `Уровень рассуждений: ${config.REASONING_EFFORT}`,
           `Параллельно: ${config.MAX_PARALLEL}`,
           `Этапов: ${config.MAX_STAGES}`,
           `Проверка: ${config.VALIDATE_COMMAND || "не определена"}`,
@@ -214,9 +214,9 @@ export const initializeProject = async (
       : [
           `Repository: ${repo.nameWithOwner}`,
           `Branch: ${config.BASE_BRANCH}`,
-          `Model: ${config.CODEX_MODEL || "default Codex model"}`,
+          `Model: ${config.DEFAULT_MODEL || "default Codex model"}`,
           `Routing: light=${config.LIGHT_MODEL || "fallback"}, standard=${config.STANDARD_MODEL || "fallback"}, deep=${config.DEEP_MODEL || "fallback"}`,
-          `Reasoning: ${config.CODEX_REASONING_EFFORT}`,
+          `Reasoning: ${config.REASONING_EFFORT}`,
           `Parallel workers: ${config.MAX_PARALLEL}`,
           `Stages: ${config.MAX_STAGES}`,
           `Validation: ${config.VALIDATE_COMMAND || "not detected"}`,

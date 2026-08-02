@@ -79,9 +79,9 @@ test("integration repair uses the standard model fallback and independent reason
     "printf '%s\\n' \"$*\" > merger-args.txt; printf 'resolved\\n' > conflict.txt",
   );
   await repairWithFakeCodex(fixture, "merge-routing", undefined, {
-    CODEX_MODEL: "legacy",
+    DEFAULT_MODEL: "legacy",
     STANDARD_MODEL: "terra",
-    CODEX_REASONING_EFFORT: "low",
+    REASONING_EFFORT: "low",
     MERGER_REASONING_EFFORT: "high",
   });
 

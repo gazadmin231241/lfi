@@ -2,7 +2,11 @@ import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { attemptWork } from "./attempt-work.js";
 import { mapConcurrent } from "./concurrency.js";
-import { loadConfig, resolveWorkerModel } from "./config.js";
+import {
+  agentModelKey,
+  loadConfig,
+  resolveWorkerModel,
+} from "./config.js";
 import { git, gitCommonDirectory, removeWorktreeAndBranch } from "./git.js";
 import { localize, type Language } from "./i18n.js";
 import { integrateAttempts } from "./integration.js";
@@ -118,15 +122,15 @@ export const runLfi = async (
           }
           task = { ...task, executionTier: "standard" as const };
         }
-        const model = resolveWorkerModel(config, task.executionTier ?? "standard");
-        if (model && unavailableModels.has(model)) {
+        const target = resolveWorkerModel(config, task.executionTier ?? "standard");
+        if (target.model && unavailableModels.has(agentModelKey(target))) {
           const reason = reportUnavailableModelSkip(
             output,
             language,
             reportedUnavailableTasks,
             task.id,
             task.executionTier ?? "standard",
-            model,
+            target,
           );
           attempted.set(task.id, reason);
           return [];
@@ -157,15 +161,15 @@ export const runLfi = async (
         runnable,
         config.MAX_PARALLEL,
         async (task) => {
-          const model = resolveWorkerModel(config, task.executionTier ?? "standard");
-          if (model && unavailableModels.has(model)) {
+          const target = resolveWorkerModel(config, task.executionTier ?? "standard");
+          if (target.model && unavailableModels.has(agentModelKey(target))) {
             const summary = reportUnavailableModelSkip(
               output,
               language,
               reportedUnavailableTasks,
               task.id,
               task.executionTier ?? "standard",
-              model,
+              target,
             );
             return {
               task,
@@ -175,7 +179,7 @@ export const runLfi = async (
               branch: `lfi/${task.id.toLowerCase()}`,
             };
           }
-          printWorkStarted(output, language, task.id, model, config.CODEX_REASONING_EFFORT);
+          printWorkStarted(output, language, task.id, target, config.REASONING_EFFORT);
           const attempt = await attemptWork({
             cwd,
             worktreesRoot,
@@ -188,12 +192,12 @@ export const runLfi = async (
             language,
           });
           if (attempt.unavailableModel) {
-            unavailableModels.add(attempt.unavailableModel);
+            unavailableModels.add(agentModelKey(attempt.unavailableModel));
             output.error(
               localize(
                 language,
-                `${task.id}: model ${attempt.unavailableModel} configured through the ${task.executionTier ?? "standard"} tier mapping is unavailable; LFI will not fall back and will skip other tasks using it for this run.`,
-                `${task.id}: модель ${attempt.unavailableModel}, настроенная маршрутизацией уровня ${task.executionTier ?? "standard"}, недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этой моделью в текущем запуске.`,
+                `${task.id}: model ${attempt.unavailableModel.model} for agent ${attempt.unavailableModel.agent}, configured through the ${task.executionTier ?? "standard"} tier mapping, is unavailable; LFI will not fall back and will skip other tasks using this agent and model for this run.`,
+                `${task.id}: модель ${attempt.unavailableModel.model} для агента ${attempt.unavailableModel.agent}, настроенная маршрутизацией уровня ${task.executionTier ?? "standard"}, недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этим агентом и моделью в текущем запуске.`,
               ),
             );
           }

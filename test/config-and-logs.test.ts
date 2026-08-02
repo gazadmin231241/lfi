@@ -6,6 +6,8 @@ import test from "node:test";
 
 import {
   DEFAULT_CONFIG,
+  agentModelKey,
+  parseAgentModel,
   parseEnvConfig,
   resolveIntegrationModel,
   resolveWorkerModel,
@@ -22,7 +24,7 @@ test("config round-trips defaults", () => {
   const serialized = serializeEnvConfig(DEFAULT_CONFIG);
   const parsed = parseEnvConfig(serialized);
 
-  assert.equal(parsed.CODEX_REASONING_EFFORT, "medium");
+  assert.equal(parsed.REASONING_EFFORT, "medium");
   assert.equal(parsed.LIGHT_MODEL, "");
   assert.equal(parsed.STANDARD_MODEL, "");
   assert.equal(parsed.DEEP_MODEL, "");
@@ -33,26 +35,64 @@ test("config round-trips defaults", () => {
   assert.equal("GITHUB_REPO" in parsed, false);
 });
 
-test("execution tiers resolve worker and integration models without changing reasoning", () => {
+test("execution tiers resolve worker and integration agent-model pairs without changing reasoning", () => {
   const config = {
     ...DEFAULT_CONFIG,
-    CODEX_MODEL: "legacy",
+    DEFAULT_MODEL: "legacy",
     LIGHT_MODEL: "luna",
     STANDARD_MODEL: "terra",
     DEEP_MODEL: "sol",
-    CODEX_REASONING_EFFORT: "low" as const,
+    REASONING_EFFORT: "low" as const,
   };
 
-  assert.equal(resolveWorkerModel(config, "light"), "luna");
-  assert.equal(resolveWorkerModel(config, "standard"), "terra");
-  assert.equal(resolveWorkerModel(config, "deep"), "sol");
-  assert.equal(resolveWorkerModel({ ...config, LIGHT_MODEL: "" }, "light"), "legacy");
-  assert.equal(resolveIntegrationModel(config), "terra");
-  assert.equal(
+  assert.deepEqual(resolveWorkerModel(config, "light"), { agent: "codex", model: "luna" });
+  assert.deepEqual(resolveWorkerModel(config, "standard"), { agent: "codex", model: "terra" });
+  assert.deepEqual(resolveWorkerModel(config, "deep"), { agent: "codex", model: "sol" });
+  assert.deepEqual(resolveWorkerModel({ ...config, LIGHT_MODEL: "" }, "light"), {
+    agent: "codex",
+    model: "legacy",
+  });
+  assert.deepEqual(resolveIntegrationModel(config), { agent: "codex", model: "terra" });
+  assert.deepEqual(
     resolveIntegrationModel({ ...config, MERGER_MODEL: "integrator" }),
-    "integrator",
+    { agent: "codex", model: "integrator" },
   );
-  assert.equal(config.CODEX_REASONING_EFFORT, "low");
+  assert.equal(config.REASONING_EFFORT, "low");
+});
+
+test("configuration reads agent prefixes, preserves model syntax, and rewrites deprecated keys", () => {
+  assert.deepEqual(parseAgentModel("gpt-5.6"), {
+    agent: "codex",
+    model: "gpt-5.6",
+  });
+  assert.deepEqual(parseAgentModel("codex:gpt-5.6:high"), {
+    agent: "codex",
+    model: "gpt-5.6:high",
+  });
+  assert.deepEqual(
+    resolveWorkerModel(
+      parseEnvConfig("LIGHT_MODEL=codex:provider:model:thinking \n"),
+      "light",
+    ),
+    { agent: "codex", model: "provider:model:thinking " },
+  );
+  assert.equal(
+    agentModelKey({ agent: "codex", model: "gpt-5.6:high" }),
+    "codex\0gpt-5.6:high",
+  );
+  const parsed = parseEnvConfig(
+    "CODEX_MODEL=legacy\nCODEX_REASONING_EFFORT=low\n",
+  );
+  assert.equal(parsed.DEFAULT_MODEL, "legacy");
+  assert.equal(parsed.REASONING_EFFORT, "low");
+  const rewritten = serializeEnvConfig(parsed);
+  assert.match(rewritten, /^DEFAULT_MODEL=legacy$/mu);
+  assert.match(rewritten, /^REASONING_EFFORT=low$/mu);
+  assert.doesNotMatch(rewritten, /CODEX_(?:MODEL|REASONING_EFFORT)/u);
+  assert.throws(
+    () => parseEnvConfig("LIGHT_MODEL=unknown:model\n"),
+    /Unknown agent.*unknown:model/u,
+  );
 });
 
 test("doctor requires the commands used by GitHub code delivery", async () => {
@@ -185,11 +225,11 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
     await readFile(join(root, ".lfi", "config.env"), "utf8"),
   );
   assert.equal(config.BASE_BRANCH, "trunk");
-  assert.equal(config.CODEX_MODEL, "gpt-test");
+  assert.equal(config.DEFAULT_MODEL, "gpt-test");
   assert.equal(config.LIGHT_MODEL, "gpt-test");
   assert.equal(config.STANDARD_MODEL, "gpt-test");
   assert.equal(config.DEEP_MODEL, "gpt-test");
-  assert.equal(config.CODEX_REASONING_EFFORT, "high");
+  assert.equal(config.REASONING_EFFORT, "high");
   assert.equal(config.LOG_RETENTION_DAYS, 7);
   assert.equal(config.VALIDATE_COMMAND, "pnpm validate:all");
   assert.equal(config.WORKTREE_SETUP_COMMAND, "pnpm install --frozen-lockfile");

@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
-import { defaultAgentProvider, runAgent } from "./agent-provider.js";
+import { runAgent } from "./agent-provider.js";
 import {
   resolveIntegrationModel,
   type LfiConfig,
@@ -62,7 +62,7 @@ export const mergeWithAgent = async (options: {
     ),
   );
   const result = await runAgent({
-    agent: defaultAgentProvider,
+    agent: resolveIntegrationModel(options.config).agent,
     cwd: options.cwd,
     prompt: `Resolve the current integration problem in this worktree.
 
@@ -82,7 +82,7 @@ Do not modify paths outside this list.
 `
   : ""}
 `,
-    model: resolveIntegrationModel(options.config),
+    model: resolveIntegrationModel(options.config).model,
     reasoning: options.config.MERGER_REASONING_EFFORT,
     gitDirectory: options.gitDirectory,
     log: options.log,
