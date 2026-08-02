@@ -33,4 +33,4 @@ shape, including reasoning-effort handling per agent provider.
 
 ## Blocked by
 
-- [LFI-35 — Run a review phase after execute](<[READY] LFI-35 — run-a-review-phase-after-execute.md>)
+- [LFI-35 — Run a review phase after execute](<[DONE] LFI-35 — run-a-review-phase-after-execute.md>)

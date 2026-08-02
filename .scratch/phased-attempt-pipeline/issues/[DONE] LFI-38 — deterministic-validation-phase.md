@@ -22,14 +22,14 @@ attempt on its own and slots in unchanged once review phases exist.
 
 ## Acceptance criteria
 
-- [ ] An accepted attempt implies the validation command was run in the
+- [x] An accepted attempt implies the validation command was run in the
       worktree and exited zero.
-- [ ] A failing validation ends the attempt not accepted, preserves the
+- [x] A failing validation ends the attempt not accepted, preserves the
       worktree, and the summary names validation and includes its output.
-- [ ] No configured validation command means the phase is skipped and
+- [x] No configured validation command means the phase is skipped and
       acceptance is unchanged.
-- [ ] Validation command, output, and exit code appear in the run log.
-- [ ] Agent-reported success cannot make an attempt accepted when the
+- [x] Validation command, output, and exit code appear in the run log.
+- [x] Agent-reported success cannot make an attempt accepted when the
       observed validation exit code is non-zero.
 
 ## Specification

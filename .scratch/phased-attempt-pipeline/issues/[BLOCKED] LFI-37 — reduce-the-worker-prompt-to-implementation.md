@@ -39,4 +39,4 @@ lives in the constraints LFI appends, not in the user's template.
 
 ## Blocked by
 
-- [LFI-36 — Bounded remediation and targeted re review](<[BLOCKED] LFI-36 — bounded-remediation-and-targeted-re-review.md>)
+- [LFI-36 — Bounded remediation and targeted re review](<[READY] LFI-36 — bounded-remediation-and-targeted-re-review.md>)

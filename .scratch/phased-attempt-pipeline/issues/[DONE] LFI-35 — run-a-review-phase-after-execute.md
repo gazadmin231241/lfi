@@ -35,22 +35,22 @@ loop replacing it.
 
 ## Acceptance criteria
 
-- [ ] A completed execute phase is followed by a review session in a fresh
+- [x] A completed execute phase is followed by a review session in a fresh
       agent conversation in the same worktree, prompted via the
       skill-placeholder mechanism.
-- [ ] The reviewer is told the base ref to diff against and the absolute
+- [x] The reviewer is told the base ref to diff against and the absolute
       findings file path, and that path lies outside the worktree.
-- [ ] Findings are parsed from the JSON file; each finding carries axis,
+- [x] Findings are parsed from the JSON file; each finding carries axis,
       severity, and description, and unknown shapes are rejected.
-- [ ] An attempt with no blocking findings is accepted; commits and delivery
+- [x] An attempt with no blocking findings is accepted; commits and delivery
       inputs match today's accepted attempt.
-- [ ] An attempt with a blocking finding is not accepted, preserves the
+- [x] An attempt with a blocking finding is not accepted, preserves the
       worktree, and its summary names the review phase.
-- [ ] A completed review session with a missing or unparsable findings file
+- [x] A completed review session with a missing or unparsable findings file
       ends the attempt not accepted as a review failure.
-- [ ] Advisory-only findings do not change acceptance.
-- [ ] Review runs in its own log name; execute logs are unchanged.
-- [ ] The reused-dirty-worktree short-circuit behaves exactly as before.
+- [x] Advisory-only findings do not change acceptance.
+- [x] Review runs in its own log name; execute logs are unchanged.
+- [x] The reused-dirty-worktree short-circuit behaves exactly as before.
 
 ## Specification
 
