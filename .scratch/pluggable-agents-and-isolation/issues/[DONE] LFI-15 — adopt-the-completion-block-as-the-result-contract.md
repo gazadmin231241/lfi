@@ -30,18 +30,18 @@ that risk and should be the densest in the whole effort.
 
 ## Acceptance criteria
 
-- [ ] Extraction is a pure function from agent output to a completion status and
+- [x] Extraction is a pure function from agent output to a completion status and
       summary, or to a reported contract failure.
-- [ ] The last occurrence of the block wins when several are present.
-- [ ] Surrounding prose and markdown code fences do not prevent extraction.
-- [ ] Malformed content, a block of the wrong shape, and a missing block each
+- [x] The last occurrence of the block wins when several are present.
+- [x] Surrounding prose and markdown code fences do not prevent extraction.
+- [x] Malformed content, a block of the wrong shape, and a missing block each
       yield a non-completed result rather than an exception escaping the seam.
-- [ ] A run whose prompt does not instruct the agent to emit the block fails
+- [x] A run whose prompt does not instruct the agent to emit the block fails
       before any work starts, with a message saying what is missing.
-- [ ] Codex no longer receives output-schema or result-file arguments.
-- [ ] Built-in worker and merger prompts require the block in English and
+- [x] Codex no longer receives output-schema or result-file arguments.
+- [x] Built-in worker and merger prompts require the block in English and
       Russian.
-- [ ] Acceptance outcomes are otherwise unchanged: successful exit, completed
+- [x] Acceptance outcomes are otherwise unchanged: successful exit, completed
       status, commits ahead of base, clean worktree.
 
 ## Specification

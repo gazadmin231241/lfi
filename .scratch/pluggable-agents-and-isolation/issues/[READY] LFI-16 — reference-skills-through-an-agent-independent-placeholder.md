@@ -47,4 +47,4 @@ languages.
 
 ## Blocked by
 
-- [LFI-15 — Adopt the completion block as the result contract](<[READY] LFI-15 — adopt-the-completion-block-as-the-result-contract.md>)
+- [LFI-15 — Adopt the completion block as the result contract](<[DONE] LFI-15 — adopt-the-completion-block-as-the-result-contract.md>)

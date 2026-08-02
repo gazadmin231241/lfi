@@ -51,24 +51,24 @@ under it.
 
 ## Acceptance criteria
 
-- [ ] Wrapping a command for the boundary is a pure function of the command and
+- [x] Wrapping a command for the boundary is a pure function of the command and
       the isolation configuration, tested without spawning a process.
-- [ ] The worktree is writable and the rest of the filesystem is not.
-- [ ] Code-host credentials are absent inside the boundary.
-- [ ] Network access is available inside the boundary.
-- [ ] The opt-out returns the command unchanged and is selectable by
+- [x] The worktree is writable and the rest of the filesystem is not.
+- [x] Code-host credentials are absent inside the boundary.
+- [x] Network access is available inside the boundary.
+- [x] The opt-out returns the command unchanged and is selectable by
       configuration.
-- [ ] Agent execution for workers, for the merger, and in the integration
+- [x] Agent execution for workers, for the merger, and in the integration
       worktree all pass through the boundary, verified with a fake isolation
       executable on the path.
-- [ ] An agent with its own sandbox still runs it, inside the boundary, and can
+- [x] An agent with its own sandbox still runs it, inside the boundary, and can
       write Git metadata.
-- [ ] The agent creates the commits; LFI no longer stages or commits worker
+- [x] The agent creates the commits; LFI no longer stages or commits worker
       changes and no longer composes a commit message.
-- [ ] Prompts instruct the agent to commit, in English and Russian.
-- [ ] Acceptance rules are unchanged and tests assert acceptance of an attempt
+- [x] Prompts instruct the agent to commit, in English and Russian.
+- [x] Acceptance rules are unchanged and tests assert acceptance of an attempt
       whose commits the agent made.
-- [ ] Verified by running, not by reasoning: a worktree's Git pointer resolves
+- [x] Verified by running, not by reasoning: a worktree's Git pointer resolves
       inside the boundary, and dependency installation and the project's test
       suite succeed under it.
 

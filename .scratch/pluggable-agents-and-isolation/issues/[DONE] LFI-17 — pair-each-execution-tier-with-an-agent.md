@@ -38,21 +38,21 @@ is still attempted.
 
 ## Acceptance criteria
 
-- [ ] A tier and the merger role each resolve to an agent-and-model pair.
-- [ ] An agent prefix on a model value selects the agent; the remainder is
+- [x] A tier and the merger role each resolve to an agent-and-model pair.
+- [x] An agent prefix on a model value selects the agent; the remainder is
       passed through unmodified.
-- [ ] A value with no prefix resolves to Codex, and existing configurations load
+- [x] A value with no prefix resolves to Codex, and existing configurations load
       unchanged.
-- [ ] An unknown agent prefix is a configuration error naming the value.
-- [ ] The renamed keys are canonical; the former names load as deprecated
+- [x] An unknown agent prefix is a configuration error naming the value.
+- [x] The renamed keys are canonical; the former names load as deprecated
       aliases and are rewritten on the next save.
-- [ ] A reasoning level unsupported by an agent named in the configuration is
+- [x] A reasoning level unsupported by an agent named in the configuration is
       rejected at load, naming that agent.
-- [ ] A reasoning level no configured agent supports is an error, never a
+- [x] A reasoning level no configured agent supports is an error, never a
       downgrade.
-- [ ] Tier fallback behaviour from the routing decision is preserved.
-- [ ] Unavailability is keyed by the agent-and-model pair.
-- [ ] Model-routing tests are extended, not replaced; routing by tier is proven
+- [x] Tier fallback behaviour from the routing decision is preserved.
+- [x] Unavailability is keyed by the agent-and-model pair.
+- [x] Model-routing tests are extended, not replaced; routing by tier is proven
       unchanged.
 
 ## Specification
