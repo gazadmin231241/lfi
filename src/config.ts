@@ -7,12 +7,14 @@ import {
   type AgentProvider,
 } from "./agent-provider.js";
 import type { ExecutionTier } from "./execution-tier.js";
+import type { Language } from "./i18n.js";
 import type { IsolationProvider } from "./isolation-provider.js";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 export interface AgentModel {
   agent: AgentProvider;
   model: string;
+  reasoning: ReasoningEffort;
 }
 
 export interface LfiConfig {
@@ -51,15 +53,109 @@ export const DEFAULT_CONFIG: LfiConfig = {
   ISOLATION_PROVIDER: "local",
 };
 
-export const serializeEnvConfig = (config: LfiConfig): string =>
-  `${Object.entries(config)
-    .map(([key, value]) => `${key}=${String(value)}`)
-    .join("\n")}\n`;
+const configComments = {
+  en: {
+    models: "Agent and model routing",
+    modelHelp: "Format: <cli>:<model>:<reasoning>, for example codex:gpt-5.6-luna:medium",
+    execution: "Execution",
+    project: "Project commands",
+    isolation: "Isolation",
+    descriptions: {
+      BASE_BRANCH: "branch where results land",
+      VALIDATE_COMMAND: "verifies code before merging",
+      WORKTREE_SETUP_COMMAND: "prepares each worktree",
+      DEFAULT_MODEL: "model used when a tier is left empty",
+      LIGHT_MODEL: "model for light work",
+      STANDARD_MODEL: "model for standard work",
+      DEEP_MODEL: "model for deep work",
+      MERGER_MODEL: "model for integration and conflicts",
+      MAX_PARALLEL: "tasks that may run at once",
+      MAX_STAGES: "maximum stages per run",
+      LOG_RETENTION_DAYS: "days to keep logs",
+      IDLE_TIMEOUT_MINUTES: "silent minutes before an agent is treated as stuck",
+      ISOLATION_PROVIDER: "local sandboxes execution; none requires a disposable environment",
+    },
+  },
+  ru: {
+    models: "Маршрутизация агентов и моделей",
+    modelHelp: "Формат: <cli>:<модель>:<reasoning>, например codex:gpt-5.6-luna:medium",
+    execution: "Выполнение",
+    project: "Команды проекта",
+    isolation: "Изоляция",
+    descriptions: {
+      BASE_BRANCH: "ветка, в которую попадают результаты",
+      VALIDATE_COMMAND: "проверяет код перед слиянием",
+      WORKTREE_SETUP_COMMAND: "подготавливает каждое рабочее дерево",
+      DEFAULT_MODEL: "модель для уровней с пустым значением",
+      LIGHT_MODEL: "модель для лёгкой работы",
+      STANDARD_MODEL: "модель для стандартной работы",
+      DEEP_MODEL: "модель для сложной работы",
+      MERGER_MODEL: "модель для интеграции и конфликтов",
+      MAX_PARALLEL: "число одновременно выполняемых задач",
+      MAX_STAGES: "максимум этапов за запуск",
+      LOG_RETENTION_DAYS: "число дней хранения журналов",
+      IDLE_TIMEOUT_MINUTES: "минуты молчания до признания агента зависшим",
+      ISOLATION_PROVIDER: "local изолирует выполнение; none требует одноразовой среды",
+    },
+  },
+} as const;
+
+const envLines = (
+  config: LfiConfig,
+  descriptions: Readonly<Partial<Record<keyof LfiConfig, string>>>,
+  keys: readonly (keyof LfiConfig)[],
+): string[] => keys.map((key) => `${key}=${String(config[key])} # ${descriptions[key]}`);
+
+const formatAgentModel = (
+  value: string,
+  fallbackReasoning: ReasoningEffort,
+): string => {
+  if (!value) return "";
+  const target = parseAgentModel(value, fallbackReasoning);
+  return `${target.agent}:${target.model}:${target.reasoning}`;
+};
+
+export const serializeEnvConfig = (
+  config: LfiConfig,
+  language: Language = "en",
+): string => {
+  const comments = configComments[language];
+  return [
+    `# ${comments.project}`,
+    ...envLines(config, comments.descriptions, [
+      "BASE_BRANCH",
+      "VALIDATE_COMMAND",
+      "WORKTREE_SETUP_COMMAND",
+    ]),
+    "",
+    `# ${comments.models}`,
+    `# ${comments.modelHelp}`,
+    `DEFAULT_MODEL=${formatAgentModel(config.DEFAULT_MODEL, config.REASONING_EFFORT)} # ${comments.descriptions.DEFAULT_MODEL}`,
+    `LIGHT_MODEL=${formatAgentModel(config.LIGHT_MODEL, config.REASONING_EFFORT)} # ${comments.descriptions.LIGHT_MODEL}`,
+    `STANDARD_MODEL=${formatAgentModel(config.STANDARD_MODEL, config.REASONING_EFFORT)} # ${comments.descriptions.STANDARD_MODEL}`,
+    `DEEP_MODEL=${formatAgentModel(config.DEEP_MODEL, config.REASONING_EFFORT)} # ${comments.descriptions.DEEP_MODEL}`,
+    `MERGER_MODEL=${formatAgentModel(config.MERGER_MODEL, config.MERGER_REASONING_EFFORT)} # ${comments.descriptions.MERGER_MODEL}`,
+    "",
+    `# ${comments.execution}`,
+    ...envLines(config, comments.descriptions, [
+      "MAX_PARALLEL",
+      "MAX_STAGES",
+      "LOG_RETENTION_DAYS",
+      "IDLE_TIMEOUT_MINUTES",
+    ]),
+    "",
+    `# ${comments.isolation}`,
+    ...envLines(config, comments.descriptions, ["ISOLATION_PROVIDER"]),
+    "",
+  ].join("\n");
+};
 
 export const parseEnvConfig = (source: string): LfiConfig => {
   const result: LfiConfig = { ...DEFAULT_CONFIG };
   const canonicalKeys = new Set<string>();
   const aliases: Partial<Record<"CODEX_MODEL" | "CODEX_REASONING_EFFORT", string>> = {};
+  let serializedWorkerReasoning: ReasoningEffort | undefined;
+  let serializedMergerReasoning: ReasoningEffort | undefined;
   for (const rawLine of source.split(/\r?\n/u)) {
     const trimmedLine = rawLine.trim();
     if (!trimmedLine || trimmedLine.startsWith("#")) continue;
@@ -72,7 +168,19 @@ export const parseEnvConfig = (source: string): LfiConfig => {
       case "LIGHT_MODEL":
       case "STANDARD_MODEL":
       case "DEEP_MODEL":
-      case "MERGER_MODEL":
+      case "MERGER_MODEL": {
+        const reasoningSeparator = value.lastIndexOf(":");
+        const possibleReasoning = reasoningSeparator < 0
+          ? ""
+          : value.slice(reasoningSeparator + 1);
+        if (isReasoningEffort(possibleReasoning)) {
+          result[key] = value.slice(0, reasoningSeparator);
+          if (key === "MERGER_MODEL") serializedMergerReasoning = possibleReasoning;
+          else serializedWorkerReasoning = possibleReasoning;
+        } else result[key] = value;
+        canonicalKeys.add(key);
+        break;
+      }
       case "BASE_BRANCH":
       case "VALIDATE_COMMAND":
       case "WORKTREE_SETUP_COMMAND":
@@ -122,6 +230,12 @@ export const parseEnvConfig = (source: string): LfiConfig => {
     }
     result.REASONING_EFFORT = aliases.CODEX_REASONING_EFFORT;
   }
+  if (!canonicalKeys.has("REASONING_EFFORT") && serializedWorkerReasoning !== undefined) {
+    result.REASONING_EFFORT = serializedWorkerReasoning;
+  }
+  if (!canonicalKeys.has("MERGER_REASONING_EFFORT") && serializedMergerReasoning !== undefined) {
+    result.MERGER_REASONING_EFFORT = serializedMergerReasoning;
+  }
   return validateConfig(result);
 };
 
@@ -142,7 +256,10 @@ export const isReasoningEffort = (value: string): value is ReasoningEffort =>
   value === "max" ||
   value === "ultra";
 
-export const parseAgentModel = (value: string): AgentModel => {
+export const parseAgentModel = (
+  value: string,
+  fallbackReasoning: ReasoningEffort = "medium",
+): AgentModel => {
   const separator = value.indexOf(":");
   const agent = separator < 0 ? defaultAgentProvider : value.slice(0, separator);
   if (!isAgentProvider(agent)) {
@@ -150,13 +267,24 @@ export const parseAgentModel = (value: string): AgentModel => {
       `Unknown agent in model value ${value} / Неизвестный агент в значении модели ${value}.`,
     );
   }
+  const rawModel = separator < 0 ? value : value.slice(separator + 1);
+  const reasoningSeparator = separator < 0 ? -1 : rawModel.lastIndexOf(":");
+  const possibleReasoning = reasoningSeparator < 0
+    ? ""
+    : rawModel.slice(reasoningSeparator + 1);
+  const reasoning = isReasoningEffort(possibleReasoning)
+    ? possibleReasoning
+    : fallbackReasoning;
   return {
     agent,
-    model: separator < 0 ? value : value.slice(separator + 1),
+    model: isReasoningEffort(possibleReasoning)
+      ? rawModel.slice(0, reasoningSeparator)
+      : rawModel,
+    reasoning,
   };
 };
 
-export const agentModelKey = ({ agent, model }: AgentModel): string =>
+export const agentModelKey = ({ agent, model }: Pick<AgentModel, "agent" | "model">): string =>
   `${agent}\0${model}`;
 
 export const isIsolationProvider = (
@@ -172,12 +300,16 @@ export const resolveWorkerModel = (
     standard: config.STANDARD_MODEL,
     deep: config.DEEP_MODEL,
   };
-  return parseAgentModel(modelByTier[tier] || config.DEFAULT_MODEL);
+  return parseAgentModel(
+    modelByTier[tier] || config.DEFAULT_MODEL,
+    config.REASONING_EFFORT,
+  );
 };
 
 export const resolveIntegrationModel = (config: LfiConfig): AgentModel =>
   parseAgentModel(
     config.MERGER_MODEL || config.STANDARD_MODEL || config.DEFAULT_MODEL,
+    config.MERGER_REASONING_EFFORT,
   );
 
 export const configuredAgents = (config: LfiConfig): ReadonlySet<AgentProvider> =>
@@ -220,22 +352,18 @@ export const validateConfig = (config: LfiConfig): LfiConfig => {
       "Reasoning effort must be low, medium, high, xhigh, max, or ultra / уровень рассуждений должен быть одним из перечисленных значений.",
     );
   }
-  const workerAgents = new Set(
-    (["light", "standard", "deep"] as const).map(
-      (tier) => resolveWorkerModel(config, tier).agent,
-    ),
-  );
-  for (const agent of workerAgents) {
-    if (!supportsReasoningEffort(agent, config.REASONING_EFFORT)) {
+  for (const tier of ["light", "standard", "deep"] as const) {
+    const target = resolveWorkerModel(config, tier);
+    if (!supportsReasoningEffort(target.agent, target.reasoning)) {
       throw new Error(
-        `Agent ${agent} cannot honour REASONING_EFFORT=${config.REASONING_EFFORT} / Агент ${agent} не поддерживает REASONING_EFFORT=${config.REASONING_EFFORT}.`,
+        `Agent ${target.agent} cannot honour reasoning=${target.reasoning} for ${tier} / Агент ${target.agent} не поддерживает reasoning=${target.reasoning} для ${tier}.`,
       );
     }
   }
-  const mergerAgent = resolveIntegrationModel(config).agent;
-  if (!supportsReasoningEffort(mergerAgent, config.MERGER_REASONING_EFFORT)) {
+  const merger = resolveIntegrationModel(config);
+  if (!supportsReasoningEffort(merger.agent, merger.reasoning)) {
     throw new Error(
-      `Agent ${mergerAgent} cannot honour MERGER_REASONING_EFFORT=${config.MERGER_REASONING_EFFORT} / Агент ${mergerAgent} не поддерживает MERGER_REASONING_EFFORT=${config.MERGER_REASONING_EFFORT}.`,
+      `Agent ${merger.agent} cannot honour reasoning=${merger.reasoning} for merger / Агент ${merger.agent} не поддерживает reasoning=${merger.reasoning} для merger.`,
     );
   }
   if (!isIsolationProvider(config.ISOLATION_PROVIDER)) {
@@ -249,11 +377,16 @@ export const validateConfig = (config: LfiConfig): LfiConfig => {
 export const loadConfig = async (path: string): Promise<LfiConfig> =>
   validateConfig(parseEnvConfig(await readFile(path, "utf8")));
 
-export const saveConfig = async (path: string, config: LfiConfig): Promise<void> =>
-  writeFile(path, serializeEnvConfig(validateConfig(config)), { flag: "wx" });
+export const saveConfig = async (
+  path: string,
+  config: LfiConfig,
+  language: Language = "en",
+): Promise<void> =>
+  writeFile(path, serializeEnvConfig(validateConfig(config), language), { flag: "wx" });
 
 export const updateConfig = async (
   path: string,
   config: LfiConfig,
+  language: Language = "en",
 ): Promise<void> =>
-  writeFile(path, serializeEnvConfig(validateConfig(config)));
+  writeFile(path, serializeEnvConfig(validateConfig(config), language));

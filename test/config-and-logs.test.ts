@@ -34,6 +34,42 @@ test("config round-trips defaults", () => {
   assert.equal(parsed.ISOLATION_PROVIDER, "local");
   assert.equal("TASK_SOURCE" in parsed, false);
   assert.equal("GITHUB_REPO" in parsed, false);
+  assert.match(serialized, /# Agent and model routing/u);
+  assert.match(serialized, /# Format: <cli>:<model>:<reasoning>.*codex:gpt-5\.6-luna:medium/u);
+});
+
+test("config comments follow the project language", () => {
+  const serialized = serializeEnvConfig(DEFAULT_CONFIG, "ru");
+
+  assert.match(serialized, /# Маршрутизация агентов и моделей/u);
+  assert.match(serialized, /# Формат: <cli>:<модель>:<reasoning>.*codex:gpt-5\.6-luna:medium/u);
+  assert.deepEqual(parseEnvConfig(serialized), DEFAULT_CONFIG);
+});
+
+test("serialized configuration follows reading order and describes every key", () => {
+  const english = serializeEnvConfig(DEFAULT_CONFIG);
+  const russian = serializeEnvConfig(DEFAULT_CONFIG, "ru");
+  const assignmentLines = (source: string): string[] =>
+    source.split("\n").filter((line) => /^[A-Z_]+=/u.test(line));
+  const keys = (source: string): string[] =>
+    assignmentLines(source).map((line) => line.slice(0, line.indexOf("=")));
+
+  assert.ok(english.indexOf("# Project commands") < english.indexOf("# Agent and model routing"));
+  assert.ok(english.indexOf("# Agent and model routing") < english.indexOf("# Execution"));
+  assert.ok(english.indexOf("# Execution") < english.indexOf("# Isolation"));
+  assert.equal(
+    assignmentLines(english).every((line) => /=.* # \S/u.test(line)),
+    true,
+  );
+  assert.deepEqual(keys(russian), keys(english));
+  assert.equal(
+    assignmentLines(russian).every((line) => /=.* # \S/u.test(line)),
+    true,
+  );
+  assert.equal(
+    english.split("\n").filter((line) => /^# .*<cli>:/u.test(line)).length,
+    1,
+  );
 });
 
 test("configuration ignores whitespace-prefixed trailing comments", () => {
@@ -102,17 +138,18 @@ test("execution tiers resolve worker and integration agent-model pairs without c
     REASONING_EFFORT: "low" as const,
   };
 
-  assert.deepEqual(resolveWorkerModel(config, "light"), { agent: "codex", model: "luna" });
-  assert.deepEqual(resolveWorkerModel(config, "standard"), { agent: "codex", model: "terra" });
-  assert.deepEqual(resolveWorkerModel(config, "deep"), { agent: "codex", model: "sol" });
+  assert.deepEqual(resolveWorkerModel(config, "light"), { agent: "codex", model: "luna", reasoning: "low" });
+  assert.deepEqual(resolveWorkerModel(config, "standard"), { agent: "codex", model: "terra", reasoning: "low" });
+  assert.deepEqual(resolveWorkerModel(config, "deep"), { agent: "codex", model: "sol", reasoning: "low" });
   assert.deepEqual(resolveWorkerModel({ ...config, LIGHT_MODEL: "" }, "light"), {
     agent: "codex",
     model: "legacy",
+    reasoning: "low",
   });
-  assert.deepEqual(resolveIntegrationModel(config), { agent: "codex", model: "terra" });
+  assert.deepEqual(resolveIntegrationModel(config), { agent: "codex", model: "terra", reasoning: "medium" });
   assert.deepEqual(
     resolveIntegrationModel({ ...config, MERGER_MODEL: "integrator" }),
-    { agent: "codex", model: "integrator" },
+    { agent: "codex", model: "integrator", reasoning: "medium" },
   );
   assert.equal(config.REASONING_EFFORT, "low");
 });
@@ -121,21 +158,24 @@ test("configuration reads agent prefixes, preserves model syntax, and rewrites d
   assert.deepEqual(parseAgentModel("gpt-5.6"), {
     agent: "codex",
     model: "gpt-5.6",
+    reasoning: "medium",
   });
   assert.deepEqual(parseAgentModel("codex:gpt-5.6:high"), {
     agent: "codex",
-    model: "gpt-5.6:high",
+    model: "gpt-5.6",
+    reasoning: "high",
   });
   assert.deepEqual(parseAgentModel("pi:openai/gpt-5.6:high"), {
     agent: "pi",
-    model: "openai/gpt-5.6:high",
+    model: "openai/gpt-5.6",
+    reasoning: "high",
   });
   assert.deepEqual(
     resolveWorkerModel(
       parseEnvConfig("LIGHT_MODEL=codex:provider:model:thinking \n"),
       "light",
     ),
-    { agent: "codex", model: "provider:model:thinking" },
+    { agent: "codex", model: "provider:model:thinking", reasoning: "medium" },
   );
   assert.equal(
     agentModelKey({ agent: "codex", model: "gpt-5.6:high" }),
@@ -147,8 +187,8 @@ test("configuration reads agent prefixes, preserves model syntax, and rewrites d
   assert.equal(parsed.DEFAULT_MODEL, "legacy");
   assert.equal(parsed.REASONING_EFFORT, "low");
   const rewritten = serializeEnvConfig(parsed);
-  assert.match(rewritten, /^DEFAULT_MODEL=legacy$/mu);
-  assert.match(rewritten, /^REASONING_EFFORT=low$/mu);
+  assert.match(rewritten, /^DEFAULT_MODEL=codex:legacy:low # /mu);
+  assert.doesNotMatch(rewritten, /^REASONING_EFFORT=/mu);
   assert.doesNotMatch(rewritten, /CODEX_(?:MODEL|REASONING_EFFORT)/u);
   assert.throws(
     () => parseEnvConfig("LIGHT_MODEL=unknown:model\n"),
@@ -159,7 +199,7 @@ test("configuration reads agent prefixes, preserves model syntax, and rewrites d
 test("configuration rejects reasoning Pi does not accept", () => {
   assert.throws(
     () => parseEnvConfig("LIGHT_MODEL=pi:openai/gpt-test\nREASONING_EFFORT=ultra\n"),
-    /Agent pi cannot honour REASONING_EFFORT=ultra/u,
+    /Agent pi cannot honour reasoning=ultra/u,
   );
   assert.equal(
     parseEnvConfig("LIGHT_MODEL=pi:openai/gpt-test\nREASONING_EFFORT=xhigh\n").REASONING_EFFORT,
@@ -349,12 +389,16 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
   const config = parseEnvConfig(
     await readFile(join(root, ".lfi", "config.env"), "utf8"),
   );
+  assert.match(
+    await readFile(join(root, ".lfi", "config.env"), "utf8"),
+    /# Agent and model routing/u,
+  );
   assert.equal(config.BASE_BRANCH, "trunk");
-  assert.equal(config.DEFAULT_MODEL, "gpt-test");
-  assert.equal(config.LIGHT_MODEL, "gpt-test");
-  assert.equal(config.STANDARD_MODEL, "gpt-test");
-  assert.equal(config.DEEP_MODEL, "gpt-test");
-  assert.equal(config.REASONING_EFFORT, "high");
+  assert.equal(config.DEFAULT_MODEL, "codex:gpt-test");
+  assert.equal(config.LIGHT_MODEL, "codex:gpt-test");
+  assert.equal(config.STANDARD_MODEL, "codex:gpt-test");
+  assert.equal(config.DEEP_MODEL, "codex:gpt-test");
+  assert.equal(resolveWorkerModel(config, "light").reasoning, "high");
   assert.equal(config.LOG_RETENTION_DAYS, 7);
   assert.equal(config.VALIDATE_COMMAND, "pnpm validate:all");
   assert.equal(config.WORKTREE_SETUP_COMMAND, "pnpm install --frozen-lockfile");
@@ -484,6 +528,10 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"main"
 
   const config = parseEnvConfig(
     await readFile(join(root, ".lfi", "config.env"), "utf8"),
+  );
+  assert.match(
+    await readFile(join(root, ".lfi", "config.env"), "utf8"),
+    /# Маршрутизация агентов и моделей/u,
   );
   assert.equal(config.BASE_BRANCH, "main");
   assert.equal(config.LIGHT_MODEL, "");
