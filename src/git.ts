@@ -1,7 +1,10 @@
 import { access, mkdir, rm } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
-import { requireCommand, runCommand, runShell } from "./process.js";
+import { requireCommand, runCommand } from "./process.js";
+import type { IsolationProvider } from "./isolation-provider.js";
+import { redactSensitiveText } from "./logs.js";
+import { runProjectCommand } from "./project-command.js";
 
 const exists = async (path: string) =>
   access(path).then(
@@ -49,6 +52,8 @@ export const ensureTaskWorktree = async (options: {
   taskKey: string;
   baseRef: string;
   setupCommand: string;
+  gitDirectory: string;
+  isolationProvider: IsolationProvider;
 }): Promise<{ path: string; branch: string; created: boolean }> => {
   const key = options.taskKey;
   const path = join(options.worktreesRoot, key);
@@ -78,9 +83,16 @@ export const ensureTaskWorktree = async (options: {
         ],
   );
   if (options.setupCommand) {
-    const setup = await runShell(options.setupCommand, { cwd: path });
+    const setup = await runProjectCommand({
+      command: options.setupCommand,
+      cwd: path,
+      gitDirectory: options.gitDirectory,
+      isolationProvider: options.isolationProvider,
+    });
     if (setup.exitCode !== 0) {
-      throw new Error(`Worktree setup failed:\n${setup.stderr || setup.stdout}`);
+      throw new Error(
+        `Worktree setup failed:\n${redactSensitiveText(setup.stderr || setup.stdout)}`,
+      );
     }
   }
   return { path, branch, created: true };

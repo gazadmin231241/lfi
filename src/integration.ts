@@ -118,6 +118,7 @@ export const integrateAttempts = async (options: {
     await validateIntegration({
       cwd: integration.path,
       config: options.config,
+      gitDirectory: options.gitDirectory,
       language: options.language,
       log: options.log,
       phase: "combined",
@@ -132,6 +133,7 @@ export const integrateAttempts = async (options: {
           await validateIntegration({
             cwd: baseline.path,
             config: options.config,
+            gitDirectory: options.gitDirectory,
             language: options.language,
             log: options.log,
             phase: "baseline",
