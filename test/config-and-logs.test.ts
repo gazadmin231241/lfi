@@ -409,6 +409,10 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
     await readFile(join(root, ".lfi", "task-prompt.md"), "utf8"),
     /Use \{\{SKILL:implement\}\}/u,
   );
+  const workerDockerfile = await readFile(join(root, "Dockerfile.lfi"), "utf8");
+  assert.match(workerDockerfile, /belongs to your project/u);
+  assert.match(workerDockerfile, /must end as root/u);
+  assert.match(workerDockerfile, /Agent CLI tooling is supplied by LFI/u);
   const trackerGuide = await readFile(
     join(root, "docs", "agents", "issue-tracker.md"),
     "utf8",

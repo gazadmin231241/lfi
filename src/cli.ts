@@ -12,10 +12,10 @@ import { dryRun, runLfi } from "./runner.js";
 import { installSkills, listSkillStatus, SKILLS_COMMIT } from "./skills.js";
 import { requestShutdown } from "./process.js";
 import { localStatusLines, type StatusFilter } from "./status.js";
+import { LFI_VERSION } from "./version.js";
 
 const args = process.argv.slice(2);
 const cwd = process.cwd();
-const VERSION = "0.1.0";
 const valueOptions = new Set([
   "--lang",
   "--model",
@@ -176,7 +176,7 @@ const pruneLogs = async (all: boolean, language: Language): Promise<void> => {
 
 const main = async (): Promise<number> => {
   if (has("--version") || has("-V")) {
-    console.log(VERSION);
+    console.log(LFI_VERSION);
     return 0;
   }
   if (positional[0] === "config" && positional[1] === "language") {

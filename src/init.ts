@@ -19,6 +19,7 @@ import { repoInfo } from "./github.js";
 import type { Language } from "./i18n.js";
 import { defaultTaskPrompt } from "./prompts.js";
 import { configureLocalTracker } from "./local-setup.js";
+import { scaffoldWorkerDockerfile } from "./worker-image.js";
 
 export interface InitOptions {
   cwd: string;
@@ -262,6 +263,7 @@ export const initializeProject = async (
     mkdir(join(lfiRoot, "worktrees"), { recursive: true }),
   ]);
   await saveConfig(configPath, config);
+  await scaffoldWorkerDockerfile(options.cwd);
   await writeFile(
     join(lfiRoot, "task-prompt.md"),
     defaultTaskPrompt(options.language),
