@@ -31,5 +31,5 @@ and interaction with the validation command switch.
 
 ## Blocked by
 
-- [LFI-43 — Write default templates at init](<[READY] LFI-43 — write-default-templates-at-init.md>)
+- [LFI-43 — Write default templates at init](<[DONE] LFI-43 — write-default-templates-at-init.md>)
 - [LFI-44 — Make review and remediation steps configurable](<[DONE] LFI-44 — make-review-and-remediation-steps-configurable.md>)

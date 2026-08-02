@@ -17,13 +17,13 @@ and no worktree, agent session, or tracker state is touched.
 
 ## Acceptance criteria
 
-- [ ] An unknown placeholder in any phase template fails the run before any
+- [x] An unknown placeholder in any phase template fails the run before any
       agent starts, naming the template and placeholder.
-- [ ] An empty or whitespace-only template file is reported as an error, not
+- [x] An empty or whitespace-only template file is reported as an error, not
       silently replaced by the built-in default.
-- [ ] A direct installed-skill reference in any phase template is rejected
+- [x] A direct installed-skill reference in any phase template is rejected
       with the same guidance the task template gives today.
-- [ ] A valid configuration passes validation with no behaviour change.
+- [x] A valid configuration passes validation with no behaviour change.
 
 ## Specification
 

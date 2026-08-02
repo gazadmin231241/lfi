@@ -16,12 +16,12 @@ substance, matching the split where protocol blocks stay runner-owned.
 
 ## Acceptance criteria
 
-- [ ] Initialization creates the prompts directory with all five phase
+- [x] Initialization creates the prompts directory with all five phase
       templates in the configured language.
-- [ ] Re-running initialization never overwrites an existing template file.
-- [ ] A freshly initialized project produces the same phase prompts as a
+- [x] Re-running initialization never overwrites an existing template file.
+- [x] A freshly initialized project produces the same phase prompts as a
       project with no prompts directory at all.
-- [ ] The written templates contain no protocol blocks.
+- [x] The written templates contain no protocol blocks.
 
 ## Specification
 
