@@ -24,16 +24,16 @@ re-reviewer sees committed work.
 
 ## Acceptance criteria
 
-- [ ] Blocking findings trigger exactly one remediation session whose prompt
+- [x] Blocking findings trigger exactly one remediation session whose prompt
       contains the findings verbatim.
-- [ ] The remediated worktree is committed by LFI before the re-review.
-- [ ] Exactly one targeted re-review follows remediation and reports through
+- [x] The remediated worktree is committed by LFI before the re-review.
+- [x] Exactly one targeted re-review follows remediation and reports through
       the findings-file channel.
-- [ ] A clean re-review yields an accepted attempt.
-- [ ] Blockers surviving the re-review end the attempt not accepted with the
+- [x] A clean re-review yields an accepted attempt.
+- [x] Blockers surviving the re-review end the attempt not accepted with the
       worktree preserved; no third review round ever runs.
-- [ ] Advisory findings trigger no remediation in either round.
-- [ ] Remediation and re-review log under their own log names, and the attempt
+- [x] Advisory findings trigger no remediation in either round.
+- [x] Remediation and re-review log under their own log names, and the attempt
       summary names the phase that failed.
 
 ## Specification

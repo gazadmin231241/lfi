@@ -19,12 +19,12 @@ shape, including reasoning-effort handling per agent provider.
 
 ## Acceptance criteria
 
-- [ ] Review and re-review sessions resolve model, provider, and reasoning
+- [x] Review and re-review sessions resolve model, provider, and reasoning
       through the reviewer configuration.
-- [ ] An unset reviewer configuration falls back to the worker resolution;
+- [x] An unset reviewer configuration falls back to the worker resolution;
       existing config files behave unchanged.
-- [ ] Remediation sessions keep resolving through the worker configuration.
-- [ ] Configuration parsing and fallback are covered at the same seam as the
+- [x] Remediation sessions keep resolving through the worker configuration.
+- [x] Configuration parsing and fallback are covered at the same seam as the
       existing model-routing tests.
 
 ## Specification
