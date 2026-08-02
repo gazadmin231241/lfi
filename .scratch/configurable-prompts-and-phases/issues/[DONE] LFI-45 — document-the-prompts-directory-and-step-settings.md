@@ -17,12 +17,12 @@ and interaction with the validation command switch.
 
 ## Acceptance criteria
 
-- [ ] The documentation lists all five phase templates with their
+- [x] The documentation lists all five phase templates with their
       phase-scoped placeholders.
-- [ ] The resolution precedence and the never-overwrite behaviour of
+- [x] The resolution precedence and the never-overwrite behaviour of
       initialization are documented.
-- [ ] The runner-owned protocol blocks are documented as non-editable.
-- [ ] The review-phase switch and remediation-round settings are documented
+- [x] The runner-owned protocol blocks are documented as non-editable.
+- [x] The review-phase switch and remediation-round settings are documented
       with defaults and validation rules.
 
 ## Specification
