@@ -43,10 +43,6 @@ exist before the generated file can annotate its own keys.
 
 [LFI-22 — Readable config comments](<../[SPEC] LFI-22 — readable-config-comments.md>)
 
-## Specification
-
-[LFI-22 — Readable config comments](<../[SPEC] LFI-22 — readable-config-comments.md>)
-
 ## Blocked by
 
 None — can start immediately.

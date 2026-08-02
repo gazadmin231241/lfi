@@ -57,10 +57,6 @@ rewritten, and no command is added to rewrite them.
 
 [LFI-22 — Readable config comments](<../[SPEC] LFI-22 — readable-config-comments.md>)
 
-## Specification
-
-[LFI-22 — Readable config comments](<../[SPEC] LFI-22 — readable-config-comments.md>)
-
 ## Blocked by
 
 - [LFI-23 — Tolerate trailing comments when reading configuration](<[READY] LFI-23 — tolerate-trailing-comments-when-reading-configuration.md>)
