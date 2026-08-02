@@ -49,4 +49,4 @@ provider inherits a declaration rather than inventing one.
 
 ## Blocked by
 
-- [LFI-26 — Open the isolation boundary as a session](<[READY] LFI-26 — open-the-isolation-boundary-as-a-session.md>)
+- [LFI-26 — Open the isolation boundary as a session](<[DONE] LFI-26 — open-the-isolation-boundary-as-a-session.md>)
