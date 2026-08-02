@@ -86,11 +86,19 @@ const askAdvanced = async (
     label("Merger reasoning", "Уровень рассуждений при слиянии"),
     config.MERGER_REASONING_EFFORT,
   );
+  const reviewerReasoning = await ask(
+    label("Reviewer reasoning", "Уровень рассуждений при ревью"),
+    config.REVIEWER_REASONING_EFFORT,
+  );
   const isolationProvider = await ask(
     label("Isolation provider", "Провайдер изоляции"),
     config.ISOLATION_PROVIDER,
   );
-  if (!isReasoningEffort(codexReasoning) || !isReasoningEffort(mergerReasoning)) {
+  if (
+    !isReasoningEffort(codexReasoning) ||
+    !isReasoningEffort(mergerReasoning) ||
+    !isReasoningEffort(reviewerReasoning)
+  ) {
     input.close();
     throw new Error(
       label(
@@ -132,6 +140,11 @@ const askAdvanced = async (
       config.MERGER_MODEL,
     ),
     MERGER_REASONING_EFFORT: mergerReasoning,
+    REVIEWER_MODEL: await ask(
+      label("Reviewer model", "Модель для ревью"),
+      config.REVIEWER_MODEL,
+    ),
+    REVIEWER_REASONING_EFFORT: reviewerReasoning,
     MAX_PARALLEL: Number(
       await ask(label("Parallel workers", "Параллельных задач"), config.MAX_PARALLEL),
     ),

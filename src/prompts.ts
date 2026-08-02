@@ -111,6 +111,66 @@ ${completionContractCopy.en}
   return expandSkillPlaceholders(agent, prompt);
 };
 
+export const remediationPrompt = (
+  findings: string,
+  agent: AgentProvider,
+  language: Language = "en",
+): string => expandSkillPlaceholders(
+  agent,
+  language === "ru"
+    ? `Исправь реализацию по блокирующим замечаниям независимого ревью в текущем worktree.
+
+Точные замечания:
+${findings}
+
+Устрани только эти замечания и связанные с ними регрессии. Выполни необходимые узкие проверки, зафиксируй изменения в worktree и заверши работу обычным completion contract.
+
+${completionContractCopy.ru}`
+    : `Remediate the implementation in the current worktree using the blocking findings from an independent review.
+
+Exact findings:
+${findings}
+
+Fix these findings and nearby regressions only. Run focused checks, commit the changes in the worktree, and finish with the normal completion contract.
+
+${completionContractCopy.en}`,
+);
+
+export const targetedReviewPrompt = (
+  baseRef: string,
+  findingsPath: string,
+  findings: string,
+  agent: AgentProvider,
+  language: Language = "en",
+): string => {
+  const prompt = language === "ru"
+    ? `Проведи точечное повторное ревью исправлений в текущем worktree.
+
+Проверь только исходные блокирующие замечания и ближайший риск регрессий; не начинай новый полный поиск замечаний. Используй ${skillPlaceholder("code-review")} для проверки diff относительно base ref.
+
+Base ref: ${baseRef}
+Исходные замечания:
+${findings}
+Findings file: ${findingsPath}
+
+Запиши в Findings file JSON-массив в том же формате. Запиши только исходные замечания, которые остаются нерешёнными, либо регрессии, вызванные исправлением; запиши [] если всё устранено. Не изменяй worktree и не создавай commit.
+
+${completionContractCopy.ru}`
+    : `Perform a targeted re-review of the remediation in the current worktree.
+
+Check only the original blocking findings and nearby regression risk; do not start a new full discovery review. Use ${skillPlaceholder("code-review")} to review the diff against the base ref.
+
+Base ref: ${baseRef}
+Original findings:
+${findings}
+Findings file: ${findingsPath}
+
+Write a JSON array to Findings file in the same format. Include only original findings that remain unresolved or regressions caused by remediation; write [] when all are resolved. Do not modify the worktree or create a commit.
+
+${completionContractCopy.en}`;
+  return expandSkillPlaceholders(agent, prompt);
+};
+
 interface LocalizedConstraint {
   en: string;
   ru: string;

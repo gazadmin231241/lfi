@@ -10,6 +10,7 @@ import {
   parseAgentModel,
   parseEnvConfig,
   resolveIntegrationModel,
+  resolveReviewerModel,
   resolveWorkerModel,
   serializeEnvConfig,
   validateConfig,
@@ -103,6 +104,8 @@ test("configuration round-trips non-default values", () => {
     REASONING_EFFORT: "high" as const,
     MERGER_MODEL: "codex:merger",
     MERGER_REASONING_EFFORT: "xhigh" as const,
+    REVIEWER_MODEL: "pi:reviewer",
+    REVIEWER_REASONING_EFFORT: "high" as const,
     MAX_PARALLEL: 7,
     MAX_STAGES: 12,
     LOG_RETENTION_DAYS: 9,
@@ -150,6 +153,19 @@ test("execution tiers resolve worker and integration agent-model pairs without c
   assert.deepEqual(
     resolveIntegrationModel({ ...config, MERGER_MODEL: "integrator" }),
     { agent: "codex", model: "integrator", reasoning: "medium" },
+  );
+  assert.deepEqual(resolveReviewerModel(config), {
+    agent: "codex",
+    model: "terra",
+    reasoning: "low",
+  });
+  assert.deepEqual(
+    resolveReviewerModel({
+      ...config,
+      REVIEWER_MODEL: "pi:reviewer:high",
+      REVIEWER_REASONING_EFFORT: "medium",
+    }),
+    { agent: "pi", model: "reviewer", reasoning: "high" },
   );
   assert.equal(config.REASONING_EFFORT, "low");
 });

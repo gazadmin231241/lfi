@@ -153,7 +153,8 @@ task tier to an agent, model, and reasoning level, falling back to
 `DEFAULT_MODEL` when a tier mapping is empty. Use
 `<cli>:<model>:<reasoning>` (for example, `codex:gpt-5.6-sol:medium` or
 `pi:openai/gpt-5.6:high`). `MERGER_MODEL` is independent and falls
-back through `STANDARD_MODEL`, then `DEFAULT_MODEL`. If an agent rejects an
+back through `STANDARD_MODEL`, then `DEFAULT_MODEL`. `REVIEWER_MODEL` is
+independent and falls back to the worker resolution when unset. If an agent rejects an
 explicitly configured worker model, LFI logs it, does not silently substitute
 another model, skips remaining tasks using that agent-model pair for that run,
 and continues other tiers.

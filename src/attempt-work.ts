@@ -6,6 +6,7 @@ import {
   runAgent,
 } from "./agent-provider.js";
 import {
+  resolveReviewerModel,
   resolveWorkerModel,
   type LfiConfig,
 } from "./config.js";
@@ -20,7 +21,12 @@ import {
 import { localize, type Language } from "./i18n.js";
 import type { RunLogContext } from "./logs.js";
 import { appendRunLog, redactSensitiveText } from "./logs.js";
-import { renderWorkerPrompt, reviewPrompt } from "./prompts.js";
+import {
+  remediationPrompt,
+  renderWorkerPrompt,
+  reviewPrompt,
+  targetedReviewPrompt,
+} from "./prompts.js";
 import { printOriginRefresh } from "./run-display.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
 import { mergeWithAgent } from "./runner-support.js";
@@ -100,6 +106,7 @@ export const attemptWork = async (options: {
     options.config,
     options.task.executionTier ?? "standard",
   );
+  const reviewer = resolveReviewerModel(options.config);
   try {
     const worktree = await ensureTaskWorktree({
       repoRoot: options.cwd,
@@ -262,16 +269,16 @@ export const attemptWork = async (options: {
         }
         await rm(findingsPath, { force: true });
         const review = await runAgent({
-          agent: target.agent,
+          agent: reviewer.agent,
           cwd: worktree.path,
           prompt: reviewPrompt(
             options.baseRef,
             findingsPath,
-            target.agent,
+            reviewer.agent,
             options.language,
           ),
-          model: target.model,
-          reasoning: target.reasoning,
+          model: reviewer.model,
+          reasoning: reviewer.reasoning,
           gitDirectory: options.gitDirectory,
           log: options.log,
           logName: reviewLogName,
@@ -294,8 +301,8 @@ export const attemptWork = async (options: {
             worktreePath: worktree.path,
             branch: worktree.branch,
             logName: reviewLogName,
-            ...(review.exitCode !== 0 && target.model && review.unavailableModel
-              ? { unavailableModel: target }
+            ...(review.exitCode !== 0 && reviewer.model && review.unavailableModel
+              ? { unavailableModel: reviewer }
               : {}),
           };
         }
@@ -320,18 +327,113 @@ export const attemptWork = async (options: {
           (finding) => finding.severity === "blocking",
         );
         if (blockingFindings.length > 0) {
-          return {
-            task: options.task,
-            accepted: false,
-            summary: localize(
+          const findingsText = JSON.stringify(blockingFindings, null, 2);
+          const remediationLogName = `${logName}-remediation`;
+          const remediation = await runAgent({
+            agent: target.agent,
+            cwd: worktree.path,
+            prompt: remediationPrompt(findingsText, target.agent, options.language),
+            model: target.model,
+            reasoning: target.reasoning,
+            gitDirectory: options.gitDirectory,
+            log: options.log,
+            logName: remediationLogName,
+            idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+            isolationProvider: options.config.ISOLATION_PROVIDER,
+            prefix: `${key}:remediation`,
+            language: options.language,
+            session,
+          });
+          if (remediation.exitCode !== 0 || remediation.status !== "completed") {
+            return {
+              task: options.task,
+              accepted: false,
+              summary: localize(
+                options.language,
+                `Remediation phase failed: ${remediation.summary}`,
+                `Этап исправления завершился ошибкой: ${remediation.summary}`,
+              ),
+              worktreePath: worktree.path,
+              branch: worktree.branch,
+              logName: remediationLogName,
+            };
+          }
+          await commitWorktreeChanges(
+            worktree.path,
+            `fix(lfi): remediate ${options.task.id}`,
+          );
+          const rereviewLogName = `${logName}-re-review`;
+          await rm(findingsPath, { force: true });
+          const rereview = await runAgent({
+            agent: reviewer.agent,
+            cwd: worktree.path,
+            prompt: targetedReviewPrompt(
+              options.baseRef,
+              findingsPath,
+              findingsText,
+              reviewer.agent,
               options.language,
-              `Review phase found blocking findings: ${blockingFindings.length}.`,
-              `Этап ревью выявил блокирующие замечания: ${blockingFindings.length}.`,
             ),
-            worktreePath: worktree.path,
-            branch: worktree.branch,
-            logName: reviewLogName,
-          };
+            model: reviewer.model,
+            reasoning: reviewer.reasoning,
+            gitDirectory: options.gitDirectory,
+            log: options.log,
+            logName: rereviewLogName,
+            idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+            isolationProvider: options.config.ISOLATION_PROVIDER,
+            prefix: `${key}:re-review`,
+            language: options.language,
+            session,
+            writableDirectories: [options.log.directory],
+          });
+          if (rereview.exitCode !== 0 || rereview.status !== "completed") {
+            return {
+              task: options.task,
+              accepted: false,
+              summary: localize(
+                options.language,
+                `Re-review phase failed: ${rereview.summary}`,
+                `Этап повторного ревью завершился ошибкой: ${rereview.summary}`,
+              ),
+              worktreePath: worktree.path,
+              branch: worktree.branch,
+              logName: rereviewLogName,
+            };
+          }
+          let remainingFindings: ReviewFinding[];
+          try {
+            remainingFindings = parseReviewFindings(await readFile(findingsPath, "utf8"));
+          } catch {
+            return {
+              task: options.task,
+              accepted: false,
+              summary: localize(
+                options.language,
+                "Re-review phase failed: the findings file is missing or invalid.",
+                "Этап повторного ревью завершился ошибкой: файл замечаний отсутствует или некорректен.",
+              ),
+              worktreePath: worktree.path,
+              branch: worktree.branch,
+              logName: rereviewLogName,
+            };
+          }
+          if (remainingFindings.some((finding) => finding.severity === "blocking")) {
+            const remainingBlockingCount = remainingFindings.filter(
+              (finding) => finding.severity === "blocking",
+            ).length;
+            return {
+              task: options.task,
+              accepted: false,
+              summary: localize(
+                options.language,
+                `Re-review phase found blocking findings: ${remainingBlockingCount}.`,
+                `Этап повторного ревью выявил блокирующие замечания: ${remainingBlockingCount}.`,
+              ),
+              worktreePath: worktree.path,
+              branch: worktree.branch,
+              logName: rereviewLogName,
+            };
+          }
         }
         const validationFailure = await validateAttempt({
           cwd: worktree.path,
