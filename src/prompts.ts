@@ -103,8 +103,8 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Явно отмечай этапы в сообщениях агента: полное ревью, исправления, точечное подтверждение по направлениям, когда оно требуется, и финальная проверка. Не включай в логи секреты, учётные данные, токены, содержащие их prompts или окружение процессов.",
   },
   {
-    en: "Do not run git add or git commit. The Codex sandbox intentionally protects Git metadata; after a successful response, the LFI host stages and commits the worktree.",
-    ru: "Не запускай git add или git commit. Sandbox Codex намеренно защищает Git metadata; после успешного ответа host-процесс LFI сам добавит изменения и создаст commit.",
+    en: "Before reporting completion, stage and commit all task changes. LFI accepts only agent-created commits and a clean worktree.",
+    ru: "Перед сообщением о завершении добавь изменения в индекс и создай commit. LFI принимает только commits, созданные агентом, и чистый worktree.",
   },
   {
     en: 'Your final response must conform to the output schema. Use status "completed" only when the entire task is implemented, reviewed, and tested. Otherwise use "incomplete" and explain the remaining work.',
@@ -127,11 +127,24 @@ const workerConstraints = (
 
 export const mergerPrompt = (
   context: string,
-): string => `Resolve the current integration problem in this worktree.
+  language: Language = "en",
+): string =>
+  language === "ru"
+    ? `Разреши текущую проблему интеграции в этом worktree.
+
+Используй $resolving-merge-conflicts, если выполняется merge.
+Прочитай относящиеся к делу задачи и историю commits, сохрани оба замысла и запусти настроенную проверку.
+Добавь разрешение в индекс и создай commit самостоятельно; LFI не создаёт commit за агента.
+Никогда не отменяй merge, не выполняй deploy, не используй SSH или force-push и не затрагивай production.
+
+Контекст:
+${context}
+`
+    : `Resolve the current integration problem in this worktree.
 
 Use $resolving-merge-conflicts when a merge is in progress.
 Read the relevant task bodies and commit history, preserve both intents, and run the configured validation.
-Do not run git add or git commit; the LFI host commits a successful resolution because the Codex sandbox protects Git metadata.
+Stage the resolution and create the commit yourself; LFI does not commit for the agent.
 Never abort the merge, deploy, use SSH, force-push, or touch production.
 
 Context:

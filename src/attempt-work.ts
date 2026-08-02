@@ -9,7 +9,6 @@ import {
   type LfiConfig,
 } from "./config.js";
 import {
-  commitWorktreeChanges,
   commitsAhead,
   ensureTaskWorktree,
   gitResult,
@@ -79,14 +78,9 @@ export const attemptWork = async (options: {
       log: options.log,
       logName,
       idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+      isolationProvider: options.config.ISOLATION_PROVIDER,
       prefix: key,
     });
-    if (agent.exitCode === 0 && agent.status === "completed") {
-      await commitWorktreeChanges(
-        worktree.path,
-        `feat(lfi): implement ${options.task.id}`,
-      );
-    }
     const evaluation = evaluateWorkerResult({
       processExitCode: agent.exitCode,
       status: agent.status,

@@ -35,6 +35,8 @@ test("English worker prompt bounds complete review and validation", () => {
   assert.match(prompt, /status "incomplete"/u);
   assert.match(prompt, /full repository validation after review remediation/u);
   assert.match(prompt, /Do not repeat an unchanged successful validation/u);
+  assert.match(prompt, /stage and commit/u);
+  assert.doesNotMatch(prompt, /Do not run git add or git commit/u);
 });
 
 test("Russian worker prompt bounds complete review and validation", () => {
@@ -68,6 +70,8 @@ test("Russian worker prompt bounds complete review and validation", () => {
   assert.match(prompt, /статус "incomplete"/u);
   assert.match(prompt, /полную проверку репозитория после исправлений/u);
   assert.match(prompt, /Не повторяй неизменившуюся успешную проверку/u);
+  assert.match(prompt, /добавь изменения в индекс и создай commit/u);
+  assert.doesNotMatch(prompt, /Не запускай git add или git commit/u);
 });
 
 test("worker prompt defines axis-scoped confirmation paths", () => {

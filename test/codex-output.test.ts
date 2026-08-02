@@ -130,6 +130,7 @@ printf '%s\\n' '{"status":"completed","summary":"Готово."}' > "$output"
       },
       logName: "LFI-2",
       idleTimeoutMinutes: 1,
+      isolationProvider: "none",
       prefix: "lfi-2",
     });
 

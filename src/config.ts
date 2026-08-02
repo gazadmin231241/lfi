@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 import type { ExecutionTier } from "./execution-tier.js";
+import type { IsolationProvider } from "./isolation-provider.js";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 export interface LfiConfig {
@@ -18,6 +19,7 @@ export interface LfiConfig {
   BASE_BRANCH: string;
   VALIDATE_COMMAND: string;
   WORKTREE_SETUP_COMMAND: string;
+  ISOLATION_PROVIDER: IsolationProvider;
 }
 
 export const DEFAULT_CONFIG: LfiConfig = {
@@ -35,6 +37,7 @@ export const DEFAULT_CONFIG: LfiConfig = {
   BASE_BRANCH: "main",
   VALIDATE_COMMAND: "",
   WORKTREE_SETUP_COMMAND: "",
+  ISOLATION_PROVIDER: "local",
 };
 
 export const serializeEnvConfig = (config: LfiConfig): string =>
@@ -61,6 +64,14 @@ export const parseEnvConfig = (source: string): LfiConfig => {
       case "VALIDATE_COMMAND":
       case "WORKTREE_SETUP_COMMAND":
         result[key] = value;
+        break;
+      case "ISOLATION_PROVIDER":
+        if (value === "local" || value === "none") result[key] = value;
+        else {
+          throw new Error(
+            `${key} must be local or none / должен иметь значение local или none: ${value}`,
+          );
+        }
         break;
       case "CODEX_REASONING_EFFORT":
       case "MERGER_REASONING_EFFORT":
@@ -100,6 +111,10 @@ export const isReasoningEffort = (value: string): value is ReasoningEffort =>
   value === "xhigh" ||
   value === "max" ||
   value === "ultra";
+
+export const isIsolationProvider = (
+  value: string,
+): value is IsolationProvider => value === "local" || value === "none";
 
 export const resolveWorkerModel = (
   config: LfiConfig,
@@ -146,6 +161,11 @@ export const validateConfig = (config: LfiConfig): LfiConfig => {
   ) {
     throw new Error(
       "Reasoning effort must be low, medium, high, xhigh, max, or ultra / уровень рассуждений должен быть одним из перечисленных значений.",
+    );
+  }
+  if (!isIsolationProvider(config.ISOLATION_PROVIDER)) {
+    throw new Error(
+      "ISOLATION_PROVIDER must be local or none / должен иметь значение local или none.",
     );
   }
   return config;

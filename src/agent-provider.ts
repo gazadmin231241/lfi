@@ -6,16 +6,22 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { ReasoningEffort } from "./config.js";
+import {
+  resolveIsolationConfiguration,
+  sanitizeAgentEnvironment,
+  wrapWithIsolation,
+  type IsolationProvider,
+} from "./isolation-provider.js";
 import {
   formatRunLogSection,
   redactSensitiveText,
   type RunLogContext,
 } from "./logs.js";
-import { runCommand } from "./process.js";
+import { runCommand, runCommandLines } from "./process.js";
 
 const workerSchema = {
   type: "object",
@@ -154,14 +160,16 @@ export const runAgent = async (options: {
   log: RunLogContext;
   logName: string;
   idleTimeoutMinutes: number;
+  isolationProvider: IsolationProvider;
   structured?: boolean;
   prefix: string;
 }): Promise<AgentRunResult> => {
   await mkdir(options.log.directory, { recursive: true });
   const compactPath = join(options.log.directory, `${options.logName}.log`);
-  const artifacts = await mkdtemp(join(tmpdir(), "lfi-codex-"));
+  const artifacts = await mkdtemp(join(options.gitDirectory, "lfi-agent-"));
   const finalPath = join(artifacts, "result.json");
   const schemaPath = join(artifacts, "schema.json");
+  const sanitizedGitConfig = join(artifacts, "safe-git-config");
   await appendFile(
     compactPath,
     formatRunLogSection(
@@ -170,7 +178,6 @@ export const runAgent = async (options: {
       "",
     ),
   );
-  let lineBuffer = "";
   let logWrites = Promise.resolve();
   const appendDetail = (content: string): void => {
     const redacted = redactSensitiveText(content);
@@ -188,29 +195,57 @@ export const runAgent = async (options: {
     appendDetail(`${text}\n`);
   };
   try {
+    await writeFile(sanitizedGitConfig, "");
     if (options.structured !== false) {
       await writeFile(schemaPath, `${JSON.stringify(workerSchema, null, 2)}\n`);
     }
-    const invocation = buildAgentInvocation({
+    const agentInvocation = buildAgentInvocation({
       ...options,
       finalPath,
       schemaPath,
     });
-    const result = await runCommand(invocation.command, invocation.args, {
+    const isolation = await resolveIsolationConfiguration({
+      provider: options.isolationProvider,
+      worktree: options.cwd,
+      gitDirectory: options.gitDirectory,
+      homeDirectory: homedir(),
+      sanitizedGitConfig,
+    });
+    const identity =
+      options.isolationProvider === "none"
+        ? {}
+        : await Promise.all([
+            runCommand("git", ["config", "--get", "user.name"], {
+              cwd: options.cwd,
+            }),
+            runCommand("git", ["config", "--get", "user.email"], {
+              cwd: options.cwd,
+            }),
+          ]).then(([name, email]) => ({
+            ...(name.exitCode === 0 ? { name: name.stdout.trim() } : {}),
+            ...(email.exitCode === 0 ? { email: email.stdout.trim() } : {}),
+          }));
+    const invocation = wrapWithIsolation(
+      {
+        ...agentInvocation,
+        idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
+        onStdoutLine: recordEvent,
+        onStderrLine: (line) => appendDetail(`${line}\n`),
+        environment:
+          options.isolationProvider === "none"
+            ? process.env
+            : sanitizeAgentEnvironment(process.env, identity),
+      },
+      isolation,
+    );
+    const result = await runCommandLines(invocation.command, invocation.args, {
       cwd: options.cwd,
       input: invocation.input,
-      idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
-      onStdout: (chunk) => {
-        lineBuffer += chunk;
-        const lines = lineBuffer.split("\n");
-        lineBuffer = lines.pop() ?? "";
-        for (const line of lines) recordEvent(line);
-      },
-      onStderr: (chunk) => {
-        appendDetail(chunk);
-      },
+      idleTimeoutMs: invocation.idleTimeoutMs,
+      onStdoutLine: invocation.onStdoutLine,
+      onStderrLine: invocation.onStderrLine,
+      env: invocation.environment,
     });
-    if (lineBuffer) recordEvent(lineBuffer);
     const finalSource = await readFile(finalPath, "utf8").catch(() => "");
     const parsed = parseFinal(finalSource);
     const summary = redactSensitiveText(parsed.summary || result.stderr);

@@ -19,6 +19,7 @@ import {
 } from "../src/local-tracker.js";
 import { dryRun, runLfi } from "../src/runner.js";
 import { runCommand } from "../src/process.js";
+import { fakeIsolationExecutable } from "./support.js";
 
 const addOrigin = async (
   git: (...args: string[]) => Promise<void>,
@@ -95,6 +96,7 @@ test("local run does not repeat accepted work after integration fails", async ()
     join(lfiRoot, "config.env"),
     serializeEnvConfig({
       ...DEFAULT_CONFIG,
+      ISOLATION_PROVIDER: "none",
       MAX_PARALLEL: 1,
       MAX_STAGES: 2,
       VALIDATE_COMMAND: "printf 'validation is broken\\n' >&2; exit 1",
@@ -128,6 +130,8 @@ done
 cat >/dev/null
 printf 'called\\n' >> "${codexCalls}"
 printf 'implemented\\n' > implemented.txt
+git add implemented.txt
+git commit -m 'agent: prepare baseline-ready result'
 printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
 `,
   );
@@ -210,6 +214,8 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 printf 'implemented\\n' > implemented.txt
+git add implemented.txt
+git commit -m 'agent: implement local run'
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Implementation is ready."}}'
 printf '{"status":"completed","summary":"implemented"}\\n' > "$output"
 `,
@@ -221,8 +227,13 @@ printf 'called\\n' >> "${ghCalls}"
 exit 97
 `,
   );
+  await writeFile(
+    join(tools, "bwrap"),
+    fakeIsolationExecutable(join(lfiRoot, "isolation-calls")),
+  );
   await chmod(join(tools, "codex"), 0o755);
   await chmod(join(tools, "gh"), 0o755);
+  await chmod(join(tools, "bwrap"), 0o755);
   const git = async (...args: string[]) => {
     const result = await runCommand("git", args, { cwd: root });
     assert.equal(result.exitCode, 0, result.stderr);
@@ -331,13 +342,20 @@ exit 97
   const localLog = await runCommand("git", ["log", "--format=%s"], { cwd: root });
   assert.match(localLog.stdout, /docs\(lfi\): update local task tracker/u);
   assert.match(localLog.stdout, /chore\(lfi\): complete LFI-1/u);
-  assert.match(localLog.stdout, /feat\(lfi\): implement LFI-1/u);
+  assert.match(localLog.stdout, /agent: implement local run/u);
   const deliveredLog = await runCommand(
     "git",
     ["log", "origin/main", "--format=%s"],
     { cwd: root },
   );
-  assert.match(deliveredLog.stdout, /feat\(lfi\): implement LFI-1/u);
+  assert.match(deliveredLog.stdout, /agent: implement local run/u);
+  const isolationCalls = await readFile(
+    join(lfiRoot, "isolation-calls"),
+    "utf8",
+  );
+  assert.match(isolationCalls, /worktrees\/lfi-1\|.*-- codex /u);
+  assert.match(isolationCalls, /--sandbox workspace-write/u);
+  assert.match(isolationCalls, /--add-dir/u);
   await assert.rejects(readFile(ghCalls, "utf8"));
 
   const blockedPath = join(tasks, "[READY] LFI-2 — blocked.md");
@@ -484,6 +502,8 @@ while [ "$#" -gt 0 ]; do
 done
 printf 'called\\n' >> "${validationCodexCalls}"
 printf 'validation failure\\n' > validation-failure.txt
+git add validation-failure.txt
+git commit -m 'agent: create validation failure fixture'
 printf '%s\\n' '{"status":"completed","summary":"implemented"}' > "$output"
 `,
   );

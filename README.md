@@ -110,6 +110,7 @@ editable in `.lfi/config.env`, including:
 - default branch
 - validation and worktree setup commands
 - inactivity timeout
+- isolation provider (`local` by default, or explicit `none` for a disposable environment)
 
 Use `lfi init --advanced` to edit those values interactively during setup.
 
@@ -119,10 +120,14 @@ Use `lfi init --advanced` to edit those values interactively during setup.
 ## Safety and completion
 
 Each task gets a persistent worktree. A branch is eligible for integration
-only after Codex reports structured completion. Codex edits and validates files
-inside its `workspace-write` sandbox; because that sandbox intentionally keeps
-Git metadata read-only, the LFI host stages and commits a successful worker's
-changes. The combined integration branch must pass the configured validation
+only after Codex reports structured completion. Every worker and merger runs
+inside LFI's local isolation boundary, with the agent's own sandbox retained
+inside it. The filesystem is read-only except for the worktree, Git metadata,
+temporary storage, and package-manager caches; code-host credentials are hidden
+and network access remains available. Set `ISOLATION_PROVIDER=none` only when
+the surrounding environment is already disposable. Agents stage and commit
+their own work, and LFI accepts a successful exit only with commits ahead of
+the base and a clean worktree. The combined integration branch must pass the configured validation
 command. If that command fails, LFI runs it against a separately prepared base
 worktree first. A base failure is reported without invoking Codex. If the base
 passes, the merger receives the exact redacted diagnostics and may change only

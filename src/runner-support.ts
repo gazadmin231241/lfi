@@ -5,7 +5,7 @@ import {
   resolveIntegrationModel,
   type LfiConfig,
 } from "./config.js";
-import { commitWorktreeChanges, git, gitResult } from "./git.js";
+import { git, gitResult } from "./git.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import {
@@ -13,6 +13,7 @@ import {
   redactSensitiveText,
   type RunLogContext,
 } from "./logs.js";
+import { mergerPrompt } from "./prompts.js";
 import { runShell } from "./process.js";
 
 export const checkpointTracker = async (
@@ -38,6 +39,7 @@ export const mergeWithAgent = async (options: {
   language: Language;
   allowedPaths?: readonly string[];
 }): Promise<void> => {
+  const startingHead = (await git(options.cwd, ["rev-parse", "HEAD"])).stdout.trim();
   const unmerged = (
     await git(options.cwd, [
       "diff",
@@ -64,37 +66,35 @@ export const mergeWithAgent = async (options: {
   const result = await runAgent({
     agent: defaultAgentProvider,
     cwd: options.cwd,
-    prompt: `Resolve the current integration problem in this worktree.
-
-Use $resolving-merge-conflicts when a merge is in progress. Preserve both
-intents, run validation, and never abort the merge, deploy, use SSH, force-push,
-or touch production. Do not run git add or git commit; the LFI host commits a
-successful resolution because the Codex sandbox protects Git metadata.
-
-Context:
-${options.context}
-${options.allowedPaths
-  ? `
+    prompt: mergerPrompt(
+      `${options.context}
+${options.allowedPaths ? `
 Validation repair scope:
 ${options.allowedPaths.map((path) => `- ${path}`).join("\n")}
 
 Do not modify paths outside this list.
-`
-  : ""}
-`,
+` : ""}`,
+      options.language,
+    ),
     model: resolveIntegrationModel(options.config),
     reasoning: options.config.MERGER_REASONING_EFFORT,
     gitDirectory: options.gitDirectory,
     log: options.log,
     logName: options.logName,
     idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
+    isolationProvider: options.config.ISOLATION_PROVIDER,
     structured: false,
     prefix: "merge",
   });
   if (result.exitCode === 0) {
     if (options.allowedPaths) {
       const [tracked, untracked] = await Promise.all([
-        git(options.cwd, ["diff", "--name-only", "-z", "HEAD"]),
+        git(options.cwd, [
+          "diff",
+          "--name-only",
+          "-z",
+          `${startingHead}..HEAD`,
+        ]),
         git(options.cwd, [
           "ls-files",
           "--others",
@@ -136,15 +136,11 @@ Do not modify paths outside this list.
         );
       }
     }
-    if (unmerged.length > 0) await git(options.cwd, ["add", "--all"]);
-    await commitWorktreeChanges(
-      options.cwd,
-      "chore(lfi): resolve integration",
-    );
   }
+  const endingHead = (await git(options.cwd, ["rev-parse", "HEAD"])).stdout.trim();
   const clean =
     (await git(options.cwd, ["status", "--porcelain"])).stdout.trim() === "";
-  if (result.exitCode !== 0 || !clean) {
+  if (result.exitCode !== 0 || startingHead === endingHead || !clean) {
     throw new Error(
       localize(
         options.language,

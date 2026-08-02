@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG } from "../src/config.js";
 import { integrateAttempts } from "../src/integration.js";
 import { runCommand } from "../src/process.js";
 import { mergeWithAgent } from "../src/runner-support.js";
+import { fakeIsolationExecutable } from "./support.js";
 
 const conflictedRepository = async (
   codexBody: string,
@@ -18,7 +19,12 @@ const conflictedRepository = async (
   const logs = join(root, "logs");
   await mkdir(tools);
   await writeFile(join(tools, "codex"), `#!/bin/sh\n${codexBody}\n`);
+  await writeFile(
+    join(tools, "bwrap"),
+    fakeIsolationExecutable(join(logs, "isolation-calls")),
+  );
   await chmod(join(tools, "codex"), 0o755);
+  await chmod(join(tools, "bwrap"), 0o755);
   const git = async (...args: string[]) => {
     const result = await runCommand("git", args, { cwd: root });
     assert.equal(result.exitCode, 0, result.stderr);
@@ -76,7 +82,7 @@ const repairWithFakeCodex = async (
 
 test("integration repair uses the standard model fallback and independent reasoning", async () => {
   const fixture = await conflictedRepository(
-    "printf '%s\\n' \"$*\" > merger-args.txt; printf 'resolved\\n' > conflict.txt",
+    "printf '%s\\n' \"$*\" > merger-args.txt; printf 'resolved\\n' > conflict.txt; git add --all; git commit -m 'agent: resolve routing conflict'",
   );
   await repairWithFakeCodex(fixture, "merge-routing", undefined, {
     CODEX_MODEL: "legacy",
@@ -91,9 +97,9 @@ test("integration repair uses the standard model fallback and independent reason
   assert.doesNotMatch(args, /model_reasoning_effort="low"/u);
 });
 
-test("successful merge repair is committed by the LFI host", async () => {
+test("successful merge repair is committed by the agent inside isolation", async () => {
   const fixture = await conflictedRepository(
-    "printf 'resolved\\n' > conflict.txt",
+    "printf 'resolved\\n' > conflict.txt; git add --all; git commit -m 'agent: resolve integration'",
   );
   await repairWithFakeCodex(fixture, "merge-test");
 
@@ -108,7 +114,11 @@ test("successful merge repair is committed by the LFI host", async () => {
   const subject = await runCommand("git", ["log", "-1", "--format=%s"], {
     cwd: fixture.root,
   });
-  assert.equal(subject.stdout.trim(), "chore(lfi): resolve integration");
+  assert.equal(subject.stdout.trim(), "agent: resolve integration");
+  assert.match(
+    await readFile(join(fixture.logs, "isolation-calls"), "utf8"),
+    /\|.*-- codex .*--sandbox workspace-write .*--add-dir/u,
+  );
 });
 
 test("merge repair cannot commit unresolved conflicts", async () => {
@@ -148,7 +158,7 @@ test("merge repair cannot commit an unchanged markerless conflict", async () => 
 
 test("repair cannot modify a path outside its allowlist", async () => {
   const fixture = await conflictedRepository(
-    "printf 'resolved\\n' > conflict.txt; printf 'unrelated\\n' > unrelated.txt",
+    "printf 'resolved\\n' > conflict.txt; printf 'unrelated\\n' > unrelated.txt; git add --all; git commit -m 'agent: out of scope repair'",
   );
 
   await assert.rejects(
@@ -159,7 +169,113 @@ test("repair cannot modify a path outside its allowlist", async () => {
   const subject = await runCommand("git", ["log", "-1", "--format=%s"], {
     cwd: fixture.root,
   });
-  assert.equal(subject.stdout.trim(), "fix: change conflict file");
+  assert.equal(subject.stdout.trim(), "agent: out of scope repair");
+});
+
+test("merger execution in the integration worktree passes through isolation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-isolated-integration-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const logs = join(root, ".lfi", "logs");
+  const tools = join(root, "tools");
+  const isolationCalls = join(root, ".lfi", "isolation-calls");
+  await mkdir(worktreesRoot, { recursive: true });
+  await mkdir(logs, { recursive: true });
+  await mkdir(tools);
+  await writeFile(
+    join(tools, "bwrap"),
+    fakeIsolationExecutable(isolationCalls),
+  );
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+printf 'agent resolution\n' > conflict.txt
+git add conflict.txt
+git commit -m 'agent: resolve integration worktree conflict'
+`,
+  );
+  await chmod(join(tools, "bwrap"), 0o755);
+  await chmod(join(tools, "codex"), 0o755);
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, ".gitignore"), ".lfi/*\ntools/\n");
+  await writeFile(join(root, "conflict.txt"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  const remote = await mkdtemp(join(tmpdir(), "lfi-isolated-origin-"));
+  const initialized = await runCommand("git", ["init", "--bare", remote]);
+  assert.equal(initialized.exitCode, 0, initialized.stderr);
+  await git("remote", "add", "origin", remote);
+  await git("push", "-u", "origin", "main");
+  for (const [branch, content] of [
+    ["lfi/lfi-1", "first\n"],
+    ["lfi/lfi-2", "second\n"],
+  ] as const) {
+    await git("switch", "-c", branch, "main");
+    await writeFile(join(root, "conflict.txt"), content);
+    await git("commit", "-am", `agent: ${branch}`);
+  }
+  await git("switch", "main");
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    await integrateAttempts({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      baseBranch: "main",
+      runId: "isolated-merger",
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      attempts: [1, 2].map((number) => ({
+        task: {
+          id: `LFI-${number}`,
+          number,
+          title: `Task ${number}`,
+          sourcePath: join(root, `task-${number}.md`),
+          body: "Resolve the conflict.",
+        },
+        accepted: true,
+        summary: "implemented",
+        worktreePath: root,
+        branch: `lfi/lfi-${number}`,
+      })),
+      config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
+      gitDirectory: join(root, ".git"),
+      language: "en",
+      beforeDelivery: async (integrationPath) => {
+        await mkdir(join(integrationPath, ".scratch"), { recursive: true });
+        for (const number of [1, 2]) {
+          await writeFile(
+            join(integrationPath, ".scratch", `[DONE] LFI-${number} — task.md`),
+            "Type: task\nBlocked by: None\nTier: light\n\nDone.\n",
+          );
+        }
+        const added = await runCommand("git", ["add", ".scratch"], {
+          cwd: integrationPath,
+        });
+        assert.equal(added.exitCode, 0, added.stderr);
+        const committed = await runCommand(
+          "git",
+          ["commit", "-m", "chore(lfi): complete LFI-1, LFI-2"],
+          { cwd: integrationPath },
+        );
+        assert.equal(committed.exitCode, 0, committed.stderr);
+      },
+    });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  assert.match(
+    await readFile(isolationCalls, "utf8"),
+    /worktrees\/integration-isolated-merger-1\|.*-- codex /u,
+  );
+  assert.equal(await readFile(join(root, "conflict.txt"), "utf8"), "agent resolution\n");
 });
 
 test("integration refuses delivery when accepted work was not recorded as done", async () => {
