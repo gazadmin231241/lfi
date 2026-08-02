@@ -191,52 +191,8 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: `Используй ${skillPlaceholder("implement")} и TDD, где это уместно. Во время реализации используй узкие тесты и typecheck как быструю обратную связь.`,
   },
   {
-    en: `After implementation, invoke ${skillPlaceholder("code-review")} exactly once. This is one complete two-axis review with the Standards and Spec reviewers in parallel.`,
-    ru: `После реализации вызови ${skillPlaceholder("code-review")} ровно один раз. Это одно полное двухосевое ревью: запусти reviewer-ов Standards и Spec параллельно.`,
-  },
-  {
-    en: "Aggregate the review findings before editing, then fix all blocking findings and only local, in-scope advisory findings as one coherent remediation batch.",
-    ru: "Перед изменениями собери все замечания, затем исправь одним связным пакетом все блокирующие замечания и только локальные advisory-замечания в рамках задачи.",
-  },
-  {
-    en: "Classify findings involving specification compliance, user-visible correctness, security, data integrity, mandatory repository rules, or other confirmed contracts as blocking. Code smells and preferences are advisory unless they expose one of those risks.",
-    ru: "Считай блокирующими замечания, затрагивающие соответствие спецификации, видимую пользователю корректность, безопасность, целостность данных, обязательные правила репозитория или другие подтверждённые контракты. Запахи кода и предпочтения являются advisory, если только они не выявляют один из этих рисков.",
-  },
-  {
-    en: "If remediation substantively changes behavior, contracts, data, security, concurrency, process execution, or test semantics, request targeted confirmation from only the review axes whose findings caused those changes. Documentation, comments, and unambiguous local naming changes do not require confirmation unless the originating finding was blocking. Reuse the original reviewer when possible; otherwise provide a replacement verifier the exact findings, remediation, affected areas, and focused test evidence.",
-    ru: "Если исправления существенно меняют поведение, контракты, данные, безопасность, конкурентность, запуск процессов или семантику тестов, запроси точечное подтверждение только от тех направлений ревью, чьи замечания привели к этим изменениям. Изменения документации, комментариев и однозначных локальных имён не требуют подтверждения, если только исходное замечание не было блокирующим. По возможности используй исходного reviewer-а; иначе передай заменяющему verifier-у точные замечания, исправления, затронутые области и результаты узких тестов.",
-  },
-  {
-    en: `Apply this confirmation matrix:
-  - No relevant findings: do not run confirmation.
-  - Standards findings only: confirm with the Standards reviewer only.
-  - Spec findings only: confirm with the Spec reviewer only.
-  - Findings from both axes: confirm both in parallel.`,
-    ru: `Используй эту матрицу подтверждения:
-  - Нет релевантных замечаний: не запускай подтверждение.
-  - Замечания только от Standards: подтверждает только reviewer Standards.
-  - Замечания только от Spec: подтверждает только reviewer Spec.
-  - Замечания от обоих направлений: оба подтверждения запускаются параллельно.`,
-  },
-  {
-    en: "Targeted confirmation checks the original findings, remediation, nearby regression risk, and supporting evidence. For each original finding, report whether it is resolved, unresolved, or replaced by a regression caused by remediation, and include its review axis and outcome in the agent message. Confirmation must not restart discovery over the complete diff or create a new advisory-refactoring cycle.",
-    ru: "Точечное подтверждение проверяет исходные замечания, исправления, риск ближайших регрессий и подтверждающие результаты. Для каждого исходного замечания укажи результат: устранено, не устранено или заменено регрессией из-за исправления; добавь направление ревью и результат в сообщение агента. Подтверждение не должно заново исследовать весь diff или запускать новый цикл advisory-рефакторинга.",
-  },
-  {
-    en: `Do not invoke ${skillPlaceholder("code-review")} a second time. A new blocker found inside the remediation scope must still be resolved; if it cannot be resolved and evidenced within this bounded protocol, return status "incomplete" and preserve the worktree.`,
-    ru: `Не вызывай ${skillPlaceholder("code-review")} второй раз. Новый blocker внутри области исправлений всё равно должен быть устранён; если его нельзя устранить и подтвердить в рамках этого ограниченного протокола, верни статус "incomplete" и сохрани worktree.`,
-  },
-  {
-    en: "Never report completion with a known blocking finding. When no finding requires confirmation under the rules above, skip confirmation.",
-    ru: "Никогда не сообщай о завершении задачи с известным блокирующим замечанием. Если по правилам выше ни одно замечание не требует подтверждения, пропусти подтверждение.",
-  },
-  {
-    en: "Run the full repository validation after review remediation and any targeted confirmation, so it checks the final code. Do not repeat an unchanged successful validation; after a failure, diagnose or change code before rerunning it.",
-    ru: "Запусти полную проверку репозитория после исправлений по ревью и всех точечных подтверждений, чтобы проверить финальный код. Не повторяй неизменившуюся успешную проверку; после ошибки сначала проведи диагностику или измени код.",
-  },
-  {
-    en: "Make the stages legible in your agent messages: complete review, remediation, targeted confirmation by axis when required, and final validation. Do not include secrets, credentials, tokens, prompts containing them, or process environments in logs.",
-    ru: "Явно отмечай этапы в сообщениях агента: полное ревью, исправления, точечное подтверждение по направлениям, когда оно требуется, и финальная проверка. Не включай в логи секреты, учётные данные, токены, содержащие их prompts или окружение процессов.",
+    en: "Do not include secrets, credentials, tokens, prompts containing them, or process environments in logs.",
+    ru: "Не включай в логи секреты, учётные данные, токены, содержащие их prompts или окружение процессов.",
   },
   {
     en: "Before reporting that a command is blocked or failed, actually run the command and cite its observed stderr or exit code. Do not infer filesystem restrictions from sandbox descriptions or permission metadata.",
@@ -261,11 +217,6 @@ const workerConstraints = (
     language === "ru"
       ? `Работай только над ${identifier}.`
       : `Work only on ${identifier}.`,
-    ...(agent === "codex"
-      ? [language === "ru"
-        ? "При создании review-субагента с full-history fork не передавай agent_type: такой fork наследует тип родительского агента."
-        : "When creating a review subagent with a full-history fork, omit agent_type because that fork inherits the parent agent type."]
-      : []),
     ...workerConstraintCopy.map((copy) => expandSkillPlaceholders(agent, copy[language])),
   ]
     .map((constraint) => `- ${constraint}`)
