@@ -8,7 +8,7 @@ export const isTransientGithubFailure = (error: unknown): boolean => {
   const message = (error instanceof Error ? error.message : String(error))
     .toLowerCase();
   return (
-    /timed? ?out|i\/o timeout|connection reset|econnreset|econnrefused|temporary|tls handshake|unexpected eof/u.test(
+    /timed? ?out|i\/o timeout|connection reset|econnreset|econnrefused|temporary|tls handshake|unexpected eof|failed to connect|could not connect|could not resolve host|no route to host|network is unreachable|etimedout|enotfound|enetunreach/u.test(
       message,
     ) || /\b(?:502|503|504)\b/u.test(message)
   );

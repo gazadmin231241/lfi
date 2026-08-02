@@ -6,6 +6,7 @@ import {
   gitResult,
   removeWorktreeAndBranch,
 } from "./git.js";
+import { withGithubRetry } from "./github-resilience.js";
 import type { Language } from "./i18n.js";
 import { localize } from "./i18n.js";
 import {
@@ -87,8 +88,8 @@ export const integrateAttempts = async (options: {
   sha: string;
   preserveIntegration: boolean;
   delivered: true;
-  localBranch: "updated" | "reconciliation-required";
-  reconciliation?: string;
+  push: "pushed" | "deferred";
+  pushNote?: string;
 }> => {
   const integrationAgent = resolveIntegrationModel(options.config).agent;
   const integration = await createIntegrationWorktree({
@@ -213,11 +214,6 @@ export const integrateAttempts = async (options: {
       options.attempts,
       options.language,
     );
-    await git(integration.path, [
-      "push",
-      "origin",
-      `HEAD:${options.baseBranch}`,
-    ]);
     await options.beforeHostUpdate?.();
     const hostUpdate = await gitResult(options.cwd, [
       "merge",
@@ -226,23 +222,39 @@ export const integrateAttempts = async (options: {
     ]);
     if (hostUpdate.exitCode !== 0) {
       preserveIntegration = true;
-      return {
-        sha: (await git(integration.path, ["rev-parse", "HEAD"])).stdout.trim(),
-        preserveIntegration,
-        delivered: true,
-        localBranch: "reconciliation-required",
-        reconciliation: localize(
+      throw new Error(
+        localize(
           options.language,
-          `The work was delivered to origin/${options.baseBranch}, but the local branch could not fast-forward. Reconcile or relocate the divergent local commits, then run: git merge --ff-only origin/${options.baseBranch}. The integration branch ${integration.branch} was preserved at ${integration.path}.`,
-          `Работа доставлена в origin/${options.baseBranch}, но локальная ветка не смогла обновиться fast-forward. Согласуйте или перенесите расходящиеся локальные коммиты, затем выполните: git merge --ff-only origin/${options.baseBranch}. Интеграционная ветка ${integration.branch} сохранена в ${integration.path}.`,
+          `Could not fast-forward local ${options.baseBranch} to the validated result, so nothing was delivered. Reconcile or relocate the divergent local commits, then retry: git merge --ff-only ${integration.branch}. The integration branch was preserved at ${integration.path}.`,
+          `Не удалось обновить локальную ${options.baseBranch} до проверенного результата fast-forward, работа не доставлена. Согласуйте или перенесите расходящиеся локальные коммиты, затем повторите: git merge --ff-only ${integration.branch}. Интеграционная ветка сохранена в ${integration.path}.`,
         ),
-      };
+      );
+    }
+    const sha = (await git(options.cwd, ["rev-parse", "HEAD"])).stdout.trim();
+    let push: "pushed" | "deferred" = "pushed";
+    let pushNote: string | undefined;
+    try {
+      await withGithubRetry(
+        () => git(options.cwd, ["push", "origin", options.baseBranch]),
+        { attempts: 2 },
+      );
+    } catch (error) {
+      const reason = (error instanceof Error ? error.message : String(error))
+        .trim()
+        .split("\n")[0];
+      push = "deferred";
+      pushNote = localize(
+        options.language,
+        `Delivered locally; push to origin/${options.baseBranch} failed and will be retried at the start of the next run. ${reason}`,
+        `Доставлено локально; push в origin/${options.baseBranch} не удался и будет повторён в начале следующего прогона. ${reason}`,
+      );
     }
     return {
-      sha: (await git(integration.path, ["rev-parse", "HEAD"])).stdout.trim(),
+      sha,
       preserveIntegration,
       delivered: true,
-      localBranch: "updated",
+      push,
+      ...(pushNote === undefined ? {} : { pushNote }),
     };
   } catch (error) {
     if (preserveIntegration) throw error;

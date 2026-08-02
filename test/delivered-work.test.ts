@@ -91,6 +91,68 @@ test("run fast-forwards delivered tracker work before selecting tasks", async ()
   await assert.rejects(readFile(subject.calls, "utf8"));
 });
 
+test("run publishes local delivery once origin is reachable again", async () => {
+  const subject = await fixture();
+  await subject.git(
+    subject.root,
+    "mv",
+    ".scratch/[READY] LFI-1 — delivered.md",
+    ".scratch/[DONE] LFI-1 — delivered.md",
+  );
+  await subject.git(subject.root, "commit", "-am", "chore(lfi): complete LFI-1");
+  const terminal: string[] = [];
+  const originalPath = process.env.PATH;
+  const originalLog = console.log;
+  process.env.PATH = `${subject.tools}:${originalPath ?? ""}`;
+  console.log = (...values: unknown[]) => terminal.push(values.join(" "));
+  try {
+    assert.equal(await runLfi(subject.root, "en"), 0);
+  } finally {
+    console.log = originalLog;
+    process.env.PATH = originalPath;
+  }
+  assert.match(terminal.join("\n"), /Local main published to origin\/main/u);
+  const remoteLog = await runCommand("git", ["log", "--format=%s", "main"], {
+    cwd: subject.remote,
+  });
+  assert.match(remoteLog.stdout, /chore\(lfi\): complete LFI-1/u);
+  await assert.rejects(readFile(subject.calls, "utf8"));
+});
+
+test("run starts and defers publication while origin is unreachable", async () => {
+  const subject = await fixture();
+  await subject.git(
+    subject.root,
+    "mv",
+    ".scratch/[READY] LFI-1 — delivered.md",
+    ".scratch/[DONE] LFI-1 — delivered.md",
+  );
+  await subject.git(subject.root, "commit", "-am", "chore(lfi): complete LFI-1");
+  await subject.git(
+    subject.root,
+    "remote",
+    "set-url",
+    "origin",
+    join(subject.remote, "missing"),
+  );
+  const terminal: string[] = [];
+  const originalPath = process.env.PATH;
+  const originalLog = console.log;
+  process.env.PATH = `${subject.tools}:${originalPath ?? ""}`;
+  console.log = (...values: unknown[]) => terminal.push(values.join(" "));
+  try {
+    assert.equal(await runLfi(subject.root, "en"), 0);
+  } finally {
+    console.log = originalLog;
+    process.env.PATH = originalPath;
+  }
+  assert.match(
+    terminal.join("\n"),
+    /Push of local main to origin\/main deferred/u,
+  );
+  await assert.rejects(readFile(subject.calls, "utf8"));
+});
+
 test("run refuses a diverged default branch before handing work to an agent", async () => {
   const subject = await fixture();
   await commitToRemote(subject.remote, (seed) =>

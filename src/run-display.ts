@@ -182,7 +182,21 @@ export const printDefaultBranchReconciled = (
   );
 };
 
-export const printDeliveredWithLocalReconciliation = (
+export const printDefaultBranchPushed = (
+  output: RunOutput,
+  language: Language,
+  branch: string,
+): void => {
+  output.log(
+    `    ${localize(
+      language,
+      `Local ${branch} published to origin/${branch}`,
+      `Локальная ${branch} опубликована в origin/${branch}`,
+    )}`,
+  );
+};
+
+export const printPushNote = (
   output: RunOutput,
   message: string,
 ): void => output.log(`    ${message}`);

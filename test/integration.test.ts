@@ -346,7 +346,7 @@ test("integration refuses delivery when accepted work was not recorded as done",
   );
 });
 
-test("delivery remains complete when the local branch cannot fast-forward", async () => {
+test("integration refuses delivery when the local branch cannot fast-forward", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-host-update-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
   const logs = join(root, ".lfi", "logs");
@@ -373,7 +373,8 @@ test("delivery remains complete when the local branch cannot fast-forward", asyn
   await git("commit", "-m", "feat: worker result");
   await git("switch", "main");
 
-  const result = await integrateAttempts({
+  const attempt = () =>
+    integrateAttempts({
       cwd: root,
       worktreesRoot,
       baseRef: "main",
@@ -422,14 +423,98 @@ test("delivery remains complete when the local branch cannot fast-forward", asyn
       },
     });
 
-  assert.equal(result.delivered, true);
-  assert.equal(result.localBranch, "reconciliation-required");
-  assert.ok(result.reconciliation);
-  assert.match(result.reconciliation, /git merge --ff-only origin\/main/u);
-  assert.equal(
-    await runCommand("git", ["show", "origin/main:.scratch/[DONE] LFI-1 — task.md"], {
-      cwd: root,
-    }).then((outcome) => outcome.exitCode),
-    0,
+  await assert.rejects(
+    attempt(),
+    /работа не доставлена[\s\S]*git merge --ff-only lfi\/integration-localized-host-update-1/u,
   );
+  const localHead = await runCommand("git", ["log", "-1", "--format=%s"], {
+    cwd: root,
+  });
+  assert.equal(localHead.stdout.trim(), "test: advance host branch");
+  const remoteLog = await runCommand("git", ["log", "--format=%s", "main"], {
+    cwd: remote,
+  });
+  assert.doesNotMatch(remoteLog.stdout, /chore\(lfi\): complete LFI-1/u);
+});
+
+test("an unreachable origin defers publication without failing delivery", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-push-deferred-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const logs = join(root, ".lfi", "logs");
+  await mkdir(worktreesRoot, { recursive: true });
+  await mkdir(logs, { recursive: true });
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "base.txt"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  const remote = await mkdtemp(join(tmpdir(), "lfi-push-deferred-origin-"));
+  const initialized = await runCommand("git", ["init", "--bare", remote]);
+  assert.equal(initialized.exitCode, 0, initialized.stderr);
+  await git("remote", "add", "origin", remote);
+  await git("push", "-u", "origin", "main");
+  await git("switch", "-c", "lfi/lfi-1");
+  await writeFile(join(root, "worker.txt"), "worker\n");
+  await git("add", "worker.txt");
+  await git("commit", "-m", "feat: worker result");
+  await git("switch", "main");
+  await git("remote", "set-url", "origin", join(remote, "missing"));
+
+  const result = await integrateAttempts({
+    cwd: root,
+    worktreesRoot,
+    baseRef: "main",
+    baseBranch: "main",
+    runId: "push-deferred",
+    log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+    attempts: [
+      {
+        task: {
+          id: "LFI-1",
+          number: 1,
+          title: "Deliver worker result",
+          sourcePath: join(root, "task.md"),
+          body: "Deliver the result.",
+        },
+        accepted: true,
+        summary: "implemented",
+        worktreePath: root,
+        branch: "lfi/lfi-1",
+      },
+    ],
+    config: { ...DEFAULT_CONFIG, VALIDATE_COMMAND: "true" },
+    gitDirectory: join(root, ".git"),
+    language: "en",
+    beforeDelivery: async (integrationPath) => {
+      await mkdir(join(integrationPath, ".scratch"), { recursive: true });
+      await writeFile(
+        join(integrationPath, ".scratch", "[DONE] LFI-1 — task.md"),
+        "Type: task\nBlocked by: None\nTier: light\n\nDone.\n",
+      );
+      const add = await runCommand("git", ["add", ".scratch"], {
+        cwd: integrationPath,
+      });
+      assert.equal(add.exitCode, 0, add.stderr);
+      const commit = await runCommand(
+        "git",
+        ["commit", "-m", "chore(lfi): complete LFI-1"],
+        { cwd: integrationPath },
+      );
+      assert.equal(commit.exitCode, 0, commit.stderr);
+    },
+  });
+
+  assert.equal(result.delivered, true);
+  assert.equal(result.push, "deferred");
+  assert.ok(result.pushNote);
+  assert.match(result.pushNote, /Delivered locally.*next run/u);
+  const localHead = await runCommand("git", ["log", "-1", "--format=%s"], {
+    cwd: root,
+  });
+  assert.equal(localHead.stdout.trim(), "chore(lfi): complete LFI-1");
 });

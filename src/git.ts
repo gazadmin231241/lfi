@@ -1,6 +1,7 @@
 import { access, mkdir, rm } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
+import { withGithubRetry } from "./github-resilience.js";
 import { requireCommand, runCommand } from "./process.js";
 import type { IsolationProvider } from "./isolation-provider.js";
 import { redactSensitiveText } from "./logs.js";
@@ -143,6 +144,8 @@ export type OriginRefresh =
 export type DefaultBranchReconciliation =
   | { outcome: "up-to-date"; branch: string }
   | { outcome: "fast-forwarded"; branch: string }
+  | { outcome: "pushed"; branch: string }
+  | { outcome: "push-deferred"; branch: string; note: string }
   | {
       outcome: "blocked";
       branch: string;
@@ -151,9 +154,11 @@ export type DefaultBranchReconciliation =
     };
 
 /**
- * Bring the checked-out default branch up to its delivered remote result when
- * doing so cannot lose local work. A branch with commits on both sides is
- * deliberately left untouched for its owner to reconcile.
+ * Bring the checked-out default branch and its remote copy to the same
+ * delivered result when doing so cannot lose local work. The local branch is
+ * the source of truth: an unreachable origin defers publication instead of
+ * failing, and a branch with commits on both sides is deliberately left
+ * untouched for its owner to reconcile.
  */
 export const reconcileDefaultBranch = async (
   cwd: string,
@@ -164,8 +169,10 @@ export const reconcileDefaultBranch = async (
   if (current.exitCode !== 0 || current.stdout.trim() !== branch) {
     return { outcome: "blocked", branch, reason: "not-current", command };
   }
-  await git(cwd, ["fetch", "origin", branch]);
+  const fetched = await gitResult(cwd, ["fetch", "origin", branch]);
   const remote = `origin/${branch}`;
+  const remoteSha = await gitResult(cwd, ["rev-parse", "--verify", remote]);
+  if (remoteSha.exitCode !== 0) return { outcome: "up-to-date", branch };
   const reconciliationCommand = `git merge --ff-only ${remote}`;
   const localIsBehind = await gitResult(cwd, [
     "merge-base",
@@ -175,8 +182,7 @@ export const reconcileDefaultBranch = async (
   ]);
   if (localIsBehind.exitCode === 0) {
     const before = (await git(cwd, ["rev-parse", "HEAD"])).stdout.trim();
-    const remoteSha = (await git(cwd, ["rev-parse", remote])).stdout.trim();
-    if (before === remoteSha) return { outcome: "up-to-date", branch };
+    if (before === remoteSha.stdout.trim()) return { outcome: "up-to-date", branch };
     if (!(await worktreeClean(cwd))) {
       return {
         outcome: "blocked",
@@ -194,13 +200,34 @@ export const reconcileDefaultBranch = async (
     remote,
     "HEAD",
   ]);
-  if (remoteIsBehind.exitCode === 0) return { outcome: "up-to-date", branch };
-  return {
-    outcome: "blocked",
-    branch,
-    reason: "diverged",
-    command: reconciliationCommand,
-  };
+  if (remoteIsBehind.exitCode !== 0) {
+    return {
+      outcome: "blocked",
+      branch,
+      reason: "diverged",
+      command: reconciliationCommand,
+    };
+  }
+  if (fetched.exitCode !== 0) {
+    return {
+      outcome: "push-deferred",
+      branch,
+      note: fetched.stderr.trim().split("\n")[0] ?? "origin unreachable",
+    };
+  }
+  try {
+    await withGithubRetry(() => git(cwd, ["push", "origin", branch]), {
+      attempts: 2,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      outcome: "push-deferred",
+      branch,
+      note: reason.trim().split("\n")[0] ?? reason,
+    };
+  }
+  return { outcome: "pushed", branch };
 };
 
 /**

@@ -10,6 +10,18 @@ test("GitHub delivery retries transient transport and server failures", async ()
   assert.equal(isTransientGithubFailure(new Error("dial tcp: i/o timeout")), true);
   assert.equal(isTransientGithubFailure(new Error("HTTP 503 unavailable")), true);
   assert.equal(isTransientGithubFailure(new Error("HTTP 401 unauthorized")), false);
+  assert.equal(
+    isTransientGithubFailure(
+      new Error(
+        "fatal: unable to access 'https://github.com/x/y.git/': Failed to connect to github.com port 443 after 132725 ms: Could not connect to server",
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    isTransientGithubFailure(new Error("Could not resolve host: github.com")),
+    true,
+  );
 
   let attempts = 0;
   const result = await withGithubRetry(

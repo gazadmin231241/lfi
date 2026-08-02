@@ -20,7 +20,7 @@ import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
 import { assertNoDirectInstalledSkillReference } from "./prompts.js";
-import { printDefaultBranchReconciled, printDeliveredWithLocalReconciliation, printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
+import { printDefaultBranchPushed, printDefaultBranchReconciled, printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printPushNote, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
 import { listWork } from "./run-source.js";
 import type { Attempt } from "./runner-types.js";
@@ -127,6 +127,19 @@ export const runLfi = async (
   const output = await createRunOutput(logsRoot, startedAt);
   if (branchReconciliation.outcome === "fast-forwarded") {
     printDefaultBranchReconciled(output, language, branch);
+  }
+  if (branchReconciliation.outcome === "pushed") {
+    printDefaultBranchPushed(output, language, branch);
+  }
+  if (branchReconciliation.outcome === "push-deferred") {
+    printPushNote(
+      output,
+      localize(
+        language,
+        `Push of local ${branch} to origin/${branch} deferred: ${branchReconciliation.note}`,
+        `Push локальной ${branch} в origin/${branch} отложен: ${branchReconciliation.note}`,
+      ),
+    );
   }
   for (const message of startupErrors) output.error(message);
   try {
@@ -268,11 +281,8 @@ export const runLfi = async (
           },
         });
         printIntegrationCompleted(output, language, branch);
-        if (integration.localBranch === "reconciliation-required") {
-          printDeliveredWithLocalReconciliation(
-            output,
-            integration.reconciliation ?? "",
-          );
+        if (integration.push === "deferred") {
+          printPushNote(output, integration.pushNote ?? "");
         }
         for (const attempt of accepted) {
           completed.add(attempt.task.id);
