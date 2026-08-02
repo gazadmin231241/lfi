@@ -28,17 +28,17 @@ disclosure is not an acceptable price for a stronger one.
 
 ## Acceptance criteria
 
-- [ ] An agent is a required check only when the configuration names it.
-- [ ] The Codex-specific skill metadata check applies only when Codex is
+- [x] An agent is a required check only when the configuration names it.
+- [x] The Codex-specific skill metadata check applies only when Codex is
       configured.
-- [ ] The isolation mechanism is checked when isolation is enabled and reported
+- [x] The isolation mechanism is checked when isolation is enabled and reported
       as missing with an actionable message.
-- [ ] Version control and code-host checks remain unconditional.
-- [ ] No check places credential-bearing command output into the reported
+- [x] Version control and code-host checks remain unconditional.
+- [x] No check places credential-bearing command output into the reported
       detail, asserted by test.
-- [ ] A project configured only for the second agent reports healthy without
+- [x] A project configured only for the second agent reports healthy without
       Codex installed.
-- [ ] Diagnostic output remains available in English and Russian.
+- [x] Diagnostic output remains available in English and Russian.
 
 ## Specification
 
