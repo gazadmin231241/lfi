@@ -29,18 +29,18 @@ in an agent's output — so that both can be tested without spawning anything.
 
 ## Acceptance criteria
 
-- [ ] A single exported seam runs an agent; the worker and merger paths both
+- [x] A single exported seam runs an agent; the worker and merger paths both
       reach an agent only through it.
-- [ ] Building the invocation is a pure function of the agent, model, reasoning
+- [x] Building the invocation is a pure function of the agent, model, reasoning
       level and prompt, and is tested without spawning a process.
-- [ ] Recognising an unavailable-model error is owned by the provider and tested
+- [x] Recognising an unavailable-model error is owned by the provider and tested
       as a pure function.
-- [ ] No module outside the provider branches on which agent is in use.
-- [ ] Codex behaviour is unchanged: identical command, identical log content,
+- [x] No module outside the provider branches on which agent is in use.
+- [x] Codex behaviour is unchanged: identical command, identical log content,
       identical structured result handling, identical acceptance outcomes.
-- [ ] Existing tests covering agent execution and model routing pass unmodified
+- [x] Existing tests covering agent execution and model routing pass unmodified
       except where a symbol was renamed.
-- [ ] User-facing output remains available in English and Russian.
+- [x] User-facing output remains available in English and Russian.
 
 ## Specification
 

@@ -44,4 +44,4 @@ changes where a command runs, not what the user sees when it fails.
 
 ## Blocked by
 
-- [LFI-19 — Confine agent execution to an isolation boundary](<[BLOCKED] LFI-19 — confine-agent-execution-to-an-isolation-boundary.md>)
+- [LFI-19 — Confine agent execution to an isolation boundary](<[READY] LFI-19 — confine-agent-execution-to-an-isolation-boundary.md>)
