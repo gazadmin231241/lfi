@@ -27,16 +27,72 @@ const workerSchema = {
   required: ["status", "summary"],
 };
 
-export interface CodexRunResult {
+export type AgentProvider = "codex";
+export const defaultAgentProvider: AgentProvider = "codex";
+
+export interface AgentRunResult {
   exitCode: number;
   status: "completed" | "incomplete" | undefined;
   summary: string;
+  unavailableModel: boolean;
 }
 
-export const isUnavailableModelError = (message: string): boolean =>
-  /model_not_found|unsupported model|model\b[^\n]*(?:not (?:available|found|supported)|does not exist|do not have access)/iu.test(
-    message,
-  );
+const unavailableModelErrorByAgent: Record<AgentProvider, RegExp> = {
+  codex:
+    /model_not_found|unsupported model|model\b[^\n]*(?:not (?:available|found|supported)|does not exist|do not have access)/iu,
+};
+
+export const isUnavailableModelError = (
+  agent: AgentProvider,
+  message: string,
+): boolean => unavailableModelErrorByAgent[agent].test(message);
+
+export interface AgentInvocationOptions {
+  agent: AgentProvider;
+  cwd: string;
+  prompt: string;
+  model: string;
+  reasoning: ReasoningEffort;
+  gitDirectory: string;
+  finalPath: string;
+  schemaPath: string;
+  structured?: boolean;
+}
+
+export interface AgentInvocation {
+  command: string;
+  args: string[];
+  input: string;
+}
+
+export const buildAgentInvocation = (
+  options: AgentInvocationOptions,
+): AgentInvocation => {
+  const args = [
+    "--ask-for-approval",
+    "never",
+    "exec",
+    "--json",
+    "--sandbox",
+    "workspace-write",
+    "--add-dir",
+    options.gitDirectory,
+    "-c",
+    `model_reasoning_effort="${options.reasoning}"`,
+    "-c",
+    "sandbox_workspace_write.network_access=true",
+    "-C",
+    options.cwd,
+    "-o",
+    options.finalPath,
+  ];
+  if (options.model) args.push("--model", options.model);
+  if (options.structured !== false) {
+    args.push("--output-schema", options.schemaPath);
+  }
+  args.push("-");
+  return { command: options.agent, args, input: options.prompt };
+};
 
 const parseFinal = (
   source: string,
@@ -88,7 +144,8 @@ const eventSummary = (
   return undefined;
 };
 
-export const runCodex = async (options: {
+export const runAgent = async (options: {
+  agent: AgentProvider;
   cwd: string;
   prompt: string;
   model: string;
@@ -99,7 +156,7 @@ export const runCodex = async (options: {
   idleTimeoutMinutes: number;
   structured?: boolean;
   prefix: string;
-}): Promise<CodexRunResult> => {
+}): Promise<AgentRunResult> => {
   await mkdir(options.log.directory, { recursive: true });
   const compactPath = join(options.log.directory, `${options.logName}.log`);
   const artifacts = await mkdtemp(join(tmpdir(), "lfi-codex-"));
@@ -134,32 +191,14 @@ export const runCodex = async (options: {
     if (options.structured !== false) {
       await writeFile(schemaPath, `${JSON.stringify(workerSchema, null, 2)}\n`);
     }
-    const args = [
-      "--ask-for-approval",
-      "never",
-      "exec",
-      "--json",
-      "--sandbox",
-      "workspace-write",
-      "--add-dir",
-      options.gitDirectory,
-      "-c",
-      `model_reasoning_effort="${options.reasoning}"`,
-      "-c",
-      "sandbox_workspace_write.network_access=true",
-      "-C",
-      options.cwd,
-      "-o",
+    const invocation = buildAgentInvocation({
+      ...options,
       finalPath,
-    ];
-    if (options.model) args.push("--model", options.model);
-    if (options.structured !== false) {
-      args.push("--output-schema", schemaPath);
-    }
-    args.push("-");
-    const result = await runCommand("codex", args, {
+      schemaPath,
+    });
+    const result = await runCommand(invocation.command, invocation.args, {
       cwd: options.cwd,
-      input: options.prompt,
+      input: invocation.input,
       idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
       onStdout: (chunk) => {
         lineBuffer += chunk;
@@ -182,6 +221,7 @@ export const runCodex = async (options: {
       exitCode: result.exitCode,
       status: parsed.status,
       summary,
+      unavailableModel: isUnavailableModelError(options.agent, summary),
     };
   } finally {
     await logWrites;

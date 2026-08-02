@@ -11,7 +11,61 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { runCodex } from "../src/codex.js";
+import {
+  buildAgentInvocation,
+  isUnavailableModelError,
+  runAgent,
+} from "../src/agent-provider.js";
+
+test("Codex provider builds its invocation without spawning a process", () => {
+  const invocation = buildAgentInvocation({
+    agent: "codex",
+    cwd: "/worktree",
+    gitDirectory: "/repository/.git",
+    model: "gpt-test",
+    reasoning: "high",
+    prompt: "Implement the task.",
+    finalPath: "/tmp/result.json",
+    schemaPath: "/tmp/schema.json",
+  });
+
+  assert.equal(invocation.command, "codex");
+  assert.deepEqual(invocation.args, [
+    "--ask-for-approval",
+    "never",
+    "exec",
+    "--json",
+    "--sandbox",
+    "workspace-write",
+    "--add-dir",
+    "/repository/.git",
+    "-c",
+    'model_reasoning_effort="high"',
+    "-c",
+    "sandbox_workspace_write.network_access=true",
+    "-C",
+    "/worktree",
+    "-o",
+    "/tmp/result.json",
+    "--model",
+    "gpt-test",
+    "--output-schema",
+    "/tmp/schema.json",
+    "-",
+  ]);
+  assert.equal(invocation.input, "Implement the task.");
+});
+
+test("Codex provider recognises unavailable-model errors without spawning", () => {
+  assert.equal(
+    isUnavailableModelError("codex", "model gpt-test is not available"),
+    true,
+  );
+  assert.equal(
+    isUnavailableModelError("codex", "network request failed"),
+    false,
+  );
+});
 
 const waitForFileContent = async (
   path: string,
@@ -25,7 +79,7 @@ const waitForFileContent = async (
   throw new Error(`Timed out waiting for ${pattern} in ${path}`);
 };
 
-test("runCodex streams readable task details to a flat task log", async () => {
+test("runAgent streams readable task details to a flat task log", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-codex-output-"));
   const bin = join(root, "bin");
   const logs = join(root, "logs");
@@ -56,13 +110,14 @@ printf '%s\\n' '{"status":"completed","summary":"Готово."}' > "$output"
   const originalPath = process.env.PATH;
   const originalLog = console.log;
   const terminal: string[] = [];
-  let running: ReturnType<typeof runCodex> | undefined;
+  let running: ReturnType<typeof runAgent> | undefined;
   process.env.PATH = `${bin}:${originalPath ?? ""}`;
   console.log = (...values: unknown[]) => {
     terminal.push(values.join(" "));
   };
   try {
-    running = runCodex({
+    running = runAgent({
+      agent: "codex",
       cwd: root,
       prompt: "Implement.",
       model: "",

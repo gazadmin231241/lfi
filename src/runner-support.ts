@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
-import { runCodex } from "./codex.js";
+import { defaultAgentProvider, runAgent } from "./agent-provider.js";
 import {
   resolveIntegrationModel,
   type LfiConfig,
@@ -61,7 +61,8 @@ export const mergeWithAgent = async (options: {
       }),
     ),
   );
-  const result = await runCodex({
+  const result = await runAgent({
+    agent: defaultAgentProvider,
     cwd: options.cwd,
     prompt: `Resolve the current integration problem in this worktree.
 

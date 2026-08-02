@@ -1,9 +1,9 @@
 import { join } from "node:path";
 
 import {
-  isUnavailableModelError,
-  runCodex,
-} from "./codex.js";
+  defaultAgentProvider,
+  runAgent,
+} from "./agent-provider.js";
 import {
   resolveWorkerModel,
   type LfiConfig,
@@ -65,7 +65,8 @@ export const attemptWork = async (options: {
         });
       }
     }
-    const codex = await runCodex({
+    const agent = await runAgent({
+      agent: defaultAgentProvider,
       cwd: worktree.path,
       prompt: renderWorkerPrompt(
         options.taskTemplate,
@@ -80,15 +81,15 @@ export const attemptWork = async (options: {
       idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
       prefix: key,
     });
-    if (codex.exitCode === 0 && codex.status === "completed") {
+    if (agent.exitCode === 0 && agent.status === "completed") {
       await commitWorktreeChanges(
         worktree.path,
         `feat(lfi): implement ${options.task.id}`,
       );
     }
     const evaluation = evaluateWorkerResult({
-      processExitCode: codex.exitCode,
-      status: codex.status,
+      processExitCode: agent.exitCode,
+      status: agent.status,
       commitsAhead: await commitsAhead(worktree.path, options.baseRef),
       worktreeClean: await worktreeClean(worktree.path),
     });
@@ -96,14 +97,14 @@ export const attemptWork = async (options: {
       task: options.task,
       accepted: evaluation.accepted,
       summary: evaluation.accepted
-        ? codex.summary
-        : `${codex.summary}\n${evaluation.reasons.join(", ")}`,
+        ? agent.summary
+        : `${agent.summary}\n${evaluation.reasons.join(", ")}`,
       worktreePath: worktree.path,
       branch: worktree.branch,
       logName,
-      ...(codex.exitCode !== 0 &&
+      ...(agent.exitCode !== 0 &&
       model &&
-      isUnavailableModelError(codex.summary)
+      agent.unavailableModel
         ? { unavailableModel: model }
         : {}),
     };
