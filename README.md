@@ -149,8 +149,9 @@ the legacy task file, or the built-in default.
 
 Templates control editable guidance only. The runner appends non-editable
 protocol outside every template: the LFI completion block for all phases; the
-findings-file path, exact JSON findings contract, and no-worktree-changes/no-
-commit rule for review and re-review; and the no-stage/no-commit rule for
+findings-file path and exact JSON findings contract for review; the verdicts-
+file path and exact positional JSON verdict contract for verification; the no-
+worktree-changes/no-commit rule for both; and the no-stage/no-commit rule for
 remediation and merge. The task prompt also receives the runner-owned LFI
 safety constraint list. These blocks cannot be changed by editing a template.
 
@@ -165,12 +166,12 @@ always available when files are absent.
 The following settings are in `.lfi/config.env`:
 
 - `REVIEW_ENABLED=true` by default. Set it to `false` to skip review,
-  remediation, and re-review; implementation, validation, merge, and delivery
+  remediation, and verification; implementation, validation, merge, and delivery
   are unaffected.
 - `MAX_REMEDIATION_ROUNDS=1` by default. It must be a safe integer greater
   than or equal to zero. Zero stops after the first blocking review; a positive
-  value permits that many remediation attempts, with one targeted re-review
-  after each attempt.
+  value is the remediation-attempt ceiling. Verification asks only whether
+  each original blocker was resolved; it cannot introduce new findings.
 - `VALIDATE_COMMAND` defaults to empty. An empty command disables the validation
   phase; otherwise its command is run at the existing validation gates. This
   switch is independent of `REVIEW_ENABLED`: disabling review does not disable

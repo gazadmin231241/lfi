@@ -27,6 +27,7 @@ import {
   defaultReReviewPrompt,
   defaultReviewPrompt,
   defaultTaskPrompt,
+  legacyDefaultReReviewPrompts,
   legacyDefaultTaskPrompts,
 } from "./prompts.js";
 import { configureLocalTracker } from "./local-setup.js";
@@ -90,7 +91,11 @@ const writeDefaultPromptTemplates = async (
           : filename === "remediation.md"
             ? [defaultRemediationPrompt("en"), defaultRemediationPrompt("ru")]
             : filename === "re-review.md"
-              ? [defaultReReviewPrompt("en"), defaultReReviewPrompt("ru")]
+              ? [
+                  defaultReReviewPrompt("en"),
+                  defaultReReviewPrompt("ru"),
+                  ...legacyDefaultReReviewPrompts,
+                ]
               : [defaultMergePrompt("en"), defaultMergePrompt("ru")];
       if (!stock.includes(current) || current === content) return false;
       await writeFile(path, content);

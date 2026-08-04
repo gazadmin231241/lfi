@@ -46,6 +46,7 @@ import {
 import { runProjectCommand } from "./project-command.js";
 import {
   parseReviewFindings,
+  parseVerificationVerdicts,
   type ReviewFinding,
 } from "./review-findings.js";
 
@@ -520,7 +521,7 @@ export const attemptWork = async (options: {
           (finding) => finding.severity === "blocking",
         );
         if (blockingFindings.length > 0) {
-          let targetedFindingsText = JSON.stringify(blockingFindings);
+          const targetedFindingsText = JSON.stringify(blockingFindings);
           if (options.config.MAX_REMEDIATION_ROUNDS === 0) {
             return {
               task: options.task,
@@ -604,18 +605,18 @@ export const attemptWork = async (options: {
               worktree.path,
               `fix(lfi): remediate ${options.task.id}`,
             );
-            const reReviewLogName = `${logName}-re-review`;
-            const reReviewFindingsPath = resolve(
+            const verificationLogName = `${logName}-verification`;
+            const verificationVerdictsPath = resolve(
               options.log.directory,
-              `${key}-re-review-findings.json`,
+              `${key}-verification-verdicts.json`,
             );
-            await rm(reReviewFindingsPath, { force: true });
-            const reReview = await runAgent({
+            await rm(verificationVerdictsPath, { force: true });
+            const verification = await runAgent({
               agent: reviewer.agent,
               cwd: worktree.path,
               prompt: reReviewPrompt(
                 options.baseRef,
-                reReviewFindingsPath,
+                verificationVerdictsPath,
                 targetedFindingsText,
                 reviewer.agent,
                 options.language,
@@ -625,73 +626,66 @@ export const attemptWork = async (options: {
               reasoning: reviewer.reasoning,
               gitDirectory: options.gitDirectory,
               log: options.log,
-              logName: reReviewLogName,
+              logName: verificationLogName,
               idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
               isolationProvider: options.config.ISOLATION_PROVIDER,
-              prefix: `${key}:re-review`,
+              prefix: `${key}:verification`,
               language: options.language,
               session,
               writableDirectories: [options.log.directory],
             });
-            if (reReview.exitCode !== 0 || reReview.status !== "completed") {
+            if (verification.exitCode !== 0 || verification.status !== "completed") {
               return {
                 task: options.task,
                 accepted: false,
                 summary: localize(
                   options.language,
-                  `Re-review phase failed: ${reReview.summary}`,
-                  `Этап повторного ревью завершился ошибкой: ${reReview.summary}`,
+                  `Verification phase failed: ${verification.summary}`,
+                  `Этап верификации завершился ошибкой: ${verification.summary}`,
                 ),
                 worktreePath: worktree.path,
                 branch: worktree.branch,
-                logName: reReviewLogName,
-                ...(reReview.exitCode !== 0 && reviewer.model && reReview.unavailableModel
+                logName: verificationLogName,
+                ...(verification.exitCode !== 0 && reviewer.model && verification.unavailableModel
                   ? { unavailableModel: reviewer }
                   : {}),
               };
             }
             try {
-              findingsText = await readFile(reReviewFindingsPath, "utf8");
-              findings = parseReviewFindings(findingsText);
+              const verdictsText = await readFile(verificationVerdictsPath, "utf8");
+              const verdicts = parseVerificationVerdicts(
+                verdictsText,
+                blockingFindings.length,
+              );
+              const unresolvedCount = verdicts.filter(
+                (verdict) => verdict.verdict === "unresolved",
+              ).length;
+              if (unresolvedCount > 0) {
+                return {
+                  task: options.task,
+                  accepted: false,
+                  summary: localize(
+                    options.language,
+                    `Verification phase found unresolved findings: ${unresolvedCount}.`,
+                    `Этап верификации выявил неустранённые замечания: ${unresolvedCount}.`,
+                  ),
+                  worktreePath: worktree.path,
+                  branch: worktree.branch,
+                  logName: verificationLogName,
+                };
+              }
             } catch {
               return {
                 task: options.task,
                 accepted: false,
                 summary: localize(
                   options.language,
-                  "Re-review phase failed: the findings file is missing or invalid.",
-                  "Этап повторного ревью завершился ошибкой: файл замечаний отсутствует или некорректен.",
+                  "Verification phase failed: the verdicts file is missing, invalid, or does not match the original findings.",
+                  "Этап верификации завершился ошибкой: файл вердиктов отсутствует, некорректен или не соответствует исходным замечаниям.",
                 ),
                 worktreePath: worktree.path,
                 branch: worktree.branch,
-                logName: reReviewLogName,
-              };
-            }
-            await logDowngradedBlockingFindings({
-              findings,
-              language: options.language,
-              log: options.log,
-              logName: reReviewLogName,
-            });
-            const remainingBlockers = findings.filter(
-              (finding) => finding.severity === "blocking",
-            );
-            if (remainingBlockers.length > 0) {
-              if (round < options.config.MAX_REMEDIATION_ROUNDS) {
-                targetedFindingsText = JSON.stringify(remainingBlockers);
-                continue;
-              }
-              return {
-                task: options.task,
-                accepted: false,
-                summary: localize(
-                  options.language,
-                  `Re-review phase found blocking findings: ${remainingBlockers.length}.`,
-                  `Этап повторного ревью выявил блокирующие замечания: ${remainingBlockers.length}.`,
-                ),
-                worktreePath: worktree.path,
-                branch: worktree.branch,
-                logName: reReviewLogName,
+                logName: verificationLogName,
               };
             }
             break;

@@ -67,6 +67,30 @@ test("repeated init upgrades a superseded stock task prompt", async () => {
   );
 });
 
+test("repeated init upgrades the superseded stock re-review prompt to verification", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-init-verification-upgrade-"));
+  const lfiRoot = join(root, ".lfi");
+  await mkdir(join(lfiRoot, "prompts"), { recursive: true });
+  await writeFile(join(lfiRoot, "config.env"), "BASE_BRANCH=main\n");
+  await writeFile(
+    join(lfiRoot, "prompts", "re-review.md"),
+    `Perform one targeted re-review of the committed remediation. Check only the original findings below and regression risk in the remediated area; do not broaden the review.
+
+Base ref: {{BASE_REF}}
+
+Original findings (verbatim):
+{{FINDINGS}}
+`,
+  );
+
+  await initializeProject({ cwd: root, language: "ru", yes: true });
+
+  assert.match(
+    await readFile(join(lfiRoot, "prompts", "re-review.md"), "utf8"),
+    /Проверь, устранено ли каждое исходное блокирующее замечание/u,
+  );
+});
+
 test("repeated init keeps a custom legacy task prompt", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-init-custom-legacy-"));
   const lfiRoot = join(root, ".lfi");
