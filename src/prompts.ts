@@ -127,20 +127,31 @@ The findings below are passed verbatim:
 
 export const defaultReReviewPrompt = (language: Language): string =>
   language === "ru"
-    ? `Проведи одно точечное повторное ревью зафиксированного исправления. Проверь только исходные замечания ниже и риск регрессии в исправленной области; не расширяй ревью.
+    ? `Проверь, устранено ли каждое исходное блокирующее замечание в зафиксированном исправлении. Не ищи новые проблемы и не расширяй проверку.
+
+Base ref: {{BASE_REF}}
+`
+    : `Verify whether the committed remediation resolved each original blocking finding. Do not search for new problems or broaden the verification.
+
+Base ref: {{BASE_REF}}
+`;
+
+export const legacyDefaultReReviewPrompts: readonly string[] = [
+  `Проведи одно точечное повторное ревью зафиксированного исправления. Проверь только исходные замечания ниже и риск регрессии в исправленной области; не расширяй ревью.
 
 Base ref: {{BASE_REF}}
 
 Исходные замечания (дословно):
 {{FINDINGS}}
-`
-    : `Perform one targeted re-review of the committed remediation. Check only the original findings below and regression risk in the remediated area; do not broaden the review.
+`,
+  `Perform one targeted re-review of the committed remediation. Check only the original findings below and regression risk in the remediated area; do not broaden the review.
 
 Base ref: {{BASE_REF}}
 
 Original findings (verbatim):
 {{FINDINGS}}
-`;
+`,
+];
 
 export const defaultMergePrompt = (language: Language): string =>
   language === "ru"
@@ -357,6 +368,32 @@ Before completing, write a JSON array to the Findings file. Every item must be a
 
 ${completionContractCopy.en}`;
 
+const verificationProtocol = (
+  verdictsPath: string,
+  originalFindings: string,
+  language: Language,
+): string => language === "ru"
+  ? `Не сообщай LFI вердикты в свободной форме: единственный канал вердиктов — указанный JSON-файл.
+
+Verdicts file: ${verdictsPath}
+
+Исходные замечания (дословно):
+${originalFindings}
+
+До завершения запиши в Verdicts file JSON-массив с одной записью на каждое исходное замечание, в том же порядке. Каждая запись должна быть объектом ровно с двумя полями: "verdict" ("resolved" или "unresolved") и строковым "rationale", объясняющим вердикт. Не добавляй новые замечания. Не изменяй worktree и не создавай commit.
+
+${completionContractCopy.ru}`
+  : `Do not report verdicts to LFI in prose: the verdicts file is the only verdict channel.
+
+Verdicts file: ${verdictsPath}
+
+Original findings (verbatim):
+${originalFindings}
+
+Before completing, write a JSON array to the Verdicts file with one item for each original finding, in the same order. Every item must be an object with exactly two fields: "verdict" ("resolved" or "unresolved") and a string "rationale" explaining the verdict. Do not add new findings. Do not modify the worktree or create a commit.
+
+${completionContractCopy.en}`;
+
 export const reviewPrompt = (
   baseRef: string,
   findingsPath: string,
@@ -383,10 +420,10 @@ export const remediationPrompt = (
   template: string = defaultRemediationPrompt(language),
 ): string => {
   const protocol = language === "ru"
-    ? `Не добавляй изменения в индекс и не создавай commit: LFI зафиксирует исправления перед повторным ревью.
+    ? `Не добавляй изменения в индекс и не создавай commit: LFI зафиксирует исправления перед верификацией.
 
 ${completionContractCopy.ru}`
-    : `Do not stage or commit the remediation: LFI will commit it before re-review.
+    : `Do not stage or commit the remediation: LFI will commit it before verification.
 
 ${completionContractCopy.en}`;
   return `${renderEditableTemplate(template, { FINDINGS: findings }, agent)}
@@ -397,22 +434,22 @@ ${protocol}
 
 export const reReviewPrompt = (
   baseRef: string,
-  findingsPath: string,
+  verdictsPath: string,
   originalFindings: string,
   agent: AgentProvider,
   language: Language = "en",
   template: string = defaultReReviewPrompt(language),
 ): string => {
-  if (!isAbsolute(findingsPath)) {
-    throw new Error("The review findings file path must be absolute.");
+  if (!isAbsolute(verdictsPath)) {
+    throw new Error("The verification verdicts file path must be absolute.");
   }
   return `${renderEditableTemplate(template, {
     BASE_REF: baseRef,
-    FINDINGS_FILE: findingsPath,
+    FINDINGS_FILE: verdictsPath,
     FINDINGS: originalFindings,
   }, agent)}
 
-${reviewProtocol(findingsPath, language)}
+${verificationProtocol(verdictsPath, originalFindings, language)}
 `;
 };
 

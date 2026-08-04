@@ -1,7 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseReviewFindings } from "../src/review-findings.js";
+import {
+  parseReviewFindings,
+  parseVerificationVerdicts,
+} from "../src/review-findings.js";
+
+test("verification verdicts accept one resolved or unresolved result per finding", () => {
+  assert.deepEqual(
+    parseVerificationVerdicts(JSON.stringify([
+      { verdict: "resolved", rationale: "The invalid input is rejected now." },
+      { verdict: "unresolved", rationale: "The failing branch is unchanged." },
+    ]), 2),
+    [
+      { verdict: "resolved", rationale: "The invalid input is rejected now." },
+      { verdict: "unresolved", rationale: "The failing branch is unchanged." },
+    ],
+  );
+});
+
+test("verification verdicts reject a mismatched count or an unknown item shape", () => {
+  assert.throws(
+    () => parseVerificationVerdicts("[]", 1),
+    /Invalid verification verdicts/u,
+  );
+  assert.throws(
+    () => parseVerificationVerdicts(
+      '[{"verdict":"resolved","rationale":"Done.","finding":"extra"}]',
+      1,
+    ),
+    /Invalid verification verdicts/u,
+  );
+  assert.throws(
+    () => parseVerificationVerdicts(
+      '[{"verdict":"unknown","rationale":"Not a verdict."}]',
+      1,
+    ),
+    /Invalid verification verdicts/u,
+  );
+});
 
 test("review findings accept the complete known JSON shape", () => {
   assert.deepEqual(

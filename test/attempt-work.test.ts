@@ -167,7 +167,7 @@ ${codexCompletionEvent("completed", "implemented task")}
     assert.equal(await readFile(validationMarker, "utf8"), "validated");
     await assert.rejects(readFile(join(root, ".lfi", "logs", "LFI-4-review.log"), "utf8"));
     await assert.rejects(readFile(join(root, ".lfi", "logs", "LFI-4-remediation.log"), "utf8"));
-    await assert.rejects(readFile(join(root, ".lfi", "logs", "LFI-4-re-review.log"), "utf8"));
+    await assert.rejects(readFile(join(root, ".lfi", "logs", "LFI-4-verification.log"), "utf8"));
   } finally {
     process.env.PATH = originalPath;
   }
@@ -177,6 +177,11 @@ const runAttemptWithReviewOutput = async (
   reviewOutput?: string,
   remediationCommits = false,
   config: Partial<typeof DEFAULT_CONFIG> = {},
+  verificationOutput = JSON.stringify([{
+    verdict: "unresolved",
+    rationale: "The failure scenario still reproduces.",
+  }]),
+  language: "en" | "ru" = "en",
 ) => {
   const root = await mkdtemp(join(tmpdir(), "lfi-review-outcome-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
@@ -213,6 +218,8 @@ if [ "$call" -eq 1 ]; then
 else
   findings_path=$(printf '%s\n' "$prompt" | sed -n 's/^Findings file: //p')
   if [ -n "$findings_path" ]; then ${writeFindings}; fi
+  verdicts_path=$(printf '%s\n' "$prompt" | sed -n 's/^Verdicts file: //p')
+  if [ -n "$verdicts_path" ]; then printf '%s' '${verificationOutput}' > "$verdicts_path"; fi
 fi
 ${remediationAction}
 ${codexCompletionEvent("completed", "phase completed")}
@@ -241,7 +248,7 @@ ${codexCompletionEvent("completed", "phase completed")}
         iteration: 1,
       },
       taskTemplate: "Implement {{TASK_ID}}.",
-      language: "en",
+      language,
     });
     return { result, worktree, calls, logs };
   } finally {
@@ -276,7 +283,7 @@ test("a blocking finding without a failure scenario is logged and does not start
   );
 });
 
-test("remediation and targeted re-review receive only blocking findings after degradation", async () => {
+test("remediation and verification receive original blockers and a resolved verdict accepts the attempt", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-remediated-attempt-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
   const worktree = join(worktreesRoot, "lfi-2");
@@ -313,7 +320,7 @@ case "$call" in
   1) printf 'implemented\\n' > result.txt ;;
   2) findings_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Findings file: //p'); printf '%s' '${findings}' > "$findings_path" ;;
   3) printf 'remediated\\n' > remediation.txt ;;
-  4) test "$(git status --porcelain)" = ""; findings_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Findings file: //p'); printf '[]' > "$findings_path" ;;
+  4) test "$(git status --porcelain)" = ""; verdicts_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Verdicts file: //p'); printf '[{"verdict":"resolved","rationale":"The empty value is rejected now."}]' > "$verdicts_path" ;;
 esac
 ${codexCompletionEvent("completed", "phase completed")}
 `);
@@ -350,20 +357,21 @@ ${codexCompletionEvent("completed", "phase completed")}
     assert.match(reReviewPrompt, new RegExp(remediableFindings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
     assert.doesNotMatch(remediationPrompt, /An unsupported style is used\./u);
     assert.doesNotMatch(reReviewPrompt, /An unsupported style is used\./u);
-    assert.match(reReviewPrompt, /targeted re-review/u);
+    assert.match(reReviewPrompt, /Verify whether .* resolved each original blocking finding/u);
+    assert.match(reReviewPrompt, /Verdicts file:/u);
     assert.equal(await readFile(join(worktree, "remediation.txt"), "utf8"), "remediated\n");
   } finally {
     process.env.PATH = originalPath;
   }
 });
 
-test("blockers surviving re-review preserve the worktree without a third review", async () => {
+test("an unresolved verification verdict rejects the attempt without another round", async () => {
   const { result, worktree, calls } = await runAttemptWithReviewOutput(
     JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent.", failureScenario: "Submitting an empty value reports success." }]),
   );
 
   assert.equal(result.accepted, false);
-  assert.match(result.summary, /Re-review phase found blocking findings/u);
+  assert.match(result.summary, /Verification phase found unresolved findings: 1/u);
   assert.equal(result.worktreePath, worktree);
   assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n");
 });
@@ -381,7 +389,7 @@ test("zero remediation rounds reject blocking review findings without remediatio
   assert.equal(await readFile(calls, "utf8"), "1\n2\n");
 });
 
-test("each configured remediation round receives one targeted re-review", async () => {
+test("an unresolved verdict does not start another review when more rounds are configured", async () => {
   const { result, calls } = await runAttemptWithReviewOutput(
     JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent.", failureScenario: "Submitting an empty value reports success." }]),
     false,
@@ -389,11 +397,54 @@ test("each configured remediation round receives one targeted re-review", async 
   );
 
   assert.equal(result.accepted, false);
-  assert.match(result.summary, /Re-review phase found blocking findings/u);
-  assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n5\n6\n");
+  assert.match(result.summary, /Verification phase found unresolved findings/u);
+  assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n");
 });
 
-test("a remediation-created commit is rejected before re-review", async () => {
+test("verification verdicts with the wrong count or shape fail the phase clearly", async () => {
+  const finding = JSON.stringify([{
+    axis: "spec",
+    severity: "blocking",
+    description: "A required behavior is absent.",
+    failureScenario: "Submitting an empty value reports success.",
+  }]);
+  for (const invalidVerdicts of [
+    "[]",
+    '[{"verdict":"resolved","reason":"Wrong field."}]',
+  ]) {
+    const { result } = await runAttemptWithReviewOutput(
+      finding,
+      false,
+      {},
+      invalidVerdicts,
+    );
+
+    assert.equal(result.accepted, false);
+    assert.match(
+      result.summary,
+      /Verification phase failed: the verdicts file is missing, invalid, or does not match the original findings/u,
+    );
+  }
+});
+
+test("verification failure summaries follow the configured language", async () => {
+  const { result } = await runAttemptWithReviewOutput(
+    JSON.stringify([{
+      axis: "spec",
+      severity: "blocking",
+      description: "Поведение отсутствует.",
+      failureScenario: "Пустое значение принимается.",
+    }]),
+    false,
+    {},
+    "[]",
+    "ru",
+  );
+
+  assert.match(result.summary, /Этап верификации завершился ошибкой: файл вердиктов/u);
+});
+
+test("a remediation-created commit is rejected before verification", async () => {
   const { result, calls } = await runAttemptWithReviewOutput(
     JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent.", failureScenario: "Submitting an empty value reports success." }]),
     true,

@@ -164,13 +164,44 @@ test("review prompt requires an absolute findings path", () => {
   );
 });
 
-test("remediation and targeted re-review prompts preserve bounded findings context", () => {
+test("remediation and verification prompts preserve bounded findings context", () => {
   const findings = '[{ "axis": "spec", "severity": "blocking", "description": "Missing behavior." }]';
   assert.match(remediationPrompt(findings, "en"), new RegExp(findings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
   const prompt = reReviewPrompt("main", "/var/tmp/re-review.json", findings, "codex", "en");
-  assert.match(prompt, /only the original findings/u);
-  assert.match(prompt, /regression risk/u);
+  assert.match(prompt, /resolved each original blocking finding/u);
+  assert.match(prompt, /Do not search for new problems/u);
   assert.match(prompt, new RegExp(findings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+});
+
+test("verification prompt appends a localized verdict contract to the existing re-review template", () => {
+  const findings = '[{"axis":"spec","severity":"blocking","description":"Exact original.","failureScenario":"Input fails."}]';
+  const english = reReviewPrompt(
+    "main",
+    "/var/tmp/verdicts.json",
+    findings,
+    "codex",
+    "en",
+    "CUSTOM RE-REVIEW WITHOUT FINDINGS PLACEHOLDER",
+  );
+  const russian = reReviewPrompt(
+    "main",
+    "/var/tmp/verdicts-ru.json",
+    findings,
+    "codex",
+    "ru",
+    "СВОЯ ПРОВЕРКА БЕЗ PLACEHOLDER",
+  );
+
+  assert.match(english, /CUSTOM RE-REVIEW WITHOUT FINDINGS PLACEHOLDER/u);
+  assert.match(english, /Original findings \(verbatim\):\n.*Exact original/u);
+  assert.match(english, /Verdicts file: \/var\/tmp\/verdicts\.json/u);
+  assert.match(english, /"verdict" \("resolved" or "unresolved"\).*"rationale"/u);
+  assert.match(english, /Do not modify the worktree or create a commit/u);
+  assert.match(russian, /СВОЯ ПРОВЕРКА БЕЗ PLACEHOLDER/u);
+  assert.match(russian, /Исходные замечания \(дословно\):\n.*Exact original/u);
+  assert.match(russian, /Verdicts file: \/var\/tmp\/verdicts-ru\.json/u);
+  assert.match(russian, /"verdict" \("resolved" или "unresolved"\).*"rationale"/u);
+  assert.match(russian, /Не изменяй worktree и не создавай commit/u);
 });
 
 test("direct installed skill references are refused with their placeholder", () => {
