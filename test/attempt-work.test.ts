@@ -277,7 +277,7 @@ test("a blocking finding without a failure scenario is logged and does not start
   );
 });
 
-test("blocking findings run one verbatim remediation and clean targeted re-review", async () => {
+test("remediation and targeted re-review receive only blocking findings after degradation", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-remediated-attempt-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
   const worktree = join(worktreesRoot, "lfi-2");
@@ -285,7 +285,13 @@ test("blocking findings run one verbatim remediation and clean targeted re-revie
   const calls = join(root, "codex-calls");
   const args = join(root, "codex-args");
   const prompts = join(root, "codex-prompts");
-  const findings = '[{ "axis":"spec", "severity":"blocking", "description":"A required behavior is absent.", "failureScenario":"Submitting an empty value reports success." }]';
+  const findings = '[{ "axis":"spec", "severity":"blocking", "description":"A required behavior is absent.", "failureScenario":"Submitting an empty value reports success." }, { "axis":"standards", "severity":"blocking", "description":"An unsupported style is used." }]';
+  const remediableFindings = JSON.stringify([{
+    axis: "spec",
+    severity: "blocking",
+    description: "A required behavior is absent.",
+    failureScenario: "Submitting an empty value reports success.",
+  }]);
   await mkdir(tools, { recursive: true });
   const git = async (...args: string[]) => {
     const result = await runCommand("git", args, { cwd: root });
@@ -339,8 +345,13 @@ ${codexCompletionEvent("completed", "phase completed")}
     assert.match(invocationArgs[1] ?? "", /(?=.*--model reviewer\b)(?=.*model_reasoning_effort="high")/u);
     assert.match(invocationArgs[2] ?? "", /(?=.*--model worker\b)(?=.*model_reasoning_effort="low")/u);
     assert.match(invocationArgs[3] ?? "", /(?=.*--model reviewer\b)(?=.*model_reasoning_effort="high")/u);
-    assert.match(await readFile(`${prompts}.3`, "utf8"), new RegExp(findings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
-    assert.match(await readFile(`${prompts}.4`, "utf8"), /targeted re-review/u);
+    const remediationPrompt = await readFile(`${prompts}.3`, "utf8");
+    const reReviewPrompt = await readFile(`${prompts}.4`, "utf8");
+    assert.match(remediationPrompt, new RegExp(remediableFindings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.match(reReviewPrompt, new RegExp(remediableFindings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.doesNotMatch(remediationPrompt, /An unsupported style is used\./u);
+    assert.doesNotMatch(reReviewPrompt, /An unsupported style is used\./u);
+    assert.match(reReviewPrompt, /targeted re-review/u);
     assert.equal(await readFile(join(worktree, "remediation.txt"), "utf8"), "remediated\n");
   } finally {
     process.env.PATH = originalPath;

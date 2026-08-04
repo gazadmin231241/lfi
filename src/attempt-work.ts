@@ -423,6 +423,7 @@ export const attemptWork = async (options: {
           (finding) => finding.severity === "blocking",
         );
         if (blockingFindings.length > 0) {
+          let targetedFindingsText = JSON.stringify(blockingFindings);
           if (options.config.MAX_REMEDIATION_ROUNDS === 0) {
             return {
               task: options.task,
@@ -452,7 +453,7 @@ export const attemptWork = async (options: {
               agent: target.agent,
               cwd: worktree.path,
               prompt: remediationPrompt(
-                findingsText,
+                targetedFindingsText,
                 options.language,
                 target.agent,
                 options.promptTemplates?.remediation.content,
@@ -520,7 +521,7 @@ export const attemptWork = async (options: {
               prompt: reReviewPrompt(
                 options.baseRef,
                 reReviewFindingsPath,
-                findingsText,
+                targetedFindingsText,
                 reviewer.agent,
                 options.language,
                 options.promptTemplates?.["re-review"].content,
@@ -581,7 +582,10 @@ export const attemptWork = async (options: {
               (finding) => finding.severity === "blocking",
             );
             if (remainingBlockers.length > 0) {
-              if (round < options.config.MAX_REMEDIATION_ROUNDS) continue;
+              if (round < options.config.MAX_REMEDIATION_ROUNDS) {
+                targetedFindingsText = JSON.stringify(remainingBlockers);
+                continue;
+              }
               return {
                 task: options.task,
                 accepted: false,
