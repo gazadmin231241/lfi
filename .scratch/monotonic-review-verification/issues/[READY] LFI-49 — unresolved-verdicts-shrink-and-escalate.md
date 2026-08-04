@@ -34,4 +34,4 @@ Tier: standard
 
 ## Blocked by
 
-- [LFI-48 — Verification verdicts replace re review](<[READY] LFI-48 — verification-verdicts-replace-re-review.md>)
+- [LFI-48 — Verification verdicts replace re review](<[DONE] LFI-48 — verification-verdicts-replace-re-review.md>)
