@@ -182,6 +182,7 @@ const runAttemptWithReviewOutput = async (
     rationale: "The failure scenario still reproduces.",
   }]),
   language: "en" | "ru" = "en",
+  verificationSummary = "phase completed",
 ) => {
   const root = await mkdtemp(join(tmpdir(), "lfi-review-outcome-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
@@ -215,14 +216,19 @@ if [ -f "${calls}" ]; then call=$(( $(wc -l < "${calls}") + 1 )); fi
 printf '%s\n' "$call" >> "${calls}"
 if [ "$call" -eq 1 ]; then
   printf 'implemented\n' > result.txt
+  ${codexCompletionEvent("completed", "phase completed")}
 else
   findings_path=$(printf '%s\n' "$prompt" | sed -n 's/^Findings file: //p')
   if [ -n "$findings_path" ]; then ${writeFindings}; fi
   verdicts_path=$(printf '%s\n' "$prompt" | sed -n 's/^Verdicts file: //p')
-  if [ -n "$verdicts_path" ]; then printf '%s' '${verificationOutput}' > "$verdicts_path"; fi
+  if [ -n "$verdicts_path" ]; then
+    printf '%s' '${verificationOutput}' > "$verdicts_path"
+    ${codexCompletionEvent("completed", verificationSummary)}
+  else
+    ${codexCompletionEvent("completed", "phase completed")}
+  fi
 fi
 ${remediationAction}
-${codexCompletionEvent("completed", "phase completed")}
 `,
   );
   await chmod(join(tools, "codex"), 0o755);
@@ -371,9 +377,59 @@ test("an unresolved verification verdict rejects the attempt without another rou
   );
 
   assert.equal(result.accepted, false);
-  assert.match(result.summary, /Verification phase found unresolved findings: 1/u);
+  assert.match(result.summary, /Verification phase exhausted 1 remediation round with unresolved findings:/u);
+  assert.match(result.summary, /A required behavior is absent\./u);
+  assert.match(result.summary, /Rationale: The failure scenario still reproduces\./u);
   assert.equal(result.worktreePath, worktree);
   assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n");
+});
+
+test("verification exhaustion summary follows the configured language", async () => {
+  const { result } = await runAttemptWithReviewOutput(
+    JSON.stringify([{
+      axis: "spec",
+      severity: "blocking",
+      description: "Обязательное поведение отсутствует.",
+      failureScenario: "Пустое значение принимается.",
+    }]),
+    false,
+    {},
+    JSON.stringify([{
+      verdict: "unresolved",
+      rationale: "Пустое значение по-прежнему принимается.",
+    }]),
+    "ru",
+  );
+
+  assert.equal(result.accepted, false);
+  assert.match(result.summary, /Этап верификации исчерпал 1 раунд исправления/u);
+  assert.match(result.summary, /- Обязательное поведение отсутствует\./u);
+  assert.match(result.summary, /Обоснование: Пустое значение по-прежнему принимается\./u);
+});
+
+test("verifier advisory notes are logged without affecting acceptance", async () => {
+  const { result, logs } = await runAttemptWithReviewOutput(
+    JSON.stringify([{
+      axis: "spec",
+      severity: "blocking",
+      description: "A required behavior is absent.",
+      failureScenario: "Submitting an empty value reports success.",
+    }]),
+    false,
+    {},
+    JSON.stringify([{
+      verdict: "resolved",
+      rationale: "The empty value is rejected now.",
+    }]),
+    "en",
+    "Advisory: a neighboring cleanup could improve readability.",
+  );
+
+  assert.equal(result.accepted, true, result.summary);
+  assert.match(
+    await readFile(join(logs, "LFI-2-verification.log"), "utf8"),
+    /Advisory: a neighboring cleanup could improve readability\./u,
+  );
 });
 
 test("zero remediation rounds reject blocking review findings without remediation", async () => {
@@ -389,16 +445,81 @@ test("zero remediation rounds reject blocking review findings without remediatio
   assert.equal(await readFile(calls, "utf8"), "1\n2\n");
 });
 
-test("an unresolved verdict does not start another review when more rounds are configured", async () => {
-  const { result, calls } = await runAttemptWithReviewOutput(
-    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent.", failureScenario: "Submitting an empty value reports success." }]),
-    false,
-    { MAX_REMEDIATION_ROUNDS: 2 },
-  );
+test("unresolved verdicts narrow the next remediation round and exhaustion lists verdict rationales", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-narrowed-remediation-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const tools = join(root, "tools");
+  const calls = join(root, "codex-calls");
+  const prompts = join(root, "codex-prompts");
+  const firstFinding = {
+    axis: "spec",
+    severity: "blocking",
+    description: "The empty value is accepted.",
+    failureScenario: "Submitting an empty value reports success.",
+  };
+  const secondFinding = {
+    axis: "standards",
+    severity: "blocking",
+    description: "The required test is absent.",
+    failureScenario: "A regression reaches the changed branch without a test.",
+  };
+  const findings = JSON.stringify([firstFinding, secondFinding]);
+  const unresolvedFindings = JSON.stringify([secondFinding]);
+  await mkdir(tools, { recursive: true });
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  await writeFile(join(tools, "codex"), `#!/bin/sh
+prompt=$(cat)
+call=1
+if [ -f "${calls}" ]; then call=$(( $(wc -l < "${calls}") + 1 )); fi
+printf '%s\\n' "$call" >> "${calls}"
+printf '%s' "$prompt" > "${prompts}.$call"
+case "$call" in
+  1) printf 'implemented\\n' > result.txt ;;
+  2) findings_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Findings file: //p'); printf '%s' '${findings}' > "$findings_path" ;;
+  3|5) printf 'remediated\\n' > remediation.txt ;;
+  4) verdicts_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Verdicts file: //p'); printf '%s' '[{"verdict":"resolved","rationale":"The empty value is rejected now."},{"verdict":"unresolved","rationale":"The regression test remains absent."}]' > "$verdicts_path" ;;
+  6) verdicts_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Verdicts file: //p'); printf '%s' '[{"verdict":"unresolved","rationale":"The regression test is still absent."}]' > "$verdicts_path" ;;
+esac
+${codexCompletionEvent("completed", "phase completed")}
+`);
+  await chmod(join(tools, "codex"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    const result = await attemptWork({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      task: { id: "LFI-2", number: 2, title: "Narrow remediation", sourcePath: ".scratch/[READY] LFI-2 — narrow.md", body: "Fix it." },
+      config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none", MAX_REMEDIATION_ROUNDS: 2 },
+      gitDirectory: join(root, ".git"),
+      log: { directory: join(root, ".lfi", "logs"), startedAt: new Date().toISOString(), iteration: 1 },
+      taskTemplate: "Implement {{TASK_ID}}.",
+      language: "en",
+    });
 
-  assert.equal(result.accepted, false);
-  assert.match(result.summary, /Verification phase found unresolved findings/u);
-  assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n");
+    assert.equal(result.accepted, false);
+    assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n4\n5\n6\n");
+    const firstRemediationPrompt = await readFile(`${prompts}.3`, "utf8");
+    const secondRemediationPrompt = await readFile(`${prompts}.5`, "utf8");
+    assert.match(firstRemediationPrompt, new RegExp(findings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.match(secondRemediationPrompt, new RegExp(unresolvedFindings.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.doesNotMatch(secondRemediationPrompt, /The empty value is accepted\./u);
+    assert.match(result.summary, /The required test is absent\./u);
+    assert.match(result.summary, /Rationale: The regression test is still absent\./u);
+    assert.doesNotMatch(result.summary, /The empty value is accepted\./u);
+  } finally {
+    process.env.PATH = originalPath;
+  }
 });
 
 test("verification verdicts with the wrong count or shape fail the phase clearly", async () => {

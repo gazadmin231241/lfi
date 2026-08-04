@@ -48,6 +48,7 @@ import {
   parseReviewFindings,
   parseVerificationVerdicts,
   type ReviewFinding,
+  type VerificationVerdict,
 } from "./review-findings.js";
 
 const pathIsInside = (parent: string, candidate: string): boolean => {
@@ -225,6 +226,32 @@ const logDowngradedBlockingFindings = async (options: {
   );
   await appendRunLog(options.log, options.logName, [message]);
   options.log.output?.log(message);
+};
+
+const unresolvedVerificationSummary = (options: {
+  findings: readonly ReviewFinding[];
+  verdicts: readonly VerificationVerdict[];
+  rounds: number;
+  language: Language;
+}): string => {
+  const unresolved = options.verdicts.flatMap((verdict, index) =>
+    verdict.verdict === "unresolved"
+      ? [{ finding: options.findings[index], rationale: verdict.rationale }]
+      : [],
+  );
+  const header = localize(
+    options.language,
+    `Verification phase exhausted ${options.rounds} remediation ${options.rounds === 1 ? "round" : "rounds"} with unresolved findings:`,
+    `Этап верификации исчерпал ${options.rounds} ${options.rounds === 1 ? "раунд" : "раундов"} исправления с неустранёнными замечаниями:`,
+  );
+  const rationale = localize(options.language, "Rationale", "Обоснование");
+  return [
+    header,
+    ...unresolved.flatMap(({ finding, rationale: verdictRationale }) => [
+      `- ${finding?.description ?? ""}`,
+      `  ${rationale}: ${verdictRationale}`,
+    ]),
+  ].join("\n");
 };
 
 export const attemptWork = async (options: {
@@ -521,7 +548,7 @@ export const attemptWork = async (options: {
           (finding) => finding.severity === "blocking",
         );
         if (blockingFindings.length > 0) {
-          const targetedFindingsText = JSON.stringify(blockingFindings);
+          let activeBlockingFindings = blockingFindings;
           if (options.config.MAX_REMEDIATION_ROUNDS === 0) {
             return {
               task: options.task,
@@ -541,6 +568,7 @@ export const attemptWork = async (options: {
             round <= options.config.MAX_REMEDIATION_ROUNDS;
             round += 1
           ) {
+            const targetedFindingsText = JSON.stringify(activeBlockingFindings);
             const remediationLogName = `${logName}-remediation`;
             const remediationStart = (await git(
               worktree.path,
@@ -655,20 +683,25 @@ export const attemptWork = async (options: {
               const verdictsText = await readFile(verificationVerdictsPath, "utf8");
               const verdicts = parseVerificationVerdicts(
                 verdictsText,
-                blockingFindings.length,
+                activeBlockingFindings.length,
               );
-              const unresolvedCount = verdicts.filter(
-                (verdict) => verdict.verdict === "unresolved",
-              ).length;
-              if (unresolvedCount > 0) {
+              const unresolvedFindings = activeBlockingFindings.filter(
+                (_finding, index) => verdicts[index]?.verdict === "unresolved",
+              );
+              if (unresolvedFindings.length > 0) {
+                if (round < options.config.MAX_REMEDIATION_ROUNDS) {
+                  activeBlockingFindings = unresolvedFindings;
+                  continue;
+                }
                 return {
                   task: options.task,
                   accepted: false,
-                  summary: localize(
-                    options.language,
-                    `Verification phase found unresolved findings: ${unresolvedCount}.`,
-                    `Этап верификации выявил неустранённые замечания: ${unresolvedCount}.`,
-                  ),
+                  summary: unresolvedVerificationSummary({
+                    findings: activeBlockingFindings,
+                    verdicts,
+                    rounds: round,
+                    language: options.language,
+                  }),
                   worktreePath: worktree.path,
                   branch: worktree.branch,
                   logName: verificationLogName,

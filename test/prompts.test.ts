@@ -196,11 +196,13 @@ test("verification prompt appends a localized verdict contract to the existing r
   assert.match(english, /Original findings \(verbatim\):\n.*Exact original/u);
   assert.match(english, /Verdicts file: \/var\/tmp\/verdicts\.json/u);
   assert.match(english, /"verdict" \("resolved" or "unresolved"\).*"rationale"/u);
+  assert.match(english, /non-blocking observations.*run log.*do not affect verdicts or acceptance/u);
   assert.match(english, /Do not modify the worktree or create a commit/u);
   assert.match(russian, /СВОЯ ПРОВЕРКА БЕЗ PLACEHOLDER/u);
   assert.match(russian, /Исходные замечания \(дословно\):\n.*Exact original/u);
   assert.match(russian, /Verdicts file: \/var\/tmp\/verdicts-ru\.json/u);
   assert.match(russian, /"verdict" \("resolved" или "unresolved"\).*"rationale"/u);
+  assert.match(russian, /Неблокирующие наблюдения.*журнал запуска.*не влияют на вердикты или приёмку/u);
   assert.match(russian, /Не изменяй worktree и не создавай commit/u);
 });
 

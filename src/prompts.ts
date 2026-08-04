@@ -386,7 +386,7 @@ Verdicts file: ${verdictsPath}
 Исходные замечания (дословно):
 ${originalFindings}
 
-До завершения запиши в Verdicts file JSON-массив с одной записью на каждое исходное замечание, в том же порядке. Каждая запись должна быть объектом ровно с двумя полями: "verdict" ("resolved" или "unresolved") и строковым "rationale", объясняющим вердикт. Не добавляй новые замечания. Не изменяй worktree и не создавай commit.
+До завершения запиши в Verdicts file JSON-массив с одной записью на каждое исходное замечание, в том же порядке. Каждая запись должна быть объектом ровно с двумя полями: "verdict" ("resolved" или "unresolved") и строковым "rationale", объясняющим вердикт. Не добавляй новые замечания. Неблокирующие наблюдения можно указать в summary блока завершения LFI: они попадут в журнал запуска и не влияют на вердикты или приёмку. Не изменяй worktree и не создавай commit.
 
 ${completionContractCopy.ru}`
   : `Do not report verdicts to LFI in prose: the verdicts file is the only verdict channel.
@@ -396,7 +396,7 @@ Verdicts file: ${verdictsPath}
 Original findings (verbatim):
 ${originalFindings}
 
-Before completing, write a JSON array to the Verdicts file with one item for each original finding, in the same order. Every item must be an object with exactly two fields: "verdict" ("resolved" or "unresolved") and a string "rationale" explaining the verdict. Do not add new findings. Do not modify the worktree or create a commit.
+Before completing, write a JSON array to the Verdicts file with one item for each original finding, in the same order. Every item must be an object with exactly two fields: "verdict" ("resolved" or "unresolved") and a string "rationale" explaining the verdict. Do not add new findings. You may put non-blocking observations in the LFI completion block summary: they are recorded in the run log and do not affect verdicts or acceptance. Do not modify the worktree or create a commit.
 
 ${completionContractCopy.en}`;
 
