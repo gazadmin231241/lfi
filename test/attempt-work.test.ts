@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { readAcceptedAttempt } from "../src/accepted-attempts.js";
 import { attemptWork } from "../src/attempt-work.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 import { loadPromptTemplates } from "../src/prompts.js";
@@ -449,6 +450,151 @@ ${codexCompletionEvent("completed", "resolved existing work")}
     assert.equal(result.accepted, true, result.summary);
     assert.equal(await readFile(calls, "utf8"), "called\n");
     assert.equal(await readFile(join(worktree, "result.txt"), "utf8"), "combined\n");
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+const resumableAttemptFixture = async (prefix: string) => {
+  const root = await mkdtemp(join(tmpdir(), prefix));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const stateRoot = join(root, ".lfi", "state");
+  const worktree = join(worktreesRoot, "lfi-7");
+  const tools = join(root, "tools");
+  const calls = join(root, "codex-calls");
+  await mkdir(tools, { recursive: true });
+  const git = async (cwd: string, ...args: string[]) => {
+    const result = await runCommand("git", args, { cwd });
+    assert.equal(result.exitCode, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.name", "LFI Test");
+  await git(root, "config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git(root, "add", ".");
+  await git(root, "commit", "-m", "test: initialize repository");
+  // Phases are told apart by their prompt, not by a call counter, so the
+  // fixture behaves the same across repeated attempts.
+  await writeFile(join(tools, "codex"), `#!/bin/sh
+prompt=$(cat)
+printf 'called\\n' >> "${calls}"
+findings_path=$(printf '%s\\n' "$prompt" | sed -n 's/^Findings file: //p')
+if [ -n "$findings_path" ]; then
+  printf '[]' > "$findings_path"
+else
+  printf 'implemented\\n' >> result.txt
+fi
+${codexCompletionEvent("completed", "implemented task")}
+`);
+  await chmod(join(tools, "codex"), 0o755);
+  const callCount = async (): Promise<number> =>
+    (await readFile(calls, "utf8").catch(() => "")).split("\n").filter(Boolean)
+      .length;
+  const attempt = () =>
+    attemptWork({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      task: {
+        id: "LFI-7",
+        number: 7,
+        title: "Resume an accepted attempt",
+        sourcePath: ".scratch/[READY] LFI-7 — resume.md",
+        body: "Implement it once.",
+      },
+      config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none" },
+      gitDirectory: join(root, ".git"),
+      log: {
+        directory: join(root, ".lfi", "logs"),
+        startedAt: new Date().toISOString(),
+        iteration: 1,
+      },
+      taskTemplate: "Implement {{TASK_ID}}.",
+      language: "en",
+      stateRoot,
+    });
+  return { root, stateRoot, worktree, git, attempt, callCount };
+};
+
+test("an accepted attempt is recorded and reused without running agents again", async () => {
+  const fixture = await resumableAttemptFixture("lfi-resume-accepted-");
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${join(fixture.root, "tools")}:${originalPath ?? ""}`;
+  try {
+    const first = await fixture.attempt();
+    assert.equal(first.accepted, true, first.summary);
+    const callsAfterFirst = await fixture.callCount();
+    assert.equal(callsAfterFirst, 2);
+    const head = await fixture.git(fixture.worktree, "rev-parse", "HEAD");
+    const record = await readAcceptedAttempt(fixture.stateRoot, "LFI-7");
+    assert.equal(record?.commit, head);
+    assert.equal(record?.baseRef, "main");
+    assert.equal(
+      record?.baseCommit,
+      await fixture.git(fixture.root, "rev-parse", "main"),
+    );
+
+    const second = await fixture.attempt();
+
+    assert.equal(second.accepted, true, second.summary);
+    assert.match(second.summary, /Reused the attempt accepted earlier/u);
+    assert.equal(second.worktreePath, fixture.worktree);
+    assert.equal(second.branch, "lfi/lfi-7");
+    assert.equal(await fixture.callCount(), callsAfterFirst);
+    assert.equal(
+      (await readAcceptedAttempt(fixture.stateRoot, "LFI-7"))?.commit,
+      head,
+    );
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test("a dirty worktree invalidates the recorded acceptance and attempts again", async () => {
+  const fixture = await resumableAttemptFixture("lfi-resume-dirty-");
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${join(fixture.root, "tools")}:${originalPath ?? ""}`;
+  try {
+    const first = await fixture.attempt();
+    assert.equal(first.accepted, true, first.summary);
+    const callsAfterFirst = await fixture.callCount();
+    await writeFile(join(fixture.worktree, "stray.txt"), "unowned\n");
+
+    const second = await fixture.attempt();
+
+    assert.equal(second.accepted, true, second.summary);
+    assert.equal(second.summary, "implemented task");
+    assert.equal(await fixture.callCount(), callsAfterFirst + 2);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test("a moved worktree head invalidates the recorded acceptance and attempts again", async () => {
+  const fixture = await resumableAttemptFixture("lfi-resume-moved-head-");
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${join(fixture.root, "tools")}:${originalPath ?? ""}`;
+  try {
+    const first = await fixture.attempt();
+    assert.equal(first.accepted, true, first.summary);
+    const callsAfterFirst = await fixture.callCount();
+    await writeFile(join(fixture.worktree, "later.txt"), "later\n");
+    await fixture.git(fixture.worktree, "add", ".");
+    await fixture.git(fixture.worktree, "commit", "-m", "test: move the head");
+    const movedHead = await fixture.git(fixture.worktree, "rev-parse", "HEAD");
+
+    const second = await fixture.attempt();
+
+    assert.equal(second.accepted, true, second.summary);
+    assert.equal(second.summary, "implemented task");
+    assert.equal(await fixture.callCount(), callsAfterFirst + 2);
+    const record = await readAcceptedAttempt(fixture.stateRoot, "LFI-7");
+    assert.notEqual(record?.commit, movedHead);
+    assert.equal(
+      record?.commit,
+      await fixture.git(fixture.worktree, "rev-parse", "HEAD"),
+    );
   } finally {
     process.env.PATH = originalPath;
   }
