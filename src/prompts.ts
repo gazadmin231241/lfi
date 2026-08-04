@@ -31,6 +31,8 @@ export const defaultTaskPrompt = (language: "en" | "ru"): string =>
   language === "ru"
     ? `Приступай к реализации: {{TASK_ID}}
 
+Документ задачи: {{ISSUE_URL}}
+
 Реализуй задачу. Используй ${skillPlaceholder("tdd")} где возможно.
 
 Поправки к скиллам для автономного запуска (пользователя в сессии нет, вопросы задавать некому):
@@ -42,6 +44,8 @@ export const defaultTaskPrompt = (language: "en" | "ru"): string =>
 Все необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.
 `
     : `Start implementing: {{TASK_ID}}
+
+Task document: {{ISSUE_URL}}
 
 Implement the task. Use ${skillPlaceholder("tdd")} where possible.
 
@@ -62,6 +66,8 @@ All local changes required by the task are pre-approved. Work only in the curren
 export const legacyDefaultTaskPrompts: readonly string[] = [
   "Приступай к реализации: {{TASK_ID}}\n\nИспользуй {{SKILL:implement}}.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n",
   "Start implementing: {{TASK_ID}}\n\nUse {{SKILL:implement}}.\n\nAll local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n",
+  "Приступай к реализации: {{TASK_ID}}\n\nРеализуй задачу. Используй {{SKILL:tdd}} где возможно.\n\nПоправки к скиллам для автономного запуска (пользователя в сессии нет, вопросы задавать некому):\n- Швы (seams) для тестов определи самостоятельно из текста задачи и спеки и считай их согласованными; предпочитай публичные интерфейсы критических путей.\n- Не проводи code review и не вызывай skill code-review: независимое ревью — отдельный этап пайплайна после завершения задачи.\n\nРегулярно запускай typecheck и точечные тестовые файлы; полный прогон тестов — один раз в конце.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n",
+  "Start implementing: {{TASK_ID}}\n\nImplement the task. Use {{SKILL:tdd}} where possible.\n\nSkill adjustments for this autonomous run (no user is present in the session, so there is no one to ask):\n- Choose the test seams yourself from the task text and spec and treat them as agreed; prefer public interfaces on critical paths.\n- Do not perform a code review and do not invoke the code-review skill: an independent review runs as a separate pipeline phase after the task completes.\n\nRun typechecking and focused test files regularly; run the full test suite once at the end.\n\nAll local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n",
 ];
 
 export type PromptPhase =
