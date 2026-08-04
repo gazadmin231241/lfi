@@ -3,6 +3,11 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
+  forgetAcceptedAttempt,
+  readAcceptedAttempt,
+  recordAcceptedAttempt,
+} from "./accepted-attempts.js";
+import {
   runAgent,
 } from "./agent-provider.js";
 import {
@@ -91,6 +96,79 @@ const validateAttempt = async (options: {
   );
 };
 
+/**
+ * Pins an acceptance to the commit that earned it, so a later run can hand the
+ * same work to integration instead of paying for the whole attempt again.
+ *
+ * A dirty worktree is never recorded: its content is not described by `HEAD`,
+ * so nothing later could confirm the record still matches the accepted work.
+ */
+const rememberAcceptedAttempt = async (options: {
+  stateRoot?: string;
+  taskId: string;
+  worktreePath: string;
+  baseRef: string;
+  dirtyWorktree: boolean;
+}): Promise<void> => {
+  if (!options.stateRoot || options.dirtyWorktree) return;
+  const head = await gitResult(options.worktreePath, ["rev-parse", "HEAD"]);
+  if (head.exitCode !== 0) return;
+  const base = await gitResult(options.worktreePath, [
+    "rev-parse",
+    options.baseRef,
+  ]);
+  await recordAcceptedAttempt(options.stateRoot, {
+    taskId: options.taskId,
+    commit: head.stdout.trim(),
+    baseRef: options.baseRef,
+    baseCommit: base.exitCode === 0 ? base.stdout.trim() : "",
+    recordedAt: new Date().toISOString(),
+  });
+};
+
+/**
+ * Returns the attempt to reuse when a reused worktree still holds exactly the
+ * commit that was accepted, and clears a record that no longer describes it.
+ *
+ * Must run before the worktree is merged with the base: merging moves `HEAD`
+ * and would make every record look stale. Divergence from the base is not a
+ * reason to redo the work — integration merges the attempt itself.
+ */
+const resumeAcceptedAttempt = async (options: {
+  stateRoot?: string;
+  task: WorkItem;
+  worktreePath: string;
+  branch: string;
+  clean: boolean;
+  language: Language;
+  logName: string;
+}): Promise<Attempt | undefined> => {
+  if (!options.stateRoot) return undefined;
+  const record = await readAcceptedAttempt(options.stateRoot, options.task.id);
+  if (!record) return undefined;
+  const head = await gitResult(options.worktreePath, ["rev-parse", "HEAD"]);
+  const matches =
+    options.clean &&
+    head.exitCode === 0 &&
+    head.stdout.trim() === record.commit;
+  if (!matches) {
+    await forgetAcceptedAttempt(options.stateRoot, options.task.id);
+    return undefined;
+  }
+  return {
+    task: options.task,
+    accepted: true,
+    summary: localize(
+      options.language,
+      `Reused the attempt accepted earlier at ${record.commit.slice(0, 12)}; no agent phases were run.`,
+      `Переиспользована принятая ранее попытка на коммите ${record.commit.slice(0, 12)}; фазы агентов не запускались.`,
+    ),
+    worktreePath: options.worktreePath,
+    branch: options.branch,
+    logName: options.logName,
+  };
+};
+
 const finishAcceptedAttempt = async (options: {
   task: WorkItem;
   summary: string;
@@ -102,10 +180,21 @@ const finishAcceptedAttempt = async (options: {
   language: Language;
   log: RunLogContext;
   logName: string;
+  baseRef: string;
+  stateRoot?: string;
   session: Awaited<ReturnType<typeof openIsolationSession>>;
 }): Promise<Attempt> => {
   const validationFailure = await validateAttempt(options);
   const dirtyWorktree = !(await worktreeClean(options.worktreePath));
+  if (!validationFailure) {
+    await rememberAcceptedAttempt({
+      ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
+      taskId: options.task.id,
+      worktreePath: options.worktreePath,
+      baseRef: options.baseRef,
+      dirtyWorktree,
+    });
+  }
   return {
     task: options.task,
     accepted: !validationFailure,
@@ -148,6 +237,8 @@ export const attemptWork = async (options: {
   taskTemplate: string;
   promptTemplates?: PromptTemplates;
   language: Language;
+  /** Where accepted attempts are persisted; omit to disable resumption. */
+  stateRoot?: string;
 }): Promise<Attempt> => {
   const key = options.task.id.toLowerCase();
   const logName = options.task.id;
@@ -198,6 +289,16 @@ export const attemptWork = async (options: {
           }
         }
         if (!worktree.created) {
+          const resumed = await resumeAcceptedAttempt({
+            ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
+            task: options.task,
+            worktreePath: worktree.path,
+            branch: worktree.branch,
+            clean: !reusedDirtyWorktree,
+            language: options.language,
+            logName,
+          });
+          if (resumed) return resumed;
           // Reused worktrees hold a local copy of the base that does not move on
           // its own. Refresh it from origin where that is provably safe; every
           // other case reuses the worktree exactly as it was.
@@ -247,9 +348,19 @@ export const attemptWork = async (options: {
                   session,
                 })
                 : undefined;
+              const accepted = evaluation.accepted && !validationFailure;
+              if (accepted) {
+                await rememberAcceptedAttempt({
+                  ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
+                  taskId: options.task.id,
+                  worktreePath: worktree.path,
+                  baseRef: options.baseRef,
+                  dirtyWorktree: !(await worktreeClean(worktree.path)),
+                });
+              }
               return {
                 task: options.task,
-                accepted: evaluation.accepted && !validationFailure,
+                accepted,
                 summary: validationFailure ?? (evaluation.accepted
                   ? summary
                   : `${summary}\n${evaluation.reasons.join(", ")}`),
@@ -321,6 +432,8 @@ export const attemptWork = async (options: {
             language: options.language,
             log: options.log,
             logName,
+            baseRef: options.baseRef,
+            ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
             session,
           });
         }
@@ -595,6 +708,8 @@ export const attemptWork = async (options: {
           language: options.language,
           log: options.log,
           logName,
+          baseRef: options.baseRef,
+          ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
           session,
         });
       },

@@ -1,5 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { forgetAcceptedAttempt } from "./accepted-attempts.js";
 import { attemptWork } from "./attempt-work.js";
 import { mapConcurrent } from "./concurrency.js";
 import {
@@ -237,6 +238,7 @@ export const runLfi = async (
             taskTemplate: promptTemplates.task.content,
             promptTemplates,
             language,
+            stateRoot,
           });
           if (attempt.unavailableModel) {
             unavailableModels.add(agentModelKey(attempt.unavailableModel));
@@ -296,6 +298,9 @@ export const runLfi = async (
         }
         for (const attempt of accepted) {
           completed.add(attempt.task.id);
+          // The acceptance has been delivered, so the record that guarded it
+          // against a redundant re-attempt has nothing left to protect.
+          await forgetAcceptedAttempt(stateRoot, attempt.task.id);
           if (attempt.dirtyWorktree) {
             printWorktreePreserved(
               output,
