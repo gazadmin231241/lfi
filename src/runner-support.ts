@@ -14,7 +14,6 @@ import {
   type RunLogContext,
 } from "./logs.js";
 import {
-  describePromptTemplateSource,
   mergerPrompt,
   type ResolvedPromptTemplate,
 } from "./prompts.js";
@@ -69,11 +68,6 @@ export const mergeWithAgent = async (options: {
       }),
     ),
   );
-  if (options.promptTemplate) {
-    options.log.output?.log(
-      describePromptTemplateSource("merge", options.promptTemplate, options.language),
-    );
-  }
   const result = await runAgent({
     agent: resolveIntegrationModel(options.config).agent,
     cwd: options.cwd,

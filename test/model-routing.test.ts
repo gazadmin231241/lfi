@@ -165,7 +165,7 @@ ${codexCompletionEvent("completed", "implemented")}
     assert.match(
       runLog,
       new RegExp(
-        `${id}\\n    Work started\\n    codex:${model} · low\\b`,
+        `  ${id} · codex:${model} · low\\b`,
         "u",
       ),
     );
@@ -421,7 +421,7 @@ ${codexCompletionEvent("completed", "implemented")}
   assert.match(runLog, /LFI-2: уровень выполнения не указан/u);
   assert.match(
     runLog,
-    /LFI-2\n    Работа началась\n    codex:terra · medium\b/u,
+    /  LFI-2 · codex:terra · medium\b/u,
   );
   assert.match(
     runLog,

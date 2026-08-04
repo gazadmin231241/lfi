@@ -27,6 +27,7 @@ import {
   defaultReReviewPrompt,
   defaultReviewPrompt,
   defaultTaskPrompt,
+  legacyDefaultTaskPrompts,
 } from "./prompts.js";
 import { configureLocalTracker } from "./local-setup.js";
 import { scaffoldWorkerDockerfile } from "./worker-image.js";
@@ -53,6 +54,12 @@ const exists = async (path: string) =>
     () => false,
   );
 
+const stockTaskPrompts: readonly string[] = [
+  defaultTaskPrompt("en"),
+  defaultTaskPrompt("ru"),
+  ...legacyDefaultTaskPrompts,
+];
+
 const writeDefaultPromptTemplates = async (
   lfiRoot: string,
   language: Language,
@@ -71,13 +78,13 @@ const writeDefaultPromptTemplates = async (
     const path = join(promptsDirectory, filename);
     if (filename === "task.md" && legacyTaskPromptExists && !(await exists(path))) {
       const legacy = await readFile(join(lfiRoot, "task-prompt.md"), "utf8");
-      const isStock = [defaultTaskPrompt("en"), defaultTaskPrompt("ru")].includes(legacy);
+      const isStock = stockTaskPrompts.includes(legacy);
       if (!isStock) return false;
     }
     if (await exists(path)) {
       const current = await readFile(path, "utf8");
       const stock = filename === "task.md"
-        ? [defaultTaskPrompt("en"), defaultTaskPrompt("ru")]
+        ? stockTaskPrompts
         : filename === "review.md"
           ? [defaultReviewPrompt("en"), defaultReviewPrompt("ru")]
           : filename === "remediation.md"

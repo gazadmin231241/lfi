@@ -110,14 +110,14 @@ test("configuration preserves hashes inside values and trims comment-adjacent wh
 test("configuration round-trips non-default values", () => {
   const config = {
     ...DEFAULT_CONFIG,
-    DEFAULT_MODEL: "codex:default",
-    LIGHT_MODEL: "codex:light",
-    STANDARD_MODEL: "codex:standard",
-    DEEP_MODEL: "codex:deep",
+    DEFAULT_MODEL: "codex:default:high",
+    LIGHT_MODEL: "codex:light:high",
+    STANDARD_MODEL: "codex:standard:high",
+    DEEP_MODEL: "codex:deep:high",
     REASONING_EFFORT: "high" as const,
-    MERGER_MODEL: "codex:merger",
+    MERGER_MODEL: "codex:merger:xhigh",
     MERGER_REASONING_EFFORT: "xhigh" as const,
-    REVIEWER_MODEL: "pi:reviewer",
+    REVIEWER_MODEL: "pi:reviewer:high",
     REVIEWER_REASONING_EFFORT: "high" as const,
     MAX_PARALLEL: 7,
     MAX_STAGES: 12,
@@ -130,6 +130,33 @@ test("configuration round-trips non-default values", () => {
   };
 
   assert.deepEqual(parseEnvConfig(serializeEnvConfig(config)), config);
+});
+
+test("configuration keeps a distinct reasoning effort for every tier", () => {
+  const config = parseEnvConfig(
+    [
+      "LIGHT_MODEL=pi:openai-codex/gpt-5.6-luna:high",
+      "STANDARD_MODEL=pi:openai-codex/gpt-5.6-luna:xhigh",
+      "DEEP_MODEL=pi:openai-codex/gpt-5.6-sol:medium",
+      "",
+    ].join("\n"),
+  );
+
+  assert.deepEqual(resolveWorkerModel(config, "light"), {
+    agent: "pi",
+    model: "openai-codex/gpt-5.6-luna",
+    reasoning: "high",
+  });
+  assert.deepEqual(resolveWorkerModel(config, "standard"), {
+    agent: "pi",
+    model: "openai-codex/gpt-5.6-luna",
+    reasoning: "xhigh",
+  });
+  assert.deepEqual(resolveWorkerModel(config, "deep"), {
+    agent: "pi",
+    model: "openai-codex/gpt-5.6-sol",
+    reasoning: "medium",
+  });
 });
 
 test("isolation defaults to local and supports an explicit opt-out", () => {
@@ -440,10 +467,10 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
     /# Agent and model routing/u,
   );
   assert.equal(config.BASE_BRANCH, "trunk");
-  assert.equal(config.DEFAULT_MODEL, "codex:gpt-test");
-  assert.equal(config.LIGHT_MODEL, "codex:gpt-test");
-  assert.equal(config.STANDARD_MODEL, "codex:gpt-test");
-  assert.equal(config.DEEP_MODEL, "codex:gpt-test");
+  assert.equal(config.DEFAULT_MODEL, "codex:gpt-test:high");
+  assert.equal(config.LIGHT_MODEL, "codex:gpt-test:high");
+  assert.equal(config.STANDARD_MODEL, "codex:gpt-test:high");
+  assert.equal(config.DEEP_MODEL, "codex:gpt-test:high");
   assert.equal(resolveWorkerModel(config, "light").reasoning, "high");
   assert.equal(config.LOG_RETENTION_DAYS, 7);
   assert.equal(config.VALIDATE_COMMAND, "pnpm validate:all");

@@ -10,6 +10,7 @@ import {
   defaultMergePrompt,
   defaultReviewPrompt,
   defaultTaskPrompt,
+  legacyDefaultTaskPrompts,
 } from "../src/prompts.js";
 
 test("repeated init localizes stock templates and adds missing config settings", async () => {
@@ -48,6 +49,24 @@ test("repeated init localizes stock templates and adds missing config settings",
   assert.equal(parseEnvConfig(configSource).VALIDATE_COMMAND, "pnpm check");
 });
 
+test("repeated init upgrades a superseded stock task prompt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-init-stock-upgrade-"));
+  const lfiRoot = join(root, ".lfi");
+  await mkdir(join(lfiRoot, "prompts"), { recursive: true });
+  await writeFile(join(lfiRoot, "config.env"), "BASE_BRANCH=main\n");
+  await writeFile(
+    join(lfiRoot, "prompts", "task.md"),
+    legacyDefaultTaskPrompts[0] ?? "",
+  );
+
+  await initializeProject({ cwd: root, language: "ru", yes: true });
+
+  assert.equal(
+    await readFile(join(lfiRoot, "prompts", "task.md"), "utf8"),
+    defaultTaskPrompt("ru"),
+  );
+});
+
 test("repeated init keeps a custom legacy task prompt", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-init-custom-legacy-"));
   const lfiRoot = join(root, ".lfi");
@@ -80,8 +99,8 @@ test("repeated init applies explicit configuration options", async () => {
   });
 
   const config = parseEnvConfig(await readFile(join(lfiRoot, "config.env"), "utf8"));
-  assert.equal(config.DEFAULT_MODEL, "codex:gpt-test");
-  assert.equal(config.LIGHT_MODEL, "codex:gpt-test");
+  assert.equal(config.DEFAULT_MODEL, "codex:gpt-test:high");
+  assert.equal(config.LIGHT_MODEL, "codex:gpt-test:high");
   assert.equal(config.REASONING_EFFORT, "high");
   assert.equal(config.LOG_RETENTION_DAYS, 9);
   assert.equal(config.MAX_PARALLEL, 2);

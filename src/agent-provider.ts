@@ -24,6 +24,11 @@ import {
 export type AgentProvider = "codex" | "pi";
 export const defaultAgentProvider: AgentProvider = "codex";
 
+// How long an agent may stay quiet after its completion block before LFI ends
+// the process itself. Long enough for trailing events, short enough that a
+// stuck agent costs seconds instead of the whole idle timeout.
+const completionGraceMs = 20_000;
+
 const agentProviders: ReadonlySet<string> = new Set([defaultAgentProvider, "pi"]);
 
 export const isAgentProvider = (value: string): value is AgentProvider =>
@@ -201,96 +206,126 @@ const numberField = (record: Record<string, unknown>, field: string): number | u
   return typeof value === "number" ? value : undefined;
 };
 
-const piMessageText = (content: unknown): string => {
-  if (!Array.isArray(content)) return "";
-  return content.flatMap((part) => {
-    if (
-      typeof part === "object" &&
-      part !== null &&
-      "type" in part &&
-      part.type === "text" &&
-      "text" in part &&
-      typeof part.text === "string"
-    ) {
-      return [part.text];
-    }
-    return [];
-  }).join("\n");
+interface AgentEventSummary {
+  text: string;
+  showInTerminal: boolean;
+  agentMessage: boolean;
+  error: boolean;
+}
+
+const progressLine = (text: string, showInTerminal = true): AgentEventSummary => ({
+  text,
+  showInTerminal,
+  agentMessage: false,
+  error: false,
+});
+
+// Reasoning arrives as free-form prose; the terminal only carries its headline
+// so a long chain of thought cannot bury the agent messages around it.
+const reasoningHeadline = (reasoning: string): string => {
+  const headline = reasoning
+    .split("\n")
+    .map((line) => line.replaceAll("*", "").replaceAll("#", "").trim())
+    .find(Boolean) ?? "";
+  return headline.length > 160 ? `${headline.slice(0, 159)}…` : headline;
 };
 
-const eventSummary = (
+const piContentParts = (
+  content: unknown,
+  type: string,
+  field: string,
+): readonly string[] => {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((part) => {
+    const record = jsonRecord(part);
+    if (!record || record.type !== type) return [];
+    const value = stringField(record, field);
+    return value ? [value] : [];
+  });
+};
+
+const piEventSummaries = (
+  event: Record<string, unknown>,
+  type: string | undefined,
+): readonly AgentEventSummary[] => {
+  if (type === "tool_execution_start") {
+    const args = jsonRecord(event.args);
+    const command = args ? stringField(args, "command") : undefined;
+    // File tools fire dozens of times per step and say nothing a reader can
+    // act on, so only shell commands reach the terminal; the log keeps all.
+    return [progressLine(
+      `$ ${command ?? stringField(event, "toolName") ?? "tool"}`,
+      Boolean(command),
+    )];
+  }
+  const message = jsonRecord(event.message);
+  if (type !== "message_end" || !message) return [];
+  if (stringField(message, "role") !== "assistant") return [];
+  const summaries = piContentParts(message.content, "thinking", "thinking")
+    .map(reasoningHeadline)
+    .filter(Boolean)
+    .map((headline) => progressLine(headline));
+  const errorMessage = stringField(message, "errorMessage");
+  const text = [
+    piContentParts(message.content, "text", "text").join("\n"),
+    errorMessage ?? "",
+  ].filter(Boolean).join("\n");
+  if (!text) return summaries;
+  return [
+    ...summaries,
+    {
+      text,
+      showInTerminal: !errorMessage,
+      agentMessage: true,
+      error: Boolean(errorMessage),
+    },
+  ];
+};
+
+const codexEventSummaries = (
+  event: Record<string, unknown>,
+  type: string | undefined,
+): readonly AgentEventSummary[] => {
+  const item = jsonRecord(event.item);
+  if (type === "item.completed" && item && stringField(item, "type") === "agent_message") {
+    return [{
+      text: stringField(item, "text") ?? "",
+      showInTerminal: true,
+      agentMessage: true,
+      error: false,
+    }];
+  }
+  if (type === "item.completed" && item && stringField(item, "type") === "reasoning") {
+    const headline = reasoningHeadline(stringField(item, "text") ?? "");
+    return headline ? [progressLine(headline)] : [];
+  }
+  if (type === "item.started" && item && stringField(item, "type") === "command_execution") {
+    return [progressLine(`$ ${stringField(item, "command") ?? "command"}`)];
+  }
+  if (type === "turn.completed") {
+    const usage = jsonRecord(event.usage);
+    return [progressLine(
+      `turn.completed input=${usage ? numberField(usage, "input_tokens") ?? "?" : "?"} output=${usage ? numberField(usage, "output_tokens") ?? "?" : "?"}`,
+      false,
+    )];
+  }
+  return [];
+};
+
+const eventSummaries = (
   agent: AgentProvider,
   line: string,
-):
-  | {
-      text: string;
-      showInTerminal: boolean;
-      agentMessage: boolean;
-      error: boolean;
-    }
-  | undefined => {
+): readonly AgentEventSummary[] => {
   try {
     const event = jsonRecord(JSON.parse(line));
-    if (!event) return undefined;
+    if (!event) return [];
     const type = stringField(event, "type");
-    if (agent === "pi") {
-      if (type === "tool_execution_start") {
-        const args = jsonRecord(event.args);
-        const command = args ? stringField(args, "command") : undefined;
-        return {
-          text: `$ ${command ?? stringField(event, "toolName") ?? "tool"}`,
-          showInTerminal: false,
-          agentMessage: false,
-          error: false,
-        };
-      }
-      const message = jsonRecord(event.message);
-      if (type === "message_end" && message && stringField(message, "role") === "assistant") {
-        const errorMessage = stringField(message, "errorMessage");
-        const text = [
-          piMessageText(message.content),
-          errorMessage ?? "",
-        ].filter(Boolean).join("\n");
-        if (!text) return undefined;
-        return {
-          text,
-          showInTerminal: !errorMessage,
-          agentMessage: true,
-          error: Boolean(errorMessage),
-        };
-      }
-      return undefined;
-    }
-    const item = jsonRecord(event.item);
-    if (type === "item.completed" && item && stringField(item, "type") === "agent_message") {
-      return {
-        text: stringField(item, "text") ?? "",
-        showInTerminal: true,
-        agentMessage: true,
-        error: false,
-      };
-    }
-    if (type === "item.started" && item && stringField(item, "type") === "command_execution") {
-      return {
-        text: `$ ${stringField(item, "command") ?? "command"}`,
-        showInTerminal: false,
-        agentMessage: false,
-        error: false,
-      };
-    }
-    if (type === "turn.completed") {
-      const usage = jsonRecord(event.usage);
-      return {
-        text: `turn.completed input=${usage ? numberField(usage, "input_tokens") ?? "?" : "?"} output=${usage ? numberField(usage, "output_tokens") ?? "?" : "?"}`,
-        showInTerminal: false,
-        agentMessage: false,
-        error: false,
-      };
-    }
+    return agent === "pi"
+      ? piEventSummaries(event, type)
+      : codexEventSummaries(event, type);
   } catch {
-    return undefined;
+    return [];
   }
-  return undefined;
 };
 
 export const runAgent = async (options: {
@@ -308,6 +343,7 @@ export const runAgent = async (options: {
   language: Language;
   session?: IsolationSession;
   writableDirectories?: readonly string[];
+  completionGraceMs?: number;
 }): Promise<AgentRunResult> => {
   if (
     !options.prompt.includes(completionBlockOpen) ||
@@ -336,18 +372,36 @@ export const runAgent = async (options: {
     const redacted = redactSensitiveText(content);
     logWrites = logWrites.then(() => appendFile(compactPath, redacted));
   };
+  // Some agents keep their process alive after their final answer, which would
+  // otherwise cost the run an idle timeout and discard the finished work. Once
+  // the completion block has arrived, a quiet grace period ends the process.
+  const completionGrace = new AbortController();
+  let completionTimer: NodeJS.Timeout | undefined;
+  let closedAfterCompletion = false;
+  const armCompletionGrace = (): void => {
+    if (completionTimer) clearTimeout(completionTimer);
+    completionTimer = setTimeout(() => {
+      closedAfterCompletion = true;
+      completionGrace.abort();
+    }, options.completionGraceMs ?? completionGraceMs);
+    completionTimer.unref();
+  };
   const recordEvent = (line: string): void => {
-    const summary = eventSummary(options.agent, line);
-    if (!summary) return;
-    if (summary.agentMessage) agentMessages.push(summary.text);
-    if (summary.error) agentErrors.push(summary.text);
-    const text = redactSensitiveText(summary.text);
-    if (summary.showInTerminal) {
-      const message = `[${options.prefix}] ${text}`;
-      if (options.log.output) options.log.output.log(message);
-      else console.log(message);
+    for (const summary of eventSummaries(options.agent, line)) {
+      if (summary.agentMessage) agentMessages.push(summary.text);
+      if (summary.error) agentErrors.push(summary.text);
+      const text = redactSensitiveText(summary.text);
+      if (summary.showInTerminal) {
+        options.log.onAgentOutput?.();
+        const message = `[${options.prefix}] ${text}`;
+        if (options.log.output) options.log.output.log(message);
+        else console.log(message);
+      }
+      appendDetail(`${text}\n`);
+      if (summary.agentMessage && extractCompletionResult(summary.text).ok) {
+        armCompletionGrace();
+      }
     }
-    appendDetail(`${text}\n`);
   };
   let ownedSession: IsolationSession | undefined;
   try {
@@ -374,12 +428,18 @@ export const runAgent = async (options: {
           ? { writableDirectories: options.writableDirectories }
           : {}),
         idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
+        // The event stream is consumed line by line; a run's worth of streamed
+        // JSON deltas must not also be held in memory.
+        captureStdout: false,
+        signal: completionGrace.signal,
         onStdoutLine: recordEvent,
         onStderrLine: (line) => appendDetail(`${line}\n`),
         environment: process.env,
       });
     const parsed = extractCompletionResult(agentMessages.join("\n"));
     const status = parsed.ok ? parsed.status : undefined;
+    // Ending a lingering agent is a normal finish, not a failed run.
+    const exitCode = closedAfterCompletion && parsed.ok ? 0 : result.exitCode;
     const parsedSummary = parsed.ok
       ? parsed.summary
       : localize(
@@ -400,10 +460,10 @@ export const runAgent = async (options: {
         .join("\n");
     const summary = redactSensitiveText(detail);
     appendDetail(
-      `\nexit=${result.exitCode}\nstatus=${status ?? "missing"}\n${summary}\n`,
+      `\nexit=${exitCode}${closedAfterCompletion ? " (closed after completion)" : ""}\nstatus=${status ?? "missing"}\n${summary}\n`,
     );
     return {
-      exitCode: result.exitCode,
+      exitCode,
       status,
       summary,
       unavailableModel: isUnavailableModelError(
@@ -412,6 +472,7 @@ export const runAgent = async (options: {
       ),
     };
   } finally {
+    if (completionTimer) clearTimeout(completionTimer);
     try {
       await logWrites;
     } finally {

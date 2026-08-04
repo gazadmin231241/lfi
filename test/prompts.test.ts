@@ -10,7 +10,6 @@ import {
   defaultRemediationPrompt,
   defaultReReviewPrompt,
   defaultReviewPrompt,
-  describePromptTemplateSource,
   defaultTaskPrompt,
   loadPromptTemplates,
   mergerPrompt,
@@ -38,7 +37,7 @@ test("English worker prompt contains implementation, safety, and completion cons
     "en",
   );
 
-  assert.match(prompt, /Use \$implement and TDD where appropriate/u);
+  assert.match(prompt, /Use \$tdd where appropriate/u);
   assert.match(prompt, /focused tests and typechecking/u);
   assert.match(prompt, /Never deploy, use production SSH/u);
   assert.match(prompt, /force-push/u);
@@ -64,7 +63,7 @@ test("Russian worker prompt contains implementation, safety, and completion cons
 
   assert.match(prompt, /# Задача/u);
   assert.match(prompt, /# Ограничения LFI/u);
-  assert.match(prompt, /Используй \$implement и TDD, где это уместно/u);
+  assert.match(prompt, /Используй \$tdd, где это уместно/u);
   assert.match(prompt, /узкие тесты и typecheck/u);
   assert.match(prompt, /Никогда не выполняй deploy, не используй production SSH/u);
   assert.match(prompt, /force-push/u);
@@ -127,8 +126,8 @@ test("built-in templates name skills through placeholders", () => {
   const russian = defaultTaskPrompt("ru");
 
   for (const prompt of [english, russian]) {
-    assert.match(prompt, /\{\{SKILL:implement\}\}/u);
-    assert.doesNotMatch(prompt, /\$implement/u);
+    assert.match(prompt, /\{\{SKILL:tdd\}\}/u);
+    assert.doesNotMatch(prompt, /\$tdd/u);
   }
 });
 
@@ -260,14 +259,13 @@ test("phase templates resolve custom files, legacy task fallback, and built-in d
   assert.equal(templates.task.content, "Legacy task {{TASK_ID}}.\n");
   assert.equal(templates.task.source.kind, "legacy");
   assert.equal(templates.review.content, "Custom review {{BASE_REF}}.\n");
-  assert.equal(templates.review.source.kind, "custom");
+  assert.deepEqual(templates.review.source, {
+    kind: "custom",
+    path: join(".lfi", "prompts", "review.md"),
+  });
   assert.equal(templates.remediation.source.kind, "built-in");
   assert.equal(templates["re-review"].source.kind, "built-in");
   assert.equal(templates.merge.source.kind, "built-in");
-  assert.match(
-    describePromptTemplateSource("review", templates.review, "en"),
-    /review.*custom.*\.lfi\/prompts\/review\.md/iu,
-  );
 });
 
 test("a phase file takes precedence over the legacy task template", async () => {

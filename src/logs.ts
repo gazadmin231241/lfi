@@ -16,6 +16,9 @@ export interface RunLogContext {
   startedAt: string;
   iteration: number;
   output?: RunOutput;
+  // Called before an agent prints its first terminal line, so the run can
+  // close the iteration header once the streamed output takes over.
+  onAgentOutput?: () => void;
 }
 
 export interface RunOutput {

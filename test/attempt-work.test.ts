@@ -113,8 +113,6 @@ ${codexCompletionEvent("completed", "implemented task")}
     assert.equal(findingsPath.startsWith(`${worktree}/`), false);
     assert.match(await readFile(join(logs, "LFI-1.log"), "utf8"), /implemented task/u);
     assert.match(await readFile(join(logs, "LFI-1-review.log"), "utf8"), /implemented task/u);
-    assert.match(runLog.join("\n"), /Prompt template \[task\]: built-in default/u);
-    assert.match(runLog.join("\n"), /Prompt template \[review\]: custom file \.lfi\/prompts\/review\.md/u);
   } finally {
     process.env.PATH = originalPath;
   }

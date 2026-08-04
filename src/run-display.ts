@@ -26,6 +26,12 @@ export const printIteration = (
   output.log(section(majorRule, title, `  ${runnable}: ${ids.join(", ")}`));
 };
 
+// Closes the iteration header once streamed agent output starts, so the
+// task blocks above stay readable as a block instead of blending into logs.
+export const printIterationHeaderClosed = (output: RunOutput): void => {
+  output.log(`\n${majorRule}\n\n`);
+};
+
 export const printWorkStarted = (
   output: RunOutput,
   language: Language,
@@ -36,9 +42,9 @@ export const printWorkStarted = (
   const modelName = target.model
     ? `${target.agent}:${target.model}`
     : localize(language, "Codex default", "по умолчанию Codex");
-  output.log(
-    `\n  ${id}\n    ${localize(language, "Work started", "Работа началась")}\n    ${modelName} · ${reasoning}`,
-  );
+  // The line itself means the task started; a separate caption would repeat
+  // that once per task without saying anything new.
+  output.log(`  ${id} · ${modelName} · ${reasoning}`);
 };
 
 export const printWorkFinished = (
