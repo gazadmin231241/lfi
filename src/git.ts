@@ -1,4 +1,4 @@
-import { access, mkdir, rm } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
 import { withGithubRetry } from "./github-resilience.js";
@@ -58,6 +58,13 @@ export const gitCommonDirectory = async (cwd: string): Promise<string> => {
   return isAbsolute(value) ? value : resolve(cwd, value);
 };
 
+/**
+ * Sits next to the worktree, not inside it, so it never dirties `git status`
+ * and survives until the worktree itself is removed.
+ */
+const worktreeSetupMarker = (worktreePath: string): string =>
+  `${worktreePath}.setup-complete`;
+
 export const ensureTaskWorktree = async (options: {
   repoRoot: string;
   worktreesRoot: string;
@@ -70,7 +77,30 @@ export const ensureTaskWorktree = async (options: {
   const key = options.taskKey;
   const path = join(options.worktreesRoot, key);
   const branch = `lfi/${key}`;
-  if (await exists(path)) return { path, branch, created: false };
+  const runSetup = async () => {
+    if (!options.setupCommand) return;
+    const setup = await runProjectCommand({
+      command: options.setupCommand,
+      cwd: path,
+      gitDirectory: options.gitDirectory,
+      isolationProvider: options.isolationProvider,
+    });
+    if (setup.exitCode !== 0) {
+      throw new Error(
+        `Worktree setup failed:\n${redactSensitiveText(setup.stderr || setup.stdout)}`,
+      );
+    }
+    await writeFile(worktreeSetupMarker(path), "");
+  };
+  if (await exists(path)) {
+    // A worktree without the marker was left behind by a failed setup (or the
+    // setup command was added after the worktree was created): retry setup
+    // instead of silently reusing a half-prepared environment.
+    if (options.setupCommand && !(await exists(worktreeSetupMarker(path)))) {
+      await runSetup();
+    }
+    return { path, branch, created: false };
+  }
   await mkdir(options.worktreesRoot, { recursive: true });
   const branchExists =
     (
@@ -94,19 +124,7 @@ export const ensureTaskWorktree = async (options: {
           options.baseRef,
         ],
   );
-  if (options.setupCommand) {
-    const setup = await runProjectCommand({
-      command: options.setupCommand,
-      cwd: path,
-      gitDirectory: options.gitDirectory,
-      isolationProvider: options.isolationProvider,
-    });
-    if (setup.exitCode !== 0) {
-      throw new Error(
-        `Worktree setup failed:\n${redactSensitiveText(setup.stderr || setup.stdout)}`,
-      );
-    }
-  }
+  await runSetup();
   return { path, branch, created: true };
 };
 
@@ -283,4 +301,5 @@ export const removeWorktreeAndBranch = async (options: {
   await git(options.repoRoot, ["worktree", "remove", "--force", options.path]);
   await gitResult(options.repoRoot, ["branch", "-D", options.branch]);
   await rm(options.path, { recursive: true, force: true });
+  await rm(worktreeSetupMarker(options.path), { force: true });
 };

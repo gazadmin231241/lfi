@@ -29,8 +29,40 @@ ${completionBlockClose}
 
 export const defaultTaskPrompt = (language: "en" | "ru"): string =>
   language === "ru"
-    ? `Приступай к реализации: {{TASK_ID}}\n\nИспользуй ${skillPlaceholder("implement")}.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n`
-    : `Start implementing: {{TASK_ID}}\n\nUse ${skillPlaceholder("implement")}.\n\nAll local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n`;
+    ? `Приступай к реализации: {{TASK_ID}}
+
+Реализуй задачу. Используй ${skillPlaceholder("tdd")} где возможно.
+
+Поправки к скиллам для автономного запуска (пользователя в сессии нет, вопросы задавать некому):
+- Швы (seams) для тестов определи самостоятельно из текста задачи и спеки и считай их согласованными; предпочитай публичные интерфейсы критических путей.
+- Не проводи code review и не вызывай skill code-review: независимое ревью — отдельный этап пайплайна после завершения задачи.
+
+Регулярно запускай typecheck и точечные тестовые файлы; полный прогон тестов — один раз в конце.
+
+Все необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.
+`
+    : `Start implementing: {{TASK_ID}}
+
+Implement the task. Use ${skillPlaceholder("tdd")} where possible.
+
+Skill adjustments for this autonomous run (no user is present in the session, so there is no one to ask):
+- Choose the test seams yourself from the task text and spec and treat them as agreed; prefer public interfaces on critical paths.
+- Do not perform a code review and do not invoke the code-review skill: an independent review runs as a separate pipeline phase after the task completes.
+
+Run typechecking and focused test files regularly; run the full test suite once at the end.
+
+All local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.
+`;
+
+/**
+ * Superseded stock task prompts. Repeated init must recognise them as
+ * unmodified defaults so it can upgrade them to the current text instead of
+ * treating them as user customisations.
+ */
+export const legacyDefaultTaskPrompts: readonly string[] = [
+  "Приступай к реализации: {{TASK_ID}}\n\nИспользуй {{SKILL:implement}}.\n\nВсе необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.\n",
+  "Start implementing: {{TASK_ID}}\n\nUse {{SKILL:implement}}.\n\nAll local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.\n",
+];
 
 export type PromptPhase =
   | "task"
@@ -196,24 +228,6 @@ export const loadPromptTemplates = async (
     resolvePhase("merge"),
   ]);
   return { task, review, remediation, "re-review": reReview, merge };
-};
-
-export const describePromptTemplateSource = (
-  phase: PromptPhase,
-  template: ResolvedPromptTemplate,
-  language: Language,
-): string => {
-  if (template.source.kind === "built-in") {
-    return language === "ru"
-      ? `Шаблон prompt [${phase}]: встроенный по умолчанию.`
-      : `Prompt template [${phase}]: built-in default.`;
-  }
-  const source = template.source.kind === "legacy"
-    ? language === "ru" ? "устаревший пользовательский файл" : "legacy custom file"
-    : language === "ru" ? "пользовательский файл" : "custom file";
-  return language === "ru"
-    ? `Шаблон prompt [${phase}]: ${source} ${template.source.path}.`
-    : `Prompt template [${phase}]: ${source} ${template.source.path}.`;
 };
 
 const directSkillReference = /\$([A-Za-z0-9][A-Za-z0-9-]*)/gu;
@@ -421,8 +435,8 @@ const workerConstraintCopy: readonly LocalizedConstraint[] = [
     ru: "Никогда не выполняй deploy, не используй production SSH, не изменяй production-данные, не удаляй тома баз данных, не раскрывай секреты и не делай force-push.",
   },
   {
-    en: `Use ${skillPlaceholder("implement")} and TDD where appropriate. During implementation, use focused tests and typechecking as feedback.`,
-    ru: `Используй ${skillPlaceholder("implement")} и TDD, где это уместно. Во время реализации используй узкие тесты и typecheck как быструю обратную связь.`,
+    en: `Use ${skillPlaceholder("tdd")} where appropriate. During implementation, use focused tests and typechecking as feedback.`,
+    ru: `Используй ${skillPlaceholder("tdd")}, где это уместно. Во время реализации используй узкие тесты и typecheck как быструю обратную связь.`,
   },
   {
     en: "Do not include secrets, credentials, tokens, prompts containing them, or process environments in logs.",

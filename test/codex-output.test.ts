@@ -218,7 +218,9 @@ test("Pi provider streams event details and reports stdout API errors in its sum
     pi,
     `#!/bin/sh
 cat >/dev/null
+printf '%s\\n' '{"type":"tool_execution_start","toolName":"read","args":{"path":"src/pi.ts"}}'
 printf '%s\\n' '{"type":"tool_execution_start","toolName":"bash","args":{"command":"pnpm test"}}'
+printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"**Планирую запуск тестов**\\n\\nДетали рассуждения."},{"type":"toolCall","name":"bash"}]}}'
 printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Проверяю Pi."}]}}'
 printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"Authentication failed: invalid API key","content":[]}}'
 exit 1
@@ -255,11 +257,133 @@ exit 1
     process.env.PATH = originalPath;
   }
 
-  assert.deepEqual(terminal, ["[lfi-2] Проверяю Pi."]);
+  assert.deepEqual(terminal, [
+    "[lfi-2] $ pnpm test",
+    "[lfi-2] Планирую запуск тестов",
+    "[lfi-2] Проверяю Pi.",
+  ]);
   const taskLog = await readFile(join(logs, "LFI-2.log"), "utf8");
   assert.match(taskLog, /\$ pnpm test/u);
+  assert.match(taskLog, /\$ read/u);
   assert.match(taskLog, /Проверяю Pi\./u);
   assert.match(taskLog, /Authentication failed: invalid API key/u);
+});
+
+test("an agent that lingers after its completion block still reports success", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-pi-lingering-"));
+  const bin = join(root, "bin");
+  const logs = join(root, "logs");
+  await mkdir(bin, { recursive: true });
+  const pi = join(bin, "pi");
+  await writeFile(
+    pi,
+    `#!/bin/sh
+cat >/dev/null
+printf '%s\\n' '${JSON.stringify({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{
+          type: "text",
+          text: '<lfi:completion>\n{"status":"completed","summary":"Готово."}\n</lfi:completion>',
+        }],
+      },
+    })}'
+# Outlive the completion the way a stuck agent process does.
+sleep 120
+`,
+  );
+  await chmod(pi, 0o755);
+
+  const originalPath = process.env.PATH;
+  const originalLog = console.log;
+  process.env.PATH = `${bin}:${originalPath ?? ""}`;
+  console.log = () => undefined;
+  try {
+    const result = await runAgent({
+      agent: "pi",
+      cwd: root,
+      prompt: completionInstruction,
+      model: "openai/gpt-test",
+      reasoning: "medium",
+      gitDirectory: root,
+      log: { directory: logs, startedAt: "2026-07-30T13:44:12.749Z", iteration: 1 },
+      logName: "LFI-4",
+      idleTimeoutMinutes: 60,
+      isolationProvider: "none",
+      prefix: "lfi-4",
+      language: "en",
+      completionGraceMs: 50,
+    });
+    assert.equal(result.status, "completed");
+    assert.equal(result.exitCode, 0);
+  } finally {
+    console.log = originalLog;
+    process.env.PATH = originalPath;
+  }
+
+  const taskLog = await readFile(join(logs, "LFI-4.log"), "utf8");
+  assert.match(taskLog, /exit=0 \(closed after completion\)/u);
+  assert.match(taskLog, /status=completed/u);
+});
+
+test("agent output keeps multi-byte characters intact across chunk boundaries", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-pi-encoding-"));
+  const bin = join(root, "bin");
+  const logs = join(root, "logs");
+  await mkdir(bin, { recursive: true });
+  // Long enough that the text is delivered in several stdout chunks, each of
+  // which can end mid-character.
+  const text = "Проверяю кодировку. ".repeat(6000);
+  const pi = join(bin, "pi");
+  await writeFile(
+    pi,
+    `#!/bin/sh
+cat >/dev/null
+cat <<'EVENT'
+${JSON.stringify({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{
+          type: "text",
+          text: `${text}<lfi:completion>\n{"status":"completed","summary":"Готово."}\n</lfi:completion>`,
+        }],
+      },
+    })}
+EVENT
+`,
+  );
+  await chmod(pi, 0o755);
+
+  const originalPath = process.env.PATH;
+  const originalLog = console.log;
+  process.env.PATH = `${bin}:${originalPath ?? ""}`;
+  console.log = () => undefined;
+  try {
+    const result = await runAgent({
+      agent: "pi",
+      cwd: root,
+      prompt: completionInstruction,
+      model: "openai/gpt-test",
+      reasoning: "medium",
+      gitDirectory: root,
+      log: { directory: logs, startedAt: "2026-07-30T13:44:12.749Z", iteration: 1 },
+      logName: "LFI-3",
+      idleTimeoutMinutes: 1,
+      isolationProvider: "none",
+      prefix: "lfi-3",
+      language: "en",
+    });
+    assert.equal(result.status, "completed");
+  } finally {
+    console.log = originalLog;
+    process.env.PATH = originalPath;
+  }
+
+  const taskLog = await readFile(join(logs, "LFI-3.log"), "utf8");
+  assert.equal(taskLog.includes("�"), false);
+  assert.equal(taskLog.includes(text), true);
 });
 
 const waitForFileContent = async (
@@ -284,6 +408,7 @@ test("runAgent streams readable task details to a flat task log", async () => {
   await writeFile(
     codex,
     `#!/bin/sh
+printf '%s\\n' '{"type":"item.completed","item":{"type":"reasoning","text":"**Читаю формат логов**\\n\\nПодробности рассуждения."}}'
 printf '%s\\n' '{"type":"item.started","item":{"type":"command_execution","command":"sed -n '\\''1,40p'\\'' src/codex.ts"}}'
 printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Проверяю формат логов."}}'
 while [ ! -f "${release}" ]; do read -r _ < /dev/null || true; done
@@ -338,6 +463,8 @@ printf '%s\\n' 'failed to refresh available models' >&2
   }
 
   assert.deepEqual(terminal, [
+    "[lfi-2] Читаю формат логов",
+    "[lfi-2] $ sed -n '1,40p' src/codex.ts",
     "[lfi-2] Проверяю формат логов.",
     `[lfi-2] Готово.
 <lfi:completion>

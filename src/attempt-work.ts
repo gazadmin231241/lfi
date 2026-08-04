@@ -23,14 +23,11 @@ import { localize, type Language } from "./i18n.js";
 import type { RunLogContext } from "./logs.js";
 import { appendRunLog, redactSensitiveText } from "./logs.js";
 import {
-  describePromptTemplateSource,
   reReviewPrompt,
   remediationPrompt,
   renderWorkerPrompt,
   reviewPrompt,
-  type PromptPhase,
   type PromptTemplates,
-  type ResolvedPromptTemplate,
 } from "./prompts.js";
 import { printOriginRefresh } from "./run-display.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
@@ -159,17 +156,6 @@ export const attemptWork = async (options: {
     options.config,
     executionTier,
   );
-  const phaseTemplate = (phase: PromptPhase): ResolvedPromptTemplate =>
-    options.promptTemplates?.[phase] ?? {
-      content: phase === "task" ? options.taskTemplate : "",
-      source: { kind: "built-in" },
-    };
-  const logTemplateSource = (phase: PromptPhase): void => {
-    const template = phaseTemplate(phase);
-    options.log.output?.log(
-      describePromptTemplateSource(phase, template, options.language),
-    );
-  };
   try {
     const worktree = await ensureTaskWorktree({
       repoRoot: options.cwd,
@@ -274,7 +260,6 @@ export const attemptWork = async (options: {
             }
           }
         }
-        logTemplateSource("task");
         const taskPromptTemplate = options.promptTemplates?.task.content
           ?? options.taskTemplate;
         const agent = await runAgent({
@@ -293,7 +278,7 @@ export const attemptWork = async (options: {
           logName,
           idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
           isolationProvider: options.config.ISOLATION_PROVIDER,
-          prefix: key,
+          prefix: `${key}:task`,
           language: options.language,
           session,
         });
@@ -354,7 +339,6 @@ export const attemptWork = async (options: {
           ));
         }
         await rm(findingsPath, { force: true });
-        logTemplateSource("review");
         const review = await runAgent({
           agent: reviewer.agent,
           cwd: worktree.path,
@@ -448,7 +432,6 @@ export const attemptWork = async (options: {
               worktree.path,
               ["rev-parse", "HEAD"],
             )).stdout.trim();
-            logTemplateSource("remediation");
             const remediation = await runAgent({
               agent: target.agent,
               cwd: worktree.path,
@@ -514,7 +497,6 @@ export const attemptWork = async (options: {
               `${key}-re-review-findings.json`,
             );
             await rm(reReviewFindingsPath, { force: true });
-            logTemplateSource("re-review");
             const reReview = await runAgent({
               agent: reviewer.agent,
               cwd: worktree.path,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -92,6 +92,47 @@ test("a diverged branch keeps its unpushed commits", async () => {
     reason: "diverged",
   });
   assert.equal(await gitIn(clone, "rev-parse", "HEAD"), head);
+});
+
+test("a failed worktree setup is retried when the worktree is reused", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-worktree-setup-retry-"));
+  await gitIn(root, "init", "-b", "main");
+  await gitIn(root, "config", "user.name", "LFI Test");
+  await gitIn(root, "config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "tracked.txt"), "base\n");
+  await gitIn(root, "add", "tracked.txt");
+  await gitIn(root, "commit", "-m", "test: initialize repository");
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const worktreeOptions = {
+    repoRoot: root,
+    worktreesRoot,
+    taskKey: "retry",
+    baseRef: "main",
+    gitDirectory: join(root, ".git"),
+    isolationProvider: "none",
+  } as const;
+
+  await assert.rejects(
+    ensureTaskWorktree({ ...worktreeOptions, setupCommand: "exit 1" }),
+    /Worktree setup failed/,
+  );
+
+  const retried = await ensureTaskWorktree({
+    ...worktreeOptions,
+    setupCommand: "printf ok > setup-ran.txt",
+  });
+  assert.equal(retried.created, false);
+  assert.equal(
+    await readFile(join(worktreesRoot, "retry", "setup-ran.txt"), "utf8"),
+    "ok",
+  );
+
+  // The marker written by the successful retry prevents further setup runs.
+  const reused = await ensureTaskWorktree({
+    ...worktreeOptions,
+    setupCommand: "exit 1",
+  });
+  assert.equal(reused.created, false);
 });
 
 test("worktree setup failures redact sensitive output", async () => {

@@ -193,7 +193,7 @@ export const parseEnvConfig = (source: string): LfiConfig => {
           ? ""
           : value.slice(reasoningSeparator + 1);
         if (isReasoningEffort(possibleReasoning)) {
-          result[key] = value.slice(0, reasoningSeparator);
+          result[key] = value;
           if (key === "MERGER_MODEL") serializedMergerReasoning = possibleReasoning;
           else if (key === "REVIEWER_MODEL") serializedReviewerReasoning = possibleReasoning;
           else serializedWorkerReasoning = possibleReasoning;

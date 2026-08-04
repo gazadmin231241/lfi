@@ -14,6 +14,8 @@ export interface IsolatedCommand {
   onStderrLine: (line: string) => void;
   environment: NodeJS.ProcessEnv;
   writableDirectories?: readonly string[];
+  captureStdout?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface IsolationSessionOptions {
@@ -54,6 +56,10 @@ const runPrepared = async (command: IsolatedCommand, cwd: string): Promise<Comma
     onStdoutLine: command.onStdoutLine,
     onStderrLine: command.onStderrLine,
     env: command.environment,
+    ...(command.captureStdout === undefined
+      ? {}
+      : { captureStdout: command.captureStdout }),
+    ...(command.signal ? { signal: command.signal } : {}),
   });
 
 const inheritedEnvironmentNames = new Set([

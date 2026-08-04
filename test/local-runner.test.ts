@@ -290,9 +290,14 @@ exit 97
   const output = terminal.join("\n");
   assert.match(output, /={20,}\nIteration 1\n={20,}/u);
   assert.match(output, /  Runnable: LFI-1/u);
-  assert.match(output, /    Work started/u);
-  assert.match(output, /    Codex default · medium/u);
-  assert.match(output, /\[lfi-1\] Implementation is ready\./u);
+  assert.match(output, /  LFI-1 · Codex default · medium/u);
+  assert.match(output, /\[lfi-1:task\] Implementation is ready\./u);
+  // The iteration header is closed once, right before the streamed output.
+  assert.match(
+    output,
+    /  LFI-1 · Codex default · medium\n\n={20,}\n\n\n\[lfi-1:task\] /u,
+  );
+  assert.equal(output.match(/^={20,}$/gmu)?.length, 3);
   assert.match(output, /-{20,}\nIntegration\n-{20,}/u);
   assert.match(output, /    Merging branch: lfi\/lfi-1 \(LFI-1\)/u);
   assert.match(output, /    Combined validation passed/u);

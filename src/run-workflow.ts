@@ -1,4 +1,4 @@
-import { mkdir, open, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { attemptWork } from "./attempt-work.js";
 import { mapConcurrent } from "./concurrency.js";
@@ -19,11 +19,12 @@ import { loadLocalTracker, runnableLocalTasks } from "./local-tracker.js";
 import { recordLocalCompletion } from "./local-run-state.js";
 import { createRunOutput, pruneExpiredRunLogs } from "./logs.js";
 import { isShutdownRequested } from "./process.js";
+import { acquireRunLock } from "./run-lock.js";
 import {
   loadPromptTemplates,
   validatePromptTemplates,
 } from "./prompts.js";
-import { printDefaultBranchPushed, printDefaultBranchReconciled, printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printPushNote, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
+import { printDefaultBranchPushed, printDefaultBranchReconciled, printIntegrationCompleted, printIntegrationFailed, printIntegrationStarted, printIteration, printIterationHeaderClosed, printPushNote, printRunSummary, printValidationStarted, printWorkFinished, printWorkStarted, printWorktreePreserved, reportUnavailableModelSkip } from "./run-display.js";
 import { saveRunSummary } from "./run-history.js";
 import { listWork } from "./run-source.js";
 import type { Attempt } from "./runner-types.js";
@@ -101,8 +102,7 @@ export const runLfi = async (
   await mkdir(stateRoot, { recursive: true });
   const startedAt = new Date().toISOString();
   const runId = startedAt.replaceAll(":", "-");
-  const lockPath = join(stateRoot, "run.lock");
-  const lock = await open(lockPath, "wx").catch(() => undefined);
+  const lock = await acquireRunLock(stateRoot, runId);
   if (!lock) {
     throw new Error(
       localize(
@@ -112,7 +112,6 @@ export const runLfi = async (
       ),
     );
   }
-  await lock.writeFile(`${JSON.stringify({ pid: process.pid, runId })}\n`);
   const currentStatePath = join(stateRoot, "current-run.json");
   const completed = new Set<string>();
   const attempted = new Map<string, string>();
@@ -191,11 +190,17 @@ export const runLfi = async (
       );
       if (runnable.length === 0) break;
       iterations = stage;
+      let headerClosed = false;
       const log = {
         directory: logsRoot,
         startedAt,
         iteration: stage,
         output,
+        onAgentOutput: () => {
+          if (headerClosed) return;
+          headerClosed = true;
+          printIterationHeaderClosed(output);
+        },
       };
       printIteration(output, language, stage, runnable.map((item) => item.id));
       const attempts = await mapConcurrent(
@@ -376,7 +381,6 @@ export const runLfi = async (
     throw error;
   } finally {
     await output.flush();
-    await lock.close();
-    await rm(lockPath, { force: true });
+    await lock.release();
   }
 };
