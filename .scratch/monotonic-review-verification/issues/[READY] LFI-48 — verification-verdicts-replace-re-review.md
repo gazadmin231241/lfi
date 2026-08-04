@@ -41,4 +41,4 @@ Tier: deep
 
 ## Blocked by
 
-- [LFI-47 — Failure scenario gates blocking findings](<[READY] LFI-47 — failure-scenario-gates-blocking-findings.md>)
+- [LFI-47 — Failure scenario gates blocking findings](<[DONE] LFI-47 — failure-scenario-gates-blocking-findings.md>)
