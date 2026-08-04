@@ -15,6 +15,7 @@ test("review findings accept the complete known JSON shape", () => {
         axis: "spec",
         severity: "blocking",
         description: "The required failure path is missing.",
+        failureScenario: "Submitting an empty value reports success instead of rejecting it.",
       },
     ])),
     [
@@ -27,6 +28,50 @@ test("review findings accept the complete known JSON shape", () => {
         axis: "spec",
         severity: "blocking",
         description: "The required failure path is missing.",
+        failureScenario: "Submitting an empty value reports success instead of rejecting it.",
+      },
+    ],
+  );
+});
+
+test("blocking findings without a failure scenario degrade to advisory", () => {
+  assert.deepEqual(
+    parseReviewFindings(JSON.stringify([
+      {
+        axis: "spec",
+        severity: "blocking",
+        description: "The required failure path is missing.",
+      },
+      {
+        axis: "standards",
+        severity: "blocking",
+        description: "The scenario is empty.",
+        failureScenario: "   ",
+      },
+      {
+        axis: "standards",
+        severity: "advisory",
+        description: "A local name could be clearer.",
+      },
+    ])),
+    [
+      {
+        axis: "spec",
+        severity: "advisory",
+        description: "The required failure path is missing.",
+        degradedFromBlocking: true,
+      },
+      {
+        axis: "standards",
+        severity: "advisory",
+        description: "The scenario is empty.",
+        failureScenario: "   ",
+        degradedFromBlocking: true,
+      },
+      {
+        axis: "standards",
+        severity: "advisory",
+        description: "A local name could be clearer.",
       },
     ],
   );

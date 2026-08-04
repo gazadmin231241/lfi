@@ -120,6 +120,26 @@ const finishAcceptedAttempt = async (options: {
   };
 };
 
+const logDowngradedBlockingFindings = async (options: {
+  findings: readonly ReviewFinding[];
+  language: Language;
+  log: RunLogContext;
+  logName: string;
+}): Promise<void> => {
+  const count = options.findings.filter(
+    (finding) => finding.degradedFromBlocking,
+  ).length;
+  if (count === 0) return;
+  const finding = count === 1 ? "finding" : "findings";
+  const message = localize(
+    options.language,
+    `Review phase downgraded ${count} blocking ${finding} to advisory because ${count === 1 ? "it lacks" : "they lack"} a non-empty failure scenario.`,
+    `Этап ревью понизил ${count} блокирующих замечаний до совещательных, потому что в них не указан непустой сценарий отказа.`,
+  );
+  await appendRunLog(options.log, options.logName, [message]);
+  options.log.output?.log(message);
+};
+
 export const attemptWork = async (options: {
   cwd: string;
   worktreesRoot: string;
@@ -393,6 +413,12 @@ export const attemptWork = async (options: {
             logName: reviewLogName,
           };
         }
+        await logDowngradedBlockingFindings({
+          findings,
+          language: options.language,
+          log: options.log,
+          logName: reviewLogName,
+        });
         const blockingFindings = findings.filter(
           (finding) => finding.severity === "blocking",
         );
@@ -545,6 +571,12 @@ export const attemptWork = async (options: {
                 logName: reReviewLogName,
               };
             }
+            await logDowngradedBlockingFindings({
+              findings,
+              language: options.language,
+              log: options.log,
+              logName: reReviewLogName,
+            });
             const remainingBlockers = findings.filter(
               (finding) => finding.severity === "blocking",
             );

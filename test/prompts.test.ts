@@ -144,11 +144,17 @@ test("review prompt identifies the diff and external findings channel per provid
   assert.match(codex, /JSON array/u);
   assert.match(codex, /"standards" or "spec"/u);
   assert.match(codex, /"blocking" or "advisory"/u);
+  assert.match(codex, /"failureScenario"/u);
+  assert.match(codex, /blocking finding must provide a non-empty "failureScenario"/u);
+  assert.match(codex, /concrete input or state and the incorrect behavior/u);
   assert.match(codex, /<lfi:completion>/u);
   assert.match(pi, /Use \/skill:code-review/u);
   assert.match(pi, /Base ref: origin\/main/u);
   assert.match(russian, /Используй \$code-review/u);
   assert.match(russian, /единственный канал замечаний/u);
+  assert.match(russian, /"failureScenario"/u);
+  assert.match(russian, /блокирующего замечания обязательно непустое поле "failureScenario"/u);
+  assert.match(russian, /конкретным входом или состоянием и неверным поведением/u);
   assert.match(russian, /Заверши финальный ответ этим блоком завершения LFI/u);
 });
 

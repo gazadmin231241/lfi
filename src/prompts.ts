@@ -332,14 +332,14 @@ const reviewProtocol = (
 
 Findings file: ${findingsPath}
 
-До завершения запиши в Findings file JSON-массив. Каждый элемент должен быть объектом ровно с тремя полями: "axis" ("standards" или "spec"), "severity" ("blocking" или "advisory") и строковым "description". Если замечаний нет, запиши []. Не изменяй worktree и не создавай commit.
+До завершения запиши в Findings file JSON-массив. Каждый элемент должен быть объектом с тремя обязательными полями: "axis" ("standards" или "spec"), "severity" ("blocking" или "advisory") и строковым "description"; он также может содержать строковое поле "failureScenario". Для блокирующего замечания обязательно непустое поле "failureScenario" с конкретным входом или состоянием и неверным поведением, к которому оно приводит. Для совещательного замечания "failureScenario" не обязательно. Если замечаний нет, запиши []. Не изменяй worktree и не создавай commit.
 
 ${completionContractCopy.ru}`
   : `Do not report findings to LFI in prose: the findings file is the only findings channel.
 
 Findings file: ${findingsPath}
 
-Before completing, write a JSON array to the Findings file. Every item must be an object with exactly three fields: "axis" ("standards" or "spec"), "severity" ("blocking" or "advisory"), and a string "description". Write [] when there are no findings. Do not modify the worktree or create a commit.
+Before completing, write a JSON array to the Findings file. Every item must be an object with three required fields: "axis" ("standards" or "spec"), "severity" ("blocking" or "advisory"), and a string "description"; it may also contain a string "failureScenario". A blocking finding must provide a non-empty "failureScenario" with a concrete input or state and the incorrect behavior it causes. An advisory finding does not require a "failureScenario". Write [] when there are no findings. Do not modify the worktree or create a commit.
 
 ${completionContractCopy.en}`;
 

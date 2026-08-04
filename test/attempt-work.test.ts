@@ -184,6 +184,7 @@ const runAttemptWithReviewOutput = async (
   const worktree = join(worktreesRoot, "lfi-2");
   const tools = join(root, "tools");
   const calls = join(root, "codex-calls");
+  const logs = join(root, ".lfi", "logs");
   await mkdir(tools, { recursive: true });
   const git = async (...args: string[]) => {
     const result = await runCommand("git", args, { cwd: root });
@@ -236,14 +237,14 @@ ${codexCompletionEvent("completed", "phase completed")}
       config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none", ...config },
       gitDirectory: join(root, ".git"),
       log: {
-        directory: join(root, ".lfi", "logs"),
+        directory: logs,
         startedAt: new Date().toISOString(),
         iteration: 1,
       },
       taskTemplate: "Implement {{TASK_ID}}.",
       language: "en",
     });
-    return { result, worktree, calls };
+    return { result, worktree, calls, logs };
   } finally {
     process.env.PATH = originalPath;
   }
@@ -261,6 +262,21 @@ test("advisory-only review findings do not change acceptance", async () => {
   assert.equal(result.logName, "LFI-2");
 });
 
+test("a blocking finding without a failure scenario is logged and does not start remediation", async () => {
+  const { result, calls, logs } = await runAttemptWithReviewOutput(JSON.stringify([{
+    axis: "spec",
+    severity: "blocking",
+    description: "A required behavior is absent.",
+  }]));
+
+  assert.equal(result.accepted, true, result.summary);
+  assert.equal(await readFile(calls, "utf8"), "1\n2\n");
+  assert.match(
+    await readFile(join(logs, "LFI-2-review.log"), "utf8"),
+    /downgraded 1 blocking finding to advisory.*failure scenario/u,
+  );
+});
+
 test("blocking findings run one verbatim remediation and clean targeted re-review", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-remediated-attempt-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
@@ -269,7 +285,7 @@ test("blocking findings run one verbatim remediation and clean targeted re-revie
   const calls = join(root, "codex-calls");
   const args = join(root, "codex-args");
   const prompts = join(root, "codex-prompts");
-  const findings = '[{ "axis":"spec", "severity":"blocking", "description":"A required behavior is absent." }]';
+  const findings = '[{ "axis":"spec", "severity":"blocking", "description":"A required behavior is absent.", "failureScenario":"Submitting an empty value reports success." }]';
   await mkdir(tools, { recursive: true });
   const git = async (...args: string[]) => {
     const result = await runCommand("git", args, { cwd: root });
@@ -333,7 +349,7 @@ ${codexCompletionEvent("completed", "phase completed")}
 
 test("blockers surviving re-review preserve the worktree without a third review", async () => {
   const { result, worktree, calls } = await runAttemptWithReviewOutput(
-    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent." }]),
+    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent.", failureScenario: "Submitting an empty value reports success." }]),
   );
 
   assert.equal(result.accepted, false);
@@ -344,7 +360,7 @@ test("blockers surviving re-review preserve the worktree without a third review"
 
 test("zero remediation rounds reject blocking review findings without remediation", async () => {
   const { result, worktree, calls } = await runAttemptWithReviewOutput(
-    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent." }]),
+    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent.", failureScenario: "Submitting an empty value reports success." }]),
     false,
     { MAX_REMEDIATION_ROUNDS: 0 },
   );
@@ -357,7 +373,7 @@ test("zero remediation rounds reject blocking review findings without remediatio
 
 test("each configured remediation round receives one targeted re-review", async () => {
   const { result, calls } = await runAttemptWithReviewOutput(
-    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent." }]),
+    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent.", failureScenario: "Submitting an empty value reports success." }]),
     false,
     { MAX_REMEDIATION_ROUNDS: 2 },
   );
@@ -369,7 +385,7 @@ test("each configured remediation round receives one targeted re-review", async 
 
 test("a remediation-created commit is rejected before re-review", async () => {
   const { result, calls } = await runAttemptWithReviewOutput(
-    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent." }]),
+    JSON.stringify([{ axis: "spec", severity: "blocking", description: "A required behavior is absent.", failureScenario: "Submitting an empty value reports success." }]),
     true,
   );
 
