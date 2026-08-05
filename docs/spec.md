@@ -30,8 +30,8 @@ implementation of local Markdown tasks with pluggable coding agents.
    review-driven changes, requests targeted confirmation only from axes that
    produced the relevant findings. A second complete review is forbidden, but
    a known blocker may not be ignored: unresolved blockers produce
-   `incomplete`. The planned repository-wide validation runs once on the final
-   review-adjusted code.
+   `incomplete`. Workers use focused tests and typechecking; LFI owns the
+   repository-wide validation on the final review-adjusted code.
 8. A worker result is accepted only when the selected agent exits successfully,
    emits the required tagged completion block with `completed` status, and
    creates commits ahead of the base. Uncommitted changes never reject an
@@ -41,11 +41,12 @@ implementation of local Markdown tasks with pluggable coding agents.
    an agent's own sandbox remains enabled inside it.
 9. Successful branches merge into a temporary integration worktree. Conflicts
    invoke the merger model with `$resolving-merge-conflicts`. After a combined
-   validation failure, LFI first runs the same command in a separately prepared
-   base worktree. Base failures skip model repair. Otherwise the merger receives
-   redacted command output and may modify only paths in the integrated diff.
-   One failed integration repair stops the run and preserves the worktree
-   instead of re-running accepted implementation work.
+   validation failure, LFI retries before invoking a model and then runs the
+   same command in a separately prepared base worktree. A green base routes the
+   first repair through the integrated-diff allowlist; a later repair is wide.
+   A red base is diagnostic context for wide repair and never permission to
+   deliver red code. Every repair is followed by the full command. Reviewed
+   task checkpoints resume validation without re-running worker or review.
 10. The validated integration branch is pushed to the configured default
     branch on GitHub.
 11. Successful worktrees/branches are removed unless they hold uncommitted

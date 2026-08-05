@@ -29,6 +29,8 @@ export interface LfiConfig {
   REVIEWER_REASONING_EFFORT: ReasoningEffort;
   REVIEW_ENABLED: boolean;
   MAX_REMEDIATION_ROUNDS: number;
+  VALIDATION_RETRY_COUNT: number;
+  VALIDATION_REPAIR_ATTEMPTS: number;
   MAX_PARALLEL: number;
   MAX_STAGES: number;
   LOG_RETENTION_DAYS: number;
@@ -51,6 +53,8 @@ export const DEFAULT_CONFIG: LfiConfig = {
   REVIEWER_REASONING_EFFORT: "medium",
   REVIEW_ENABLED: true,
   MAX_REMEDIATION_ROUNDS: 1,
+  VALIDATION_RETRY_COUNT: 1,
+  VALIDATION_REPAIR_ATTEMPTS: 2,
   MAX_PARALLEL: 3,
   MAX_STAGES: 10,
   LOG_RETENTION_DAYS: 3,
@@ -80,6 +84,8 @@ const configComments = {
       REVIEWER_MODEL: "model for review and verification",
       REVIEW_ENABLED: "runs review, remediation, and verification",
       MAX_REMEDIATION_ROUNDS: "maximum remediation rounds after blocking review findings",
+      VALIDATION_RETRY_COUNT: "retries after a failed validation command",
+      VALIDATION_REPAIR_ATTEMPTS: "model repair attempts after validation retries fail",
       MAX_PARALLEL: "tasks that may run at once",
       MAX_STAGES: "maximum stages per run",
       LOG_RETENTION_DAYS: "days to keep logs",
@@ -105,6 +111,8 @@ const configComments = {
       REVIEWER_MODEL: "модель для ревью и верификации",
       REVIEW_ENABLED: "запускает ревью, исправление и верификацию",
       MAX_REMEDIATION_ROUNDS: "максимум раундов исправления после блокирующих замечаний ревью",
+      VALIDATION_RETRY_COUNT: "число повторов после ошибки команды проверки",
+      VALIDATION_REPAIR_ATTEMPTS: "число модельных ремонтов после неудачных повторов проверки",
       MAX_PARALLEL: "число одновременно выполняемых задач",
       MAX_STAGES: "максимум этапов за запуск",
       LOG_RETENTION_DAYS: "число дней хранения журналов",
@@ -157,6 +165,8 @@ export const serializeEnvConfig = (
       "MAX_STAGES",
       "REVIEW_ENABLED",
       "MAX_REMEDIATION_ROUNDS",
+      "VALIDATION_RETRY_COUNT",
+      "VALIDATION_REPAIR_ATTEMPTS",
       "LOG_RETENTION_DAYS",
       "IDLE_TIMEOUT_MINUTES",
     ]),
@@ -242,6 +252,8 @@ export const parseEnvConfig = (source: string): LfiConfig => {
       case "MAX_PARALLEL":
       case "MAX_STAGES":
       case "MAX_REMEDIATION_ROUNDS":
+      case "VALIDATION_RETRY_COUNT":
+      case "VALIDATION_REPAIR_ATTEMPTS":
       case "LOG_RETENTION_DAYS":
       case "IDLE_TIMEOUT_MINUTES":
         result[key] = Number(value);
@@ -385,6 +397,18 @@ export const validateConfig = (config: LfiConfig): LfiConfig => {
     throw new Error(
       "MAX_REMEDIATION_ROUNDS must be zero or greater / должен быть не меньше нуля.",
     );
+  }
+  for (
+    const key of [
+      "VALIDATION_RETRY_COUNT",
+      "VALIDATION_REPAIR_ATTEMPTS",
+    ] as const
+  ) {
+    if (!Number.isSafeInteger(config[key]) || config[key] < 0) {
+      throw new Error(
+        `${key} must be zero or greater / должен быть не меньше нуля.`,
+      );
+    }
   }
   if (
     !Number.isFinite(config.LOG_RETENTION_DAYS) ||

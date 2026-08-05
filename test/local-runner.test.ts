@@ -136,6 +136,7 @@ test("local run does not repeat accepted work after integration fails", async ()
       ISOLATION_PROVIDER: "none",
       MAX_PARALLEL: 1,
       MAX_STAGES: 2,
+      VALIDATION_REPAIR_ATTEMPTS: 0,
       VALIDATE_COMMAND: "printf 'validation is broken\\n' >&2; exit 1",
     }),
   );
@@ -512,6 +513,7 @@ ${codexCompletionEvent("incomplete", "blocked")}
       ...DEFAULT_CONFIG,
       MAX_PARALLEL: 1,
       MAX_STAGES: 3,
+      VALIDATION_REPAIR_ATTEMPTS: 0,
       VALIDATE_COMMAND:
         "i=1; while [ $i -le 25 ]; do echo validation-line-$i; i=$((i+1)); done; exit 1",
     }),
@@ -550,7 +552,10 @@ ${codexCompletionEvent("completed", "implemented")}
     1,
   );
   assert.doesNotMatch(validationOutput, /validation-line-[1-6](?:\D|$)/u);
-  assert.match(validationOutput, /LFI-5: Validation failed:/u);
+  assert.match(
+    validationOutput,
+    /LFI-5: Implementation and review completed, but validation recovery failed:/u,
+  );
   assert.match(validationOutput, /Log: \.lfi\/logs\/LFI-5\.log/u);
   assert.ok(
     (await readdir(join(lfiRoot, "worktrees"))).includes("lfi-5"),

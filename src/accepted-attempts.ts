@@ -2,9 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /**
- * An attempt that passed review and validation, pinned to the commit that was
- * judged. The record outlives the process so a delivery failure cannot cost the
- * accepted work a second full attempt.
+ * A reviewed attempt checkpoint pinned to the commit that was judged.
+ * `validationPending` distinguishes resumable validation from work already
+ * eligible for integration. Missing fields preserve compatibility with older
+ * validated records.
  */
 export interface AcceptedAttempt {
   taskId: string;
@@ -14,6 +15,8 @@ export interface AcceptedAttempt {
   /** The base the attempt was reviewed against; kept for diagnostics. */
   baseCommit: string;
   recordedAt: string;
+  /** Review passed, but repository validation still needs to become green. */
+  validationPending?: boolean;
 }
 
 const acceptedAttemptsPath = (stateRoot: string): string =>
@@ -28,12 +31,16 @@ const isAcceptedAttempt = (value: unknown): value is AcceptedAttempt => {
     record.commit !== "" &&
     typeof record.baseRef === "string" &&
     typeof record.baseCommit === "string" &&
-    typeof record.recordedAt === "string"
+    typeof record.recordedAt === "string" &&
+    (record.validationPending === undefined ||
+      typeof record.validationPending === "boolean")
   );
 };
 
 /**
- * Reads every accepted attempt still awaiting delivery, keyed by task id.
+ * Reads every reviewed checkpoint still awaiting validation or delivery,
+ * keyed by task id. The accepted-attempts filename is retained for on-disk
+ * compatibility.
  *
  * A missing, unreadable or malformed file reads as "nothing recorded": the
  * records are an optimization, and a corrupt one must never bar a run.

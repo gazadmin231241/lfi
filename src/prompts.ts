@@ -39,7 +39,7 @@ export const defaultTaskPrompt = (language: "en" | "ru"): string =>
 - Швы (seams) для тестов определи самостоятельно из текста задачи и спеки и считай их согласованными; предпочитай публичные интерфейсы критических путей.
 - Не проводи code review и не вызывай skill code-review: независимое ревью — отдельный этап пайплайна после завершения задачи.
 
-Регулярно запускай typecheck и точечные тестовые файлы; полный прогон тестов — один раз в конце.
+Регулярно запускай typecheck и точечные тестовые файлы; полную проверку репозитория после ревью запускает LFI.
 
 Все необходимые локальные изменения в рамках задачи заранее разрешены. Работай только в текущем worktree. Production deploy и SSH запрещены.
 `
@@ -53,7 +53,7 @@ Skill adjustments for this autonomous run (no user is present in the session, so
 - Choose the test seams yourself from the task text and spec and treat them as agreed; prefer public interfaces on critical paths.
 - Do not perform a code review and do not invoke the code-review skill: an independent review runs as a separate pipeline phase after the task completes.
 
-Run typechecking and focused test files regularly; run the full test suite once at the end.
+Run typechecking and focused test files regularly; LFI runs repository-wide validation after review.
 
 All local changes required by the task are pre-approved. Work only in the current worktree. Production deploy and SSH are forbidden.
 `;

@@ -177,6 +177,11 @@ The following settings are in `.lfi/config.env`:
   switch is independent of `REVIEW_ENABLED`: disabling review does not disable
   validation. A normal `lfi run` requires a validation command before agents
   start.
+- `VALIDATION_RETRY_COUNT=1` retries a failed validation command before a model
+  is involved. A successful retry is accepted and remains visible in the log.
+- `VALIDATION_REPAIR_ATTEMPTS=2` bounds model-driven validation repair. After
+  every repair LFI reruns the full command itself; zero disables model repair,
+  never the validation gate.
 
 `REVIEW_ENABLED` must be exactly `true` or `false`. Invalid values, negative or
 fractional remediation rounds, and other invalid configuration values are
@@ -201,12 +206,14 @@ does not block a run; a reused task worktree is fast-forwarded from
 `origin/<base branch>` only when that is provably safe, and any failure there
 is logged rather than fatal. The combined integration branch must pass the
 configured validation
-command. If that command fails, LFI runs it against a separately prepared base
-worktree first. A base failure is reported without invoking an agent. If the base
-passes, the merger receives the exact redacted diagnostics and may change only
-paths already present in the integrated diff. LFI makes one repair attempt and
-does not send an accepted task back through implementation after an integration
-failure. LFI pushes the validated integration branch to the configured default
+command. A failed command is retried before model repair. Persistent task
+failures give the repair model exact redacted diagnostics and are always
+followed by another full validation. A reviewed checkpoint lets a later run
+resume there without repeating worker or review. For combined validation LFI
+also checks a separately prepared base worktree. A green base uses narrow
+integrated-diff repair first and wide repair later; a red base is passed as
+diagnostic context to wide repair and never permits red delivery. LFI pushes
+only the validated integration branch to the configured default
 branch. Any integration failure preserves the integration worktree and prints
 its branch and path for recovery.
 

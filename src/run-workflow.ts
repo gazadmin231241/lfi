@@ -260,6 +260,7 @@ export const runLfi = async (
           language,
           attempt.task.id,
           attempt.accepted,
+          attempt.validationPending ?? false,
         );
       }
       const accepted = attempts.filter((attempt) => attempt.accepted);

@@ -33,6 +33,11 @@ export const checkpointTracker = async (
   return true;
 };
 
+/**
+ * Runs the configured integration model against one merge or validation
+ * problem, requires a clean committed result, and optionally enforces a path
+ * allowlist. LFI, not the model, owns the resulting commit.
+ */
 export const mergeWithAgent = async (options: {
   cwd: string;
   context: string;
@@ -43,6 +48,7 @@ export const mergeWithAgent = async (options: {
   language: Language;
   allowedPaths?: readonly string[];
   promptTemplate?: ResolvedPromptTemplate;
+  commitMessage?: string;
 }): Promise<string> => {
   const startingHead = (await git(options.cwd, ["rev-parse", "HEAD"])).stdout.trim();
   const unmerged = (
@@ -108,7 +114,10 @@ export const mergeWithAgent = async (options: {
         );
       }
     }
-    await commitWorktreeChanges(options.cwd, "chore(lfi): resolve integration");
+    await commitWorktreeChanges(
+      options.cwd,
+      options.commitMessage ?? "chore(lfi): resolve integration",
+    );
     if (options.allowedPaths) {
       const [tracked, untracked] = await Promise.all([
         git(options.cwd, [
@@ -160,13 +169,20 @@ export const mergeWithAgent = async (options: {
   return result.summary;
 };
 
+/** A red repository gate with redacted diagnostics safe for repair prompts. */
 export class ValidationFailure extends Error {
   readonly command: string;
+  readonly diagnostic: ValidationDiagnostic;
 
-  constructor(message: string, command: string) {
+  constructor(
+    message: string,
+    command: string,
+    diagnostic: ValidationDiagnostic,
+  ) {
     super(message);
     this.name = "ValidationFailure";
     this.command = command;
+    this.diagnostic = diagnostic;
   }
 }
 
@@ -177,6 +193,11 @@ export interface ValidationDiagnostic {
   stderr: string;
 }
 
+/**
+ * Runs the configured repository gate with bounded command retries and, for a
+ * combined worktree, bounded model repair callbacks. Every repair is observed
+ * through a fresh full validation; a red baseline never invokes repair here.
+ */
 export const validateIntegration = async (options: {
   cwd: string;
   config: LfiConfig;
@@ -184,7 +205,10 @@ export const validateIntegration = async (options: {
   language: Language;
   log: RunLogContext;
   phase: "baseline" | "combined";
-  repair: (diagnostic: ValidationDiagnostic) => Promise<void>;
+  repair: (
+    diagnostic: ValidationDiagnostic,
+    repairAttempt: number,
+  ) => Promise<void>;
   session?: IsolationSession;
 }): Promise<void> => {
   if (options.config.WORKTREE_SETUP_COMMAND) {
@@ -205,42 +229,60 @@ export const validateIntegration = async (options: {
       );
     }
   }
-  let validation = await runProjectCommand({
-    command: options.config.VALIDATE_COMMAND,
-    cwd: options.cwd,
-    gitDirectory: options.gitDirectory,
-    isolationProvider: options.config.ISOLATION_PROVIDER,
-    ...(options.session ? { session: options.session } : {}),
-  });
-  const logValidation = () =>
-    appendRunLog(
-      options.log,
-      "integration",
-      [
-        `$ ${options.config.VALIDATE_COMMAND}`,
-        validation.stdout,
-        validation.stderr,
-        `exit=${validation.exitCode}`,
-      ].filter(Boolean),
-    );
-  await logValidation();
-  if (validation.exitCode !== 0 && options.phase === "combined") {
-    await options.repair({
-      command: redactSensitiveText(options.config.VALIDATE_COMMAND),
-      exitCode: validation.exitCode,
-      stdout: redactSensitiveText(validation.stdout),
-      stderr: redactSensitiveText(validation.stderr),
-    });
-    validation = await runProjectCommand({
+  let validationRun = 0;
+  const runValidation = async () => {
+    validationRun += 1;
+    const validation = await runProjectCommand({
       command: options.config.VALIDATE_COMMAND,
       cwd: options.cwd,
       gitDirectory: options.gitDirectory,
       isolationProvider: options.config.ISOLATION_PROVIDER,
       ...(options.session ? { session: options.session } : {}),
     });
-    await logValidation();
+    await appendRunLog(
+      options.log,
+      "integration",
+      [
+        `phase=${options.phase}; validation-run=${validationRun}`,
+        `$ ${options.config.VALIDATE_COMMAND}`,
+        validation.stdout,
+        validation.stderr,
+        `exit=${validation.exitCode}`,
+      ].filter(Boolean),
+    );
+    return validation;
+  };
+  const retryValidation = async () => {
+    let validation = await runValidation();
+    for (
+      let retry = 0;
+      validation.exitCode !== 0 && retry < options.config.VALIDATION_RETRY_COUNT;
+      retry += 1
+    ) {
+      validation = await runValidation();
+    }
+    return validation;
+  };
+  const diagnosticFor = (validation: Awaited<ReturnType<typeof runValidation>>): ValidationDiagnostic => ({
+    command: redactSensitiveText(options.config.VALIDATE_COMMAND),
+    exitCode: validation.exitCode,
+    stdout: redactSensitiveText(validation.stdout),
+    stderr: redactSensitiveText(validation.stderr),
+  });
+  let validation = await retryValidation();
+  if (options.phase === "combined") {
+    for (
+      let repairAttempt = 1;
+      validation.exitCode !== 0 &&
+      repairAttempt <= options.config.VALIDATION_REPAIR_ATTEMPTS;
+      repairAttempt += 1
+    ) {
+      await options.repair(diagnosticFor(validation), repairAttempt);
+      validation = await retryValidation();
+    }
   }
   if (validation.exitCode !== 0) {
+    const diagnostic = diagnosticFor(validation);
     throw new ValidationFailure(
       localize(
         options.language,
@@ -251,7 +293,8 @@ export const validateIntegration = async (options: {
           ? `Проверка базовой ревизии завершилась с ошибкой; исправление объединённых изменений не запускалось:\n${redactSensitiveText(validation.stderr || validation.stdout)}`
           : `Проверка завершилась с ошибкой:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
       ),
-      redactSensitiveText(options.config.VALIDATE_COMMAND),
+      diagnostic.command,
+      diagnostic,
     );
   }
 };

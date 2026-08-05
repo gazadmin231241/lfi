@@ -283,6 +283,220 @@ ${codexCompletionEvent("completed", "resolved")}
   assert.equal(await readFile(join(root, "conflict.txt"), "utf8"), "agent resolution\n");
 });
 
+test("a red baseline is diagnosed by wide validation repair and never treated as a pass", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-wide-validation-repair-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const logs = join(root, ".lfi", "logs");
+  const tools = join(root, "tools");
+  const repairPrompt = join(root, "repair-prompt");
+  await mkdir(worktreesRoot, { recursive: true });
+  await mkdir(logs, { recursive: true });
+  await mkdir(tools);
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+prompt=$(cat)
+printf '%s' "$prompt" > "${repairPrompt}"
+printf 'fixed\n' > validation-fixed.txt
+${codexCompletionEvent("completed", "repaired baseline validation")}
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(join(root, ".gitignore"), ".lfi/*\ntools/\nrepair-prompt\n");
+  await writeFile(join(root, "base.txt"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  const remote = await mkdtemp(join(tmpdir(), "lfi-wide-validation-origin-"));
+  const initialized = await runCommand("git", ["init", "--bare", remote]);
+  assert.equal(initialized.exitCode, 0, initialized.stderr);
+  await git("remote", "add", "origin", remote);
+  await git("push", "-u", "origin", "main");
+  await git("switch", "-c", "lfi/lfi-1");
+  await writeFile(join(root, "worker.txt"), "worker\n");
+  await git("add", "worker.txt");
+  await git("commit", "-m", "feat: worker result");
+  await git("switch", "main");
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    await integrateAttempts({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      baseBranch: "main",
+      runId: "wide-validation-repair",
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      attempts: [{
+        task: {
+          id: "LFI-1",
+          number: 1,
+          title: "Deliver worker result",
+          sourcePath: join(root, "task.md"),
+          body: "Deliver the result.",
+        },
+        accepted: true,
+        summary: "implemented",
+        worktreePath: root,
+        branch: "lfi/lfi-1",
+      }],
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        VALIDATION_RETRY_COUNT: 0,
+        VALIDATION_REPAIR_ATTEMPTS: 1,
+        VALIDATE_COMMAND: "test -f validation-fixed.txt",
+      },
+      gitDirectory: join(root, ".git"),
+      language: "en",
+      beforeDelivery: async (integrationPath) => {
+        await mkdir(join(integrationPath, ".scratch"), { recursive: true });
+        await writeFile(
+          join(integrationPath, ".scratch", "[DONE] LFI-1 — task.md"),
+          "Type: task\nBlocked by: None\nTier: light\n\nDone.\n",
+        );
+        const added = await runCommand("git", ["add", ".scratch"], {
+          cwd: integrationPath,
+        });
+        assert.equal(added.exitCode, 0, added.stderr);
+        const committed = await runCommand(
+          "git",
+          ["commit", "-m", "chore(lfi): complete LFI-1"],
+          { cwd: integrationPath },
+        );
+        assert.equal(committed.exitCode, 0, committed.stderr);
+      },
+    });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  const prompt = await readFile(repairPrompt, "utf8");
+  assert.match(prompt, /base revision also fails/u);
+  assert.match(prompt, /Configured command: test -f validation-fixed\.txt/u);
+  assert.equal(await readFile(join(root, "validation-fixed.txt"), "utf8"), "fixed\n");
+});
+
+test("a green baseline routes validation from narrow repair to wide repair", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-narrow-wide-repair-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const logs = join(root, ".lfi", "logs");
+  const tools = join(root, "tools");
+  const calls = join(root, "repair-calls");
+  const prompts = join(root, "repair-prompts");
+  await mkdir(worktreesRoot, { recursive: true });
+  await mkdir(logs, { recursive: true });
+  await mkdir(tools);
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+prompt=$(cat)
+call=1
+if [ -f "${calls}" ]; then call=$(( $(wc -l < "${calls}") + 1 )); fi
+printf '%s\n' "$call" >> "${calls}"
+printf '%s' "$prompt" > "${prompts}.$call"
+if [ "$call" -eq 1 ]; then
+  printf 'narrow repair\n' > worker.txt
+else
+  printf 'wide repair\n' > validation-fixed.txt
+fi
+${codexCompletionEvent("completed", "validation repair")}
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const git = async (...args: string[]) => {
+    const result = await runCommand("git", args, { cwd: root });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git("init", "-b", "main");
+  await git("config", "user.name", "LFI Test");
+  await git("config", "user.email", "lfi@example.test");
+  await writeFile(
+    join(root, ".gitignore"),
+    ".lfi/*\ntools/\nrepair-calls\nrepair-prompts.*\n",
+  );
+  await writeFile(join(root, "base.txt"), "base\n");
+  await git("add", ".");
+  await git("commit", "-m", "test: initialize repository");
+  const remote = await mkdtemp(join(tmpdir(), "lfi-narrow-wide-origin-"));
+  const initialized = await runCommand("git", ["init", "--bare", remote]);
+  assert.equal(initialized.exitCode, 0, initialized.stderr);
+  await git("remote", "add", "origin", remote);
+  await git("push", "-u", "origin", "main");
+  await git("switch", "-c", "lfi/lfi-1");
+  await writeFile(join(root, "worker.txt"), "worker\n");
+  await git("add", "worker.txt");
+  await git("commit", "-m", "feat: worker result");
+  await git("switch", "main");
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    await integrateAttempts({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      baseBranch: "main",
+      runId: "narrow-wide-repair",
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      attempts: [{
+        task: {
+          id: "LFI-1",
+          number: 1,
+          title: "Deliver worker result",
+          sourcePath: join(root, "task.md"),
+          body: "Deliver the result.",
+        },
+        accepted: true,
+        summary: "implemented",
+        worktreePath: root,
+        branch: "lfi/lfi-1",
+      }],
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        VALIDATION_RETRY_COUNT: 0,
+        VALIDATION_REPAIR_ATTEMPTS: 2,
+        VALIDATE_COMMAND:
+          "if test -f worker.txt; then test -f validation-fixed.txt; else true; fi",
+      },
+      gitDirectory: join(root, ".git"),
+      language: "en",
+      beforeDelivery: async (integrationPath) => {
+        await mkdir(join(integrationPath, ".scratch"), { recursive: true });
+        await writeFile(
+          join(integrationPath, ".scratch", "[DONE] LFI-1 — task.md"),
+          "Type: task\nBlocked by: None\nTier: light\n\nDone.\n",
+        );
+        const added = await runCommand("git", ["add", ".scratch"], {
+          cwd: integrationPath,
+        });
+        assert.equal(added.exitCode, 0, added.stderr);
+        const committed = await runCommand(
+          "git",
+          ["commit", "-m", "chore(lfi): complete LFI-1"],
+          { cwd: integrationPath },
+        );
+        assert.equal(committed.exitCode, 0, committed.stderr);
+      },
+    });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+
+  assert.equal(await readFile(calls, "utf8"), "1\n2\n");
+  assert.match(await readFile(`${prompts}.1`, "utf8"), /stay within the listed paths/u);
+  assert.match(await readFile(`${prompts}.2`, "utf8"), /full worktree access is available/u);
+  assert.equal(await readFile(join(root, "validation-fixed.txt"), "utf8"), "wide repair\n");
+});
+
 test("integration refuses delivery when accepted work was not recorded as done", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-missing-completion-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");

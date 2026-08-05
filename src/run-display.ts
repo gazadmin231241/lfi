@@ -52,13 +52,21 @@ export const printWorkFinished = (
   language: Language,
   id: string,
   accepted: boolean,
+  validationPending = false,
 ): void => {
-  output.log(
-    `\n  ${id}\n    ${localize(
+  const status = validationPending
+    ? localize(
+      language,
+      "Implementation and review completed; validation repair is pending",
+      "Реализация и ревью завершены; требуется ремонт проверки",
+    )
+    : localize(
       language,
       accepted ? "Implementation completed" : "Implementation incomplete",
       accepted ? "Реализация завершена" : "Реализация не завершена",
-    )}`,
+    );
+  output.log(
+    `\n  ${id}\n    ${status}`,
   );
 };
 

@@ -860,6 +860,229 @@ ${codexCompletionEvent("completed", "implemented")}
   }
 });
 
+test("attempt validation retries a transient failure before rejecting accepted work", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-attempt-validation-retry-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const tools = join(root, "tools");
+  const logs = join(root, ".lfi", "logs");
+  const validationCalls = join(root, "validation-calls");
+  await mkdir(tools);
+  const git = async (cwd: string, ...args: string[]) => {
+    const result = await runCommand("git", args, { cwd });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.name", "LFI Test");
+  await git(root, "config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git(root, "add", ".");
+  await git(root, "commit", "-m", "test: initialize repository");
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
+printf 'implemented\n' > implemented.txt
+git add implemented.txt
+git commit -m 'agent: implement retry fixture'
+${codexCompletionEvent("completed", "implemented")}
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    const result = await attemptWork({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      task: {
+        id: "LFI-8",
+        number: 8,
+        title: "Retry transient validation",
+        sourcePath: ".scratch/[READY] LFI-8 — retry.md",
+        body: "Create implemented.txt.",
+      },
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        VALIDATE_COMMAND:
+          `if test -f "${validationCalls}"; then calls=$(wc -l < "${validationCalls}"); else calls=0; fi; ` +
+          `printf 'called\n' >> "${validationCalls}"; test "$calls" -ge 1`,
+      },
+      gitDirectory: join(root, ".git"),
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      taskTemplate: "Implement {{TASK_ID}}.",
+      language: "en",
+    });
+
+    assert.equal(result.accepted, true, result.summary);
+    assert.equal(await readFile(validationCalls, "utf8"), "called\ncalled\n");
+    const log = await readFile(join(logs, "LFI-8-validation.log"), "utf8");
+    assert.equal(log.match(/exit=/gu)?.length, 2);
+    assert.match(log, /exit=1/u);
+    assert.match(log, /exit=0/u);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test("attempt validation gives persistent diagnostics to a bounded repair agent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-attempt-validation-repair-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const tools = join(root, "tools");
+  const logs = join(root, ".lfi", "logs");
+  const calls = join(root, "codex-calls");
+  const repairPrompt = join(root, "repair-prompt");
+  await mkdir(tools);
+  const git = async (cwd: string, ...args: string[]) => {
+    const result = await runCommand("git", args, { cwd });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.name", "LFI Test");
+  await git(root, "config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git(root, "add", ".");
+  await git(root, "commit", "-m", "test: initialize repository");
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+prompt=$(cat)
+call=1
+if [ -f "${calls}" ]; then call=$(( $(wc -l < "${calls}") + 1 )); fi
+printf '%s\n' "$call" >> "${calls}"
+if [ "$call" -eq 1 ]; then
+  printf 'implemented\n' > implemented.txt
+elif [ "$call" -eq 2 ]; then
+  findings_path=$(printf '%s\n' "$prompt" | sed -n 's/^Findings file: //p')
+  printf '[]' > "$findings_path"
+else
+  printf '%s' "$prompt" > "${repairPrompt}"
+  printf 'fixed\n' > validation-fixed.txt
+fi
+${codexCompletionEvent("completed", "phase completed")}
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  try {
+    const result = await attemptWork({
+      cwd: root,
+      worktreesRoot,
+      baseRef: "main",
+      task: {
+        id: "LFI-9",
+        number: 9,
+        title: "Repair persistent validation",
+        sourcePath: ".scratch/[READY] LFI-9 — repair.md",
+        body: "Create implemented.txt without changing unrelated behavior.",
+      },
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        VALIDATION_REPAIR_ATTEMPTS: 1,
+        VALIDATE_COMMAND:
+          "test -f validation-fixed.txt || { printf 'SupportView failed github_pat_EXAMPLE_SECRET_123456\\n' >&2; exit 7; }",
+      },
+      gitDirectory: join(root, ".git"),
+      log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+      taskTemplate: "Implement {{TASK_ID}}.",
+      language: "en",
+    });
+
+    assert.equal(result.accepted, true, result.summary);
+    assert.equal(await readFile(calls, "utf8"), "1\n2\n3\n");
+    const prompt = await readFile(repairPrompt, "utf8");
+    assert.match(prompt, /Validation repair 1 for LFI-9/u);
+    assert.match(prompt, /Exit code: 7/u);
+    assert.match(prompt, /SupportView failed \[REDACTED\]/u);
+    assert.match(prompt, /Create implemented\.txt without changing unrelated behavior/u);
+    assert.doesNotMatch(prompt, /github_pat_EXAMPLE_SECRET_123456/u);
+    assert.equal(
+      (await readFile(join(logs, "LFI-9-validation.log"), "utf8"))
+        .match(/exit=/gu)?.length,
+      3,
+    );
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test("a reviewed validation failure resumes without repeating worker or review", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-reviewed-validation-resume-"));
+  const worktreesRoot = join(root, ".lfi", "worktrees");
+  const stateRoot = join(root, ".lfi", "state");
+  const tools = join(root, "tools");
+  const logs = join(root, ".lfi", "logs");
+  const calls = join(root, "codex-calls");
+  await mkdir(tools, { recursive: true });
+  const git = async (cwd: string, ...args: string[]) => {
+    const result = await runCommand("git", args, { cwd });
+    assert.equal(result.exitCode, 0, result.stderr);
+  };
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.name", "LFI Test");
+  await git(root, "config", "user.email", "lfi@example.test");
+  await writeFile(join(root, "README.md"), "base\n");
+  await git(root, "add", ".");
+  await git(root, "commit", "-m", "test: initialize repository");
+  await writeFile(
+    join(tools, "codex"),
+    `#!/bin/sh
+printf 'called\n' >> "${calls}"
+${completeReviewWithNoFindings(codexCompletionEvent("completed", "reviewed"))}
+printf 'implemented\n' > implemented.txt
+${codexCompletionEvent("completed", "implemented")}
+`,
+  );
+  await chmod(join(tools, "codex"), 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${tools}:${originalPath ?? ""}`;
+  const runAttempt = () => attemptWork({
+    cwd: root,
+    worktreesRoot,
+    baseRef: "main",
+    task: {
+      id: "LFI-10",
+      number: 10,
+      title: "Resume validation",
+      sourcePath: ".scratch/[READY] LFI-10 — resume.md",
+      body: "Create implemented.txt.",
+    },
+    config: {
+      ...DEFAULT_CONFIG,
+      ISOLATION_PROVIDER: "none" as const,
+      VALIDATION_RETRY_COUNT: 0,
+      VALIDATION_REPAIR_ATTEMPTS: 0,
+      VALIDATE_COMMAND: "printf 'still red\n' >&2; exit 1",
+    },
+    gitDirectory: join(root, ".git"),
+    log: { directory: logs, startedAt: new Date().toISOString(), iteration: 1 },
+    taskTemplate: "Implement {{TASK_ID}}.",
+    language: "en" as const,
+    stateRoot,
+  });
+  try {
+    const first = await runAttempt();
+    assert.equal(first.accepted, false);
+    assert.equal(first.validationPending, true);
+    assert.equal(await readFile(calls, "utf8"), "called\ncalled\n");
+
+    const second = await runAttempt();
+
+    assert.equal(second.accepted, false);
+    assert.equal(second.validationPending, true);
+    assert.equal(await readFile(calls, "utf8"), "called\ncalled\n");
+    assert.equal(
+      (await readAcceptedAttempt(stateRoot, "LFI-10"))?.validationPending,
+      true,
+    );
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
 test("a failing observed validation rejects an agent-reported success and preserves the worktree", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-attempt-validation-failure-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
@@ -904,6 +1127,7 @@ ${codexCompletionEvent("completed", "validation passed")}
       config: {
         ...DEFAULT_CONFIG,
         ISOLATION_PROVIDER: "none",
+        VALIDATION_REPAIR_ATTEMPTS: 0,
         VALIDATE_COMMAND: "printf 'validation failure output\\n' >&2; exit 7",
       },
       gitDirectory: join(root, ".git"),

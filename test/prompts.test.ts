@@ -129,6 +129,10 @@ test("built-in templates name skills through placeholders", () => {
     assert.match(prompt, /\{\{SKILL:tdd\}\}/u);
     assert.doesNotMatch(prompt, /\$tdd/u);
   }
+  assert.match(english, /LFI runs repository-wide validation after review/u);
+  assert.doesNotMatch(english, /run the full test suite once at the end/u);
+  assert.match(russian, /полную проверку репозитория после ревью запускает LFI/u);
+  assert.doesNotMatch(russian, /полный прогон тестов — один раз в конце/u);
 });
 
 test("review prompt identifies the diff and external findings channel per provider", () => {

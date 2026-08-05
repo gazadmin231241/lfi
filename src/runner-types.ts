@@ -20,5 +20,7 @@ export interface Attempt {
   logName?: string;
   /** The agent left uncommitted changes behind; the worktree is preserved. */
   dirtyWorktree?: boolean;
+  /** Implementation and review passed, but validation recovery is exhausted. */
+  validationPending?: boolean;
   unavailableModel?: AgentModel;
 }

@@ -43,6 +43,8 @@ test("config round-trips defaults", () => {
   assert.equal(parsed.ISOLATION_PROVIDER, "local");
   assert.equal(parsed.REVIEW_ENABLED, true);
   assert.equal(parsed.MAX_REMEDIATION_ROUNDS, 1);
+  assert.equal(parsed.VALIDATION_RETRY_COUNT, 1);
+  assert.equal(parsed.VALIDATION_REPAIR_ATTEMPTS, 2);
   assert.equal("TASK_SOURCE" in parsed, false);
   assert.equal("GITHUB_REPO" in parsed, false);
   assert.match(serialized, /# Agent and model routing/u);
@@ -70,7 +72,9 @@ test("serialized configuration follows reading order and describes every key", (
   assert.ok(english.indexOf("# Execution") < english.indexOf("# Isolation"));
   assert.ok(english.indexOf("MAX_STAGES=") < english.indexOf("REVIEW_ENABLED="));
   assert.ok(english.indexOf("REVIEW_ENABLED=") < english.indexOf("MAX_REMEDIATION_ROUNDS="));
-  assert.ok(english.indexOf("MAX_REMEDIATION_ROUNDS=") < english.indexOf("LOG_RETENTION_DAYS="));
+  assert.ok(english.indexOf("MAX_REMEDIATION_ROUNDS=") < english.indexOf("VALIDATION_RETRY_COUNT="));
+  assert.ok(english.indexOf("VALIDATION_RETRY_COUNT=") < english.indexOf("VALIDATION_REPAIR_ATTEMPTS="));
+  assert.ok(english.indexOf("VALIDATION_REPAIR_ATTEMPTS=") < english.indexOf("LOG_RETENTION_DAYS="));
   assert.equal(
     assignmentLines(english).every((line) => /=.* # \S/u.test(line)),
     true,
@@ -353,6 +357,14 @@ test("config rejects unsafe concurrency and invalid numeric values", () => {
   assert.throws(
     () => parseEnvConfig("MAX_REMEDIATION_ROUNDS=1.5\n"),
     /MAX_REMEDIATION_ROUNDS/u,
+  );
+  assert.throws(
+    () => parseEnvConfig("VALIDATION_RETRY_COUNT=-1\n"),
+    /VALIDATION_RETRY_COUNT/u,
+  );
+  assert.throws(
+    () => parseEnvConfig("VALIDATION_REPAIR_ATTEMPTS=1.5\n"),
+    /VALIDATION_REPAIR_ATTEMPTS/u,
   );
 });
 

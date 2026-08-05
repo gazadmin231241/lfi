@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -43,6 +43,76 @@ test("baseline validation failure does not invoke repair", async () => {
   );
 
   assert.equal(repairCalls, 0);
+});
+
+test("combined validation retries a transient failure before invoking repair", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-combined-validation-retry-"));
+  const logs = join(root, "logs");
+  const calls = join(root, "validation-calls");
+  await mkdir(logs);
+  let repairCalls = 0;
+
+  await validateIntegration({
+    cwd: root,
+    config: {
+      ...DEFAULT_CONFIG,
+      ISOLATION_PROVIDER: "none",
+      VALIDATE_COMMAND:
+        `if test -f "${calls}"; then count=$(wc -l < "${calls}"); else count=0; fi; ` +
+        `printf 'called\n' >> "${calls}"; test "$count" -ge 1`,
+    },
+    gitDirectory: root,
+    language: "en",
+    log: {
+      directory: logs,
+      startedAt: "2026-07-30T13:44:12.749Z",
+      iteration: 1,
+    },
+    phase: "combined",
+    repair: async () => {
+      repairCalls += 1;
+    },
+  });
+
+  assert.equal(await readFile(calls, "utf8"), "called\ncalled\n");
+  assert.equal(repairCalls, 0);
+});
+
+test("combined validation bounds repair rounds and validates after each one", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-combined-validation-repairs-"));
+  const logs = join(root, "logs");
+  await mkdir(logs);
+  const repairRounds: number[] = [];
+
+  await validateIntegration({
+    cwd: root,
+    config: {
+      ...DEFAULT_CONFIG,
+      ISOLATION_PROVIDER: "none",
+      VALIDATION_RETRY_COUNT: 0,
+      VALIDATION_REPAIR_ATTEMPTS: 2,
+      VALIDATE_COMMAND: "test -f repaired.txt",
+    },
+    gitDirectory: root,
+    language: "en",
+    log: {
+      directory: logs,
+      startedAt: "2026-07-30T13:44:12.749Z",
+      iteration: 1,
+    },
+    phase: "combined",
+    repair: async (_diagnostic, repairAttempt) => {
+      repairRounds.push(repairAttempt);
+      if (repairAttempt === 2) await writeFile(join(root, "repaired.txt"), "fixed\n");
+    },
+  });
+
+  assert.deepEqual(repairRounds, [1, 2]);
+  assert.equal(
+    (await readFile(join(logs, "integration.log"), "utf8"))
+      .match(/exit=/gu)?.length,
+    3,
+  );
 });
 
 test("combined validation repair receives exact redacted diagnostics", async () => {

@@ -36,7 +36,10 @@ import {
 } from "./prompts.js";
 import { printOriginRefresh } from "./run-display.js";
 import type { Attempt, WorkItem } from "./runner-types.js";
-import { mergeWithAgent } from "./runner-support.js";
+import {
+  mergeWithAgent,
+  type ValidationDiagnostic,
+} from "./runner-support.js";
 import { evaluateWorkerResult } from "./worker-result.js";
 import {
   openIsolationSession,
@@ -68,25 +71,65 @@ const validateAttempt = async (options: {
   log: RunLogContext;
   logName: string;
   session: Awaited<ReturnType<typeof openIsolationSession>>;
+  repair?: (
+    diagnostic: ValidationDiagnostic,
+    repairAttempt: number,
+  ) => Promise<void>;
 }): Promise<string | undefined> => {
   if (!options.config.VALIDATE_COMMAND) return undefined;
-  const validation = await runProjectCommand({
-    command: options.config.VALIDATE_COMMAND,
-    cwd: options.cwd,
-    gitDirectory: options.gitDirectory,
-    isolationProvider: options.config.ISOLATION_PROVIDER,
-    session: options.session,
-  });
-  await appendRunLog(
-    options.log,
-    `${options.logName}-validation`,
-    [
-      "$ " + options.config.VALIDATE_COMMAND,
-      validation.stdout,
-      validation.stderr,
-      "exit=" + validation.exitCode,
-    ].filter(Boolean),
-  );
+  let validationRun = 0;
+  const runValidation = async () => {
+    validationRun += 1;
+    const validation = await runProjectCommand({
+      command: options.config.VALIDATE_COMMAND,
+      cwd: options.cwd,
+      gitDirectory: options.gitDirectory,
+      isolationProvider: options.config.ISOLATION_PROVIDER,
+      session: options.session,
+    });
+    await appendRunLog(
+      options.log,
+      `${options.logName}-validation`,
+      [
+        `validation-run=${validationRun}`,
+        "$ " + options.config.VALIDATE_COMMAND,
+        validation.stdout,
+        validation.stderr,
+        "exit=" + validation.exitCode,
+      ].filter(Boolean),
+    );
+    return validation;
+  };
+  let validation = await runValidation();
+  for (
+    let retry = 0;
+    validation.exitCode !== 0 && retry < options.config.VALIDATION_RETRY_COUNT;
+    retry += 1
+  ) {
+    validation = await runValidation();
+  }
+  for (
+    let repairAttempt = 1;
+    validation.exitCode !== 0 &&
+    options.repair &&
+    repairAttempt <= options.config.VALIDATION_REPAIR_ATTEMPTS;
+    repairAttempt += 1
+  ) {
+    await options.repair({
+      command: redactSensitiveText(options.config.VALIDATE_COMMAND),
+      exitCode: validation.exitCode,
+      stdout: redactSensitiveText(validation.stdout),
+      stderr: redactSensitiveText(validation.stderr),
+    }, repairAttempt);
+    validation = await runValidation();
+    for (
+      let retry = 0;
+      validation.exitCode !== 0 && retry < options.config.VALIDATION_RETRY_COUNT;
+      retry += 1
+    ) {
+      validation = await runValidation();
+    }
+  }
   if (validation.exitCode === 0) return undefined;
   const output = redactSensitiveText(
     [validation.stdout, validation.stderr].filter(Boolean).join("\n"),
@@ -99,8 +142,8 @@ const validateAttempt = async (options: {
 };
 
 /**
- * Pins an acceptance to the commit that earned it, so a later run can hand the
- * same work to integration instead of paying for the whole attempt again.
+ * Pins a reviewed or validated checkpoint to the commit that earned it, so a
+ * later run resumes validation or integration instead of repeating agent work.
  *
  * A dirty worktree is never recorded: its content is not described by `HEAD`,
  * so nothing later could confirm the record still matches the accepted work.
@@ -111,6 +154,7 @@ const rememberAcceptedAttempt = async (options: {
   worktreePath: string;
   baseRef: string;
   dirtyWorktree: boolean;
+  validationPending?: boolean;
 }): Promise<void> => {
   if (!options.stateRoot || options.dirtyWorktree) return;
   const head = await gitResult(options.worktreePath, ["rev-parse", "HEAD"]);
@@ -125,8 +169,13 @@ const rememberAcceptedAttempt = async (options: {
     baseRef: options.baseRef,
     baseCommit: base.exitCode === 0 ? base.stdout.trim() : "",
     recordedAt: new Date().toISOString(),
+    ...(options.validationPending ? { validationPending: true } : {}),
   });
 };
+
+type ResumedAttempt =
+  | { kind: "accepted"; attempt: Attempt }
+  | { kind: "validation-pending"; summary: string };
 
 /**
  * Returns the attempt to reuse when a reused worktree still holds exactly the
@@ -144,7 +193,7 @@ const resumeAcceptedAttempt = async (options: {
   clean: boolean;
   language: Language;
   logName: string;
-}): Promise<Attempt | undefined> => {
+}): Promise<ResumedAttempt | undefined> => {
   if (!options.stateRoot) return undefined;
   const record = await readAcceptedAttempt(options.stateRoot, options.task.id);
   if (!record) return undefined;
@@ -157,17 +206,28 @@ const resumeAcceptedAttempt = async (options: {
     await forgetAcceptedAttempt(options.stateRoot, options.task.id);
     return undefined;
   }
-  return {
-    task: options.task,
-    accepted: true,
-    summary: localize(
+  const summary = localize(
       options.language,
-      `Reused the attempt accepted earlier at ${record.commit.slice(0, 12)}; no agent phases were run.`,
-      `Переиспользована принятая ранее попытка на коммите ${record.commit.slice(0, 12)}; фазы агентов не запускались.`,
-    ),
-    worktreePath: options.worktreePath,
-    branch: options.branch,
-    logName: options.logName,
+      record.validationPending
+        ? `Resumed validation for the reviewed implementation at ${record.commit.slice(0, 12)}; worker and review were not repeated.`
+        : `Reused the attempt accepted earlier at ${record.commit.slice(0, 12)}; no agent phases were run.`,
+      record.validationPending
+        ? `Возобновлена проверка реализации после ревью на коммите ${record.commit.slice(0, 12)}; worker и ревью не запускались повторно.`
+        : `Переиспользована принятая ранее попытка на коммите ${record.commit.slice(0, 12)}; фазы агентов не запускались.`,
+    );
+  if (record.validationPending) {
+    return { kind: "validation-pending", summary };
+  }
+  return {
+    kind: "accepted",
+    attempt: {
+      task: options.task,
+      accepted: true,
+      summary,
+      worktreePath: options.worktreePath,
+      branch: options.branch,
+      logName: options.logName,
+    },
   };
 };
 
@@ -184,27 +244,91 @@ const finishAcceptedAttempt = async (options: {
   logName: string;
   baseRef: string;
   stateRoot?: string;
+  promptTemplates?: PromptTemplates;
   session: Awaited<ReturnType<typeof openIsolationSession>>;
 }): Promise<Attempt> => {
-  const validationFailure = await validateAttempt(options);
-  const dirtyWorktree = !(await worktreeClean(options.worktreePath));
-  if (!validationFailure) {
-    await rememberAcceptedAttempt({
-      ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
-      taskId: options.task.id,
-      worktreePath: options.worktreePath,
-      baseRef: options.baseRef,
-      dirtyWorktree,
-    });
-  }
+  let dirtyWorktree = !(await worktreeClean(options.worktreePath));
+  await rememberAcceptedAttempt({
+    ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
+    taskId: options.task.id,
+    worktreePath: options.worktreePath,
+    baseRef: options.baseRef,
+    dirtyWorktree,
+    validationPending: true,
+  });
+  const validationFailure = await validateAttempt({
+    ...options,
+    repair: async (diagnostic, repairAttempt) => {
+      const changedPaths = (
+        await git(options.worktreePath, [
+          "diff",
+          "--name-only",
+          "-z",
+          `${options.baseRef}..HEAD`,
+        ])
+      ).stdout.split("\0").filter(Boolean);
+      const context = [
+        `Validation repair ${repairAttempt} for ${options.task.id}.`,
+        "Diagnose the observed failure, reproduce the focused failure when possible, and change only its confirmed cause.",
+        "Do not perform unrelated improvements. LFI will rerun the configured full validation command after this repair.",
+        "",
+        `Task: ${options.task.id} — ${options.task.title}`,
+        options.task.body,
+        "",
+        "Changed paths:",
+        ...(changedPaths.length > 0
+          ? changedPaths.map((path) => `- ${path}`)
+          : ["(none)"]),
+        "",
+        `Configured command: ${diagnostic.command}`,
+        `Exit code: ${diagnostic.exitCode}`,
+        "",
+        "stdout:",
+        diagnostic.stdout || "(empty)",
+        "",
+        "stderr:",
+        diagnostic.stderr || "(empty)",
+      ].join("\n");
+      await mergeWithAgent({
+        cwd: options.worktreePath,
+        context,
+        config: options.config,
+        gitDirectory: options.gitDirectory,
+        log: options.log,
+        logName: `${options.logName}-validation-repair-${repairAttempt}`,
+        language: options.language,
+        commitMessage: `fix(lfi): repair ${options.task.id} validation`,
+        ...(options.promptTemplates
+          ? { promptTemplate: options.promptTemplates.merge }
+          : {}),
+      });
+    },
+  });
+  dirtyWorktree = !(await worktreeClean(options.worktreePath));
+  await rememberAcceptedAttempt({
+    ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
+    taskId: options.task.id,
+    worktreePath: options.worktreePath,
+    baseRef: options.baseRef,
+    dirtyWorktree,
+    ...(validationFailure ? { validationPending: true } : {}),
+  });
+  const summary = validationFailure
+    ? localize(
+      options.language,
+      `Implementation and review completed, but validation recovery failed:\n${validationFailure}`,
+      `Реализация и ревью завершены, но восстановить зелёную проверку не удалось:\n${validationFailure}`,
+    )
+    : options.summary;
   return {
     task: options.task,
     accepted: !validationFailure,
-    summary: validationFailure ?? options.summary,
+    summary,
     worktreePath: options.worktreePath,
     branch: options.branch,
     logName: options.logName,
     ...(dirtyWorktree ? { dirtyWorktree: true } : {}),
+    ...(validationFailure ? { validationPending: true } : {}),
   };
 };
 
@@ -326,7 +450,27 @@ export const attemptWork = async (options: {
             language: options.language,
             logName,
           });
-          if (resumed) return resumed;
+          if (resumed?.kind === "accepted") return resumed.attempt;
+          if (resumed?.kind === "validation-pending") {
+            return finishAcceptedAttempt({
+              task: options.task,
+              summary: resumed.summary,
+              worktreePath: worktree.path,
+              branch: worktree.branch,
+              cwd: worktree.path,
+              config: options.config,
+              gitDirectory: options.gitDirectory,
+              language: options.language,
+              log: options.log,
+              logName,
+              baseRef: options.baseRef,
+              ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
+              ...(options.promptTemplates
+                ? { promptTemplates: options.promptTemplates }
+                : {}),
+              session,
+            });
+          }
           // Reused worktrees hold a local copy of the base that does not move on
           // its own. Refresh it from origin where that is provably safe; every
           // other case reuses the worktree exactly as it was.
@@ -462,6 +606,9 @@ export const attemptWork = async (options: {
             logName,
             baseRef: options.baseRef,
             ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
+            ...(options.promptTemplates
+              ? { promptTemplates: options.promptTemplates }
+              : {}),
             session,
           });
         }
@@ -737,6 +884,9 @@ export const attemptWork = async (options: {
           logName,
           baseRef: options.baseRef,
           ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
+          ...(options.promptTemplates
+            ? { promptTemplates: options.promptTemplates }
+            : {}),
           session,
         });
       },
