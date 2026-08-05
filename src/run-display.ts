@@ -279,6 +279,7 @@ export const printRunSummary = async (
   completed: readonly string[],
   unresolved: readonly [string, string][],
   logsRoot: string,
+  validationPending: ReadonlySet<string> = new Set(),
 ): Promise<void> => {
   const title = localize(language, "Summary", "Итог");
   const lines: string[] = [];
@@ -287,12 +288,25 @@ export const printRunSummary = async (
       `  ${localize(language, "Completed", "Завершено")}: ${completed.join(", ")}`,
     );
   }
-  if (unresolved.length > 0) {
+  const awaitingRepair = unresolved.filter(([id]) => validationPending.has(id));
+  const incomplete = unresolved.filter(([id]) => !validationPending.has(id));
+  if (awaitingRepair.length > 0) {
     lines.push(
-      `  ${localize(language, "Incomplete", "Не завершено")}: ${unresolved
+      `  ${localize(
+        language,
+        "Validation repair pending",
+        "Ожидают ремонта проверки",
+      )}: ${awaitingRepair.map(([id]) => id).join(", ")}`,
+    );
+  }
+  if (incomplete.length > 0) {
+    lines.push(
+      `  ${localize(language, "Incomplete", "Не завершено")}: ${incomplete
         .map(([id]) => id)
         .join(", ")}`,
     );
+  }
+  if (unresolved.length > 0) {
     for (const [id, reason] of unresolved) {
       const firstLine = reason.split("\n").find((line) => line.trim()) ?? reason;
       lines.push(`    ${id}: ${firstLine}`);

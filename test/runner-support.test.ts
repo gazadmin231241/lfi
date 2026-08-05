@@ -78,6 +78,45 @@ test("combined validation retries a transient failure before invoking repair", a
   assert.equal(repairCalls, 0);
 });
 
+test("combined validation still diagnoses a persistent failure when repair is disabled", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-combined-diagnosis-only-"));
+  const logs = join(root, "logs");
+  await mkdir(logs);
+  let diagnosisCalls = 0;
+  let repairCalls = 0;
+
+  await assert.rejects(
+    validateIntegration({
+      cwd: root,
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        VALIDATION_RETRY_COUNT: 0,
+        VALIDATION_REPAIR_ATTEMPTS: 0,
+        VALIDATE_COMMAND: "printf 'persistent failure\n' >&2; exit 1",
+      },
+      gitDirectory: root,
+      language: "en",
+      log: {
+        directory: logs,
+        startedAt: "2026-07-30T13:44:12.749Z",
+        iteration: 1,
+      },
+      phase: "combined",
+      diagnose: async () => {
+        diagnosisCalls += 1;
+      },
+      repair: async () => {
+        repairCalls += 1;
+      },
+    }),
+    ValidationFailure,
+  );
+
+  assert.equal(diagnosisCalls, 1);
+  assert.equal(repairCalls, 0);
+});
+
 test("combined validation bounds repair rounds and validates after each one", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-combined-validation-repairs-"));
   const logs = join(root, "logs");

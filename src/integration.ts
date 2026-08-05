@@ -33,6 +33,7 @@ const formatValidationDiagnostic = (
   options: {
     repairAttempt: number;
     baseline?: ValidationDiagnostic;
+    changedPaths: readonly string[];
     wide: boolean;
     taskIds: readonly string[];
   },
@@ -47,6 +48,10 @@ const formatValidationDiagnostic = (
       : "Repair only the regression introduced by the integrated task branches and stay within the listed paths.",
     "LFI will rerun the configured full validation command after this repair.",
     `Integrated tasks: ${options.taskIds.join(", ")}`,
+    "Integrated changed paths:",
+    ...(options.changedPaths.length > 0
+      ? options.changedPaths.map((path) => `- ${path}`)
+      : ["(none)"]),
     "",
     `Configured command: ${diagnostic.command}`,
     `Exit code: ${diagnostic.exitCode}`,
@@ -162,7 +167,6 @@ export const integrateAttempts = async (options: {
       options.config.ISOLATION_PROVIDER === "none"
         ? {}
         : await resolveGitIdentity(integration.path);
-    let baselineChecked = false;
     let baselineDiagnostic: ValidationDiagnostic | undefined;
     await withIsolationSession(
       () =>
@@ -184,56 +188,55 @@ export const integrateAttempts = async (options: {
           log: options.log,
           phase: "combined",
           session,
-          repair: async (diagnostic, repairAttempt) => {
-            if (!baselineChecked) {
-              const baseline = await createIntegrationWorktree({
-                repoRoot: options.cwd,
-                worktreesRoot: options.worktreesRoot,
-                baseRef: options.baseRef,
-                runId: `${options.runId}-${options.log.iteration}-baseline`,
-              });
+          diagnose: async () => {
+            const baseline = await createIntegrationWorktree({
+              repoRoot: options.cwd,
+              worktreesRoot: options.worktreesRoot,
+              baseRef: options.baseRef,
+              runId: `${options.runId}-${options.log.iteration}-baseline`,
+            });
+            try {
+              const baselineIdentity =
+                options.config.ISOLATION_PROVIDER === "none"
+                  ? {}
+                  : await resolveGitIdentity(baseline.path);
               try {
-                const baselineIdentity =
-                  options.config.ISOLATION_PROVIDER === "none"
-                    ? {}
-                    : await resolveGitIdentity(baseline.path);
-                try {
-                  await withIsolationSession(
-                    () =>
-                      openIsolationSession({
-                        provider: options.config.ISOLATION_PROVIDER,
-                        agent: integrationAgent,
-                        worktree: baseline.path,
-                        gitDirectory: options.gitDirectory,
-                        homeDirectory: homedir(),
-                        environment: process.env,
-                        identity: baselineIdentity,
-                      }),
-                    async (baselineSession) =>
-                      validateIntegration({
-                        cwd: baseline.path,
-                        config: options.config,
-                        gitDirectory: options.gitDirectory,
-                        language: options.language,
-                        log: options.log,
-                        phase: "baseline",
-                        session: baselineSession,
-                        repair: async () => undefined,
-                      }),
-                  );
-                } catch (error) {
-                  if (!(error instanceof ValidationFailure)) throw error;
-                  baselineDiagnostic = error.diagnostic;
-                }
-              } finally {
-                baselineChecked = true;
-                await removeWorktreeAndBranch({
-                  repoRoot: options.cwd,
-                  path: baseline.path,
-                  branch: baseline.branch,
-                }).catch(() => undefined);
+                await withIsolationSession(
+                  () =>
+                    openIsolationSession({
+                      provider: options.config.ISOLATION_PROVIDER,
+                      agent: integrationAgent,
+                      worktree: baseline.path,
+                      gitDirectory: options.gitDirectory,
+                      homeDirectory: homedir(),
+                      environment: process.env,
+                      identity: baselineIdentity,
+                    }),
+                  async (baselineSession) =>
+                    validateIntegration({
+                      cwd: baseline.path,
+                      config: options.config,
+                      gitDirectory: options.gitDirectory,
+                      language: options.language,
+                      log: options.log,
+                      phase: "baseline",
+                      session: baselineSession,
+                      repair: async () => undefined,
+                    }),
+                );
+              } catch (error) {
+                if (!(error instanceof ValidationFailure)) throw error;
+                baselineDiagnostic = error.diagnostic;
               }
+            } finally {
+              await removeWorktreeAndBranch({
+                repoRoot: options.cwd,
+                path: baseline.path,
+                branch: baseline.branch,
+              }).catch(() => undefined);
             }
+          },
+          repair: async (diagnostic, repairAttempt) => {
             const wide = baselineDiagnostic !== undefined || repairAttempt > 1;
             await mergeWithAgent({
               cwd: integration.path,
@@ -242,6 +245,7 @@ export const integrateAttempts = async (options: {
                 ...(baselineDiagnostic
                   ? { baseline: baselineDiagnostic }
                   : {}),
+                changedPaths: integratedPaths,
                 wide,
                 taskIds: options.attempts.map((attempt) => attempt.task.id),
               }),

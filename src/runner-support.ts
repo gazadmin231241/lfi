@@ -19,6 +19,12 @@ import {
 } from "./prompts.js";
 import { runProjectCommand } from "./project-command.js";
 import type { IsolationSession } from "./isolation-provider.js";
+import {
+  recoverValidation,
+  type ValidationDiagnostic,
+} from "./validation-recovery.js";
+
+export type { ValidationDiagnostic } from "./validation-recovery.js";
 
 export const checkpointTracker = async (
   cwd: string,
@@ -186,13 +192,6 @@ export class ValidationFailure extends Error {
   }
 }
 
-export interface ValidationDiagnostic {
-  command: string;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
 /**
  * Runs the configured repository gate with bounded command retries and, for a
  * combined worktree, bounded model repair callbacks. Every repair is observed
@@ -209,6 +208,7 @@ export const validateIntegration = async (options: {
     diagnostic: ValidationDiagnostic,
     repairAttempt: number,
   ) => Promise<void>;
+  diagnose?: (diagnostic: ValidationDiagnostic) => Promise<void>;
   session?: IsolationSession;
 }): Promise<void> => {
   if (options.config.WORKTREE_SETUP_COMMAND) {
@@ -252,46 +252,28 @@ export const validateIntegration = async (options: {
     );
     return validation;
   };
-  const retryValidation = async () => {
-    let validation = await runValidation();
-    for (
-      let retry = 0;
-      validation.exitCode !== 0 && retry < options.config.VALIDATION_RETRY_COUNT;
-      retry += 1
-    ) {
-      validation = await runValidation();
-    }
-    return validation;
-  };
-  const diagnosticFor = (validation: Awaited<ReturnType<typeof runValidation>>): ValidationDiagnostic => ({
-    command: redactSensitiveText(options.config.VALIDATE_COMMAND),
-    exitCode: validation.exitCode,
-    stdout: redactSensitiveText(validation.stdout),
-    stderr: redactSensitiveText(validation.stderr),
+  const diagnostic = await recoverValidation({
+    command: options.config.VALIDATE_COMMAND,
+    retryCount: options.config.VALIDATION_RETRY_COUNT,
+    repairAttempts: options.phase === "combined"
+      ? options.config.VALIDATION_REPAIR_ATTEMPTS
+      : 0,
+    run: runValidation,
+    ...(options.phase === "combined" && options.diagnose
+      ? { diagnose: options.diagnose }
+      : {}),
+    ...(options.phase === "combined" ? { repair: options.repair } : {}),
   });
-  let validation = await retryValidation();
-  if (options.phase === "combined") {
-    for (
-      let repairAttempt = 1;
-      validation.exitCode !== 0 &&
-      repairAttempt <= options.config.VALIDATION_REPAIR_ATTEMPTS;
-      repairAttempt += 1
-    ) {
-      await options.repair(diagnosticFor(validation), repairAttempt);
-      validation = await retryValidation();
-    }
-  }
-  if (validation.exitCode !== 0) {
-    const diagnostic = diagnosticFor(validation);
+  if (diagnostic) {
     throw new ValidationFailure(
       localize(
         options.language,
         options.phase === "baseline"
-          ? `Baseline validation failed; combined repair was skipped:\n${redactSensitiveText(validation.stderr || validation.stdout)}`
-          : `Validation failed:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
+          ? `Baseline validation failed; combined repair was skipped:\n${diagnostic.stderr || diagnostic.stdout}`
+          : `Validation failed:\n${diagnostic.stderr || diagnostic.stdout}`,
         options.phase === "baseline"
-          ? `Проверка базовой ревизии завершилась с ошибкой; исправление объединённых изменений не запускалось:\n${redactSensitiveText(validation.stderr || validation.stdout)}`
-          : `Проверка завершилась с ошибкой:\n${redactSensitiveText(validation.stderr || validation.stdout)}`,
+          ? `Проверка базовой ревизии завершилась с ошибкой; исправление объединённых изменений не запускалось:\n${diagnostic.stderr || diagnostic.stdout}`
+          : `Проверка завершилась с ошибкой:\n${diagnostic.stderr || diagnostic.stdout}`,
       ),
       diagnostic.command,
       diagnostic,

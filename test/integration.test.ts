@@ -380,6 +380,7 @@ ${codexCompletionEvent("completed", "repaired baseline validation")}
 
   const prompt = await readFile(repairPrompt, "utf8");
   assert.match(prompt, /base revision also fails/u);
+  assert.match(prompt, /Integrated changed paths:\n- worker\.txt/u);
   assert.match(prompt, /Configured command: test -f validation-fixed\.txt/u);
   assert.equal(await readFile(join(root, "validation-fixed.txt"), "utf8"), "fixed\n");
 });
@@ -494,6 +495,7 @@ ${codexCompletionEvent("completed", "validation repair")}
   assert.equal(await readFile(calls, "utf8"), "1\n2\n");
   assert.match(await readFile(`${prompts}.1`, "utf8"), /stay within the listed paths/u);
   assert.match(await readFile(`${prompts}.2`, "utf8"), /full worktree access is available/u);
+  assert.match(await readFile(`${prompts}.2`, "utf8"), /Integrated changed paths:\n- worker\.txt/u);
   assert.equal(await readFile(join(root, "validation-fixed.txt"), "utf8"), "wide repair\n");
 });
 

@@ -1,13 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-/**
- * A reviewed attempt checkpoint pinned to the commit that was judged.
- * `validationPending` distinguishes resumable validation from work already
- * eligible for integration. Missing fields preserve compatibility with older
- * validated records.
- */
-export interface AcceptedAttempt {
+/** A reviewed attempt checkpoint pinned to the commit that was judged. */
+export interface AttemptCheckpoint {
   taskId: string;
   /** Tip of the attempt branch at the moment the attempt was accepted. */
   commit: string;
@@ -15,26 +10,47 @@ export interface AcceptedAttempt {
   /** The base the attempt was reviewed against; kept for diagnostics. */
   baseCommit: string;
   recordedAt: string;
-  /** Review passed, but repository validation still needs to become green. */
-  validationPending?: boolean;
+  /** Reviewed checkpoints resume validation; validated ones may integrate. */
+  status: "reviewed" | "validated";
 }
 
 const acceptedAttemptsPath = (stateRoot: string): string =>
   join(stateRoot, "accepted-attempts.json");
 
-const isAcceptedAttempt = (value: unknown): value is AcceptedAttempt => {
-  if (typeof value !== "object" || value === null) return false;
+const parseAttemptCheckpoint = (
+  value: unknown,
+): AttemptCheckpoint | undefined => {
+  if (typeof value !== "object" || value === null) return undefined;
   const record = value as Record<string, unknown>;
-  return (
+  if (!(
     typeof record.taskId === "string" &&
     typeof record.commit === "string" &&
     record.commit !== "" &&
     typeof record.baseRef === "string" &&
     typeof record.baseCommit === "string" &&
-    typeof record.recordedAt === "string" &&
-    (record.validationPending === undefined ||
-      typeof record.validationPending === "boolean")
-  );
+    typeof record.recordedAt === "string"
+  )) return undefined;
+  let status: AttemptCheckpoint["status"];
+  if (record.status === "reviewed" || record.status === "validated") {
+    status = record.status;
+  } else if (record.status !== undefined) {
+    return undefined;
+  } else if (
+    record.validationPending !== undefined &&
+    typeof record.validationPending !== "boolean"
+  ) {
+    return undefined;
+  } else {
+    status = record.validationPending === true ? "reviewed" : "validated";
+  }
+  return {
+    taskId: record.taskId,
+    commit: record.commit,
+    baseRef: record.baseRef,
+    baseCommit: record.baseCommit,
+    recordedAt: record.recordedAt,
+    status,
+  };
 };
 
 /**
@@ -45,9 +61,9 @@ const isAcceptedAttempt = (value: unknown): value is AcceptedAttempt => {
  * A missing, unreadable or malformed file reads as "nothing recorded": the
  * records are an optimization, and a corrupt one must never bar a run.
  */
-export const readAcceptedAttempts = async (
+export const readAttemptCheckpoints = async (
   stateRoot: string,
-): Promise<Record<string, AcceptedAttempt>> => {
+): Promise<Record<string, AttemptCheckpoint>> => {
   const raw = await readFile(acceptedAttemptsPath(stateRoot), "utf8").catch(
     () => undefined,
   );
@@ -61,43 +77,44 @@ export const readAcceptedAttempts = async (
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return {};
   }
-  const records: Record<string, AcceptedAttempt> = {};
+  const records: Record<string, AttemptCheckpoint> = {};
   for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (isAcceptedAttempt(value)) records[id] = value;
+    const checkpoint = parseAttemptCheckpoint(value);
+    if (checkpoint) records[id] = checkpoint;
   }
   return records;
 };
 
-const writeAcceptedAttempts = async (
+const writeAttemptCheckpoints = async (
   stateRoot: string,
-  records: Record<string, AcceptedAttempt>,
+  records: Record<string, AttemptCheckpoint>,
 ): Promise<void> => {
   const path = acceptedAttemptsPath(stateRoot);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(records, null, 2)}\n`);
 };
 
-export const readAcceptedAttempt = async (
+export const readAttemptCheckpoint = async (
   stateRoot: string,
   taskId: string,
-): Promise<AcceptedAttempt | undefined> =>
-  (await readAcceptedAttempts(stateRoot))[taskId];
+): Promise<AttemptCheckpoint | undefined> =>
+  (await readAttemptCheckpoints(stateRoot))[taskId];
 
-export const recordAcceptedAttempt = async (
+export const recordAttemptCheckpoint = async (
   stateRoot: string,
-  attempt: AcceptedAttempt,
+  attempt: AttemptCheckpoint,
 ): Promise<void> => {
-  const records = await readAcceptedAttempts(stateRoot);
+  const records = await readAttemptCheckpoints(stateRoot);
   records[attempt.taskId] = attempt;
-  await writeAcceptedAttempts(stateRoot, records);
+  await writeAttemptCheckpoints(stateRoot, records);
 };
 
-export const forgetAcceptedAttempt = async (
+export const forgetAttemptCheckpoint = async (
   stateRoot: string,
   taskId: string,
 ): Promise<void> => {
-  const records = await readAcceptedAttempts(stateRoot);
+  const records = await readAttemptCheckpoints(stateRoot);
   if (!(taskId in records)) return;
   delete records[taskId];
-  await writeAcceptedAttempts(stateRoot, records);
+  await writeAttemptCheckpoints(stateRoot, records);
 };

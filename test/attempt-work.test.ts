@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { readAcceptedAttempt } from "../src/accepted-attempts.js";
+import { readAttemptCheckpoint } from "../src/accepted-attempts.js";
 import { attemptWork } from "../src/attempt-work.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 import { loadPromptTemplates } from "../src/prompts.js";
@@ -591,7 +591,7 @@ test("a completed review with unparsable findings is a review failure", async ()
   assert.match(result.summary, /Review phase failed: the findings file is missing or invalid/u);
 });
 
-test("a merger that commits reused dirty work does not start a second worker", async () => {
+test("reused dirty work enters validation repair without starting a worker", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-reused-dirty-"));
   const worktreesRoot = join(root, ".lfi", "worktrees");
   const worktree = join(worktreesRoot, "lfi-1");
@@ -616,8 +616,13 @@ test("a merger that commits reused dirty work does not start a second worker", a
   await writeFile(
     join(tools, "codex"),
     `#!/bin/sh
+prompt=$(cat)
 printf 'called\\n' >> "${calls}"
+if printf '%s' "$prompt" | grep -q 'Validation repair'; then
+  printf 'fixed\\n' > validation-fixed.txt
+else
 printf 'combined\\n' > result.txt
+fi
 ${codexCompletionEvent("completed", "resolved existing work")}
 `,
   );
@@ -636,7 +641,13 @@ ${codexCompletionEvent("completed", "resolved existing work")}
         sourcePath: ".scratch/[READY] LFI-1 — reuse.md",
         body: "Preserve the existing implementation.",
       },
-      config: { ...DEFAULT_CONFIG, ISOLATION_PROVIDER: "none" },
+      config: {
+        ...DEFAULT_CONFIG,
+        ISOLATION_PROVIDER: "none",
+        VALIDATION_RETRY_COUNT: 0,
+        VALIDATION_REPAIR_ATTEMPTS: 1,
+        VALIDATE_COMMAND: "test -f validation-fixed.txt",
+      },
       gitDirectory: join(root, ".git"),
       log: {
         directory: join(root, ".lfi", "logs"),
@@ -647,8 +658,12 @@ ${codexCompletionEvent("completed", "resolved existing work")}
       language: "en",
     });
     assert.equal(result.accepted, true, result.summary);
-    assert.equal(await readFile(calls, "utf8"), "called\n");
+    assert.equal(await readFile(calls, "utf8"), "called\ncalled\n");
     assert.equal(await readFile(join(worktree, "result.txt"), "utf8"), "combined\n");
+    assert.equal(
+      await readFile(join(worktree, "validation-fixed.txt"), "utf8"),
+      "fixed\n",
+    );
   } finally {
     process.env.PATH = originalPath;
   }
@@ -726,7 +741,7 @@ test("an accepted attempt is recorded and reused without running agents again", 
     const callsAfterFirst = await fixture.callCount();
     assert.equal(callsAfterFirst, 2);
     const head = await fixture.git(fixture.worktree, "rev-parse", "HEAD");
-    const record = await readAcceptedAttempt(fixture.stateRoot, "LFI-7");
+    const record = await readAttemptCheckpoint(fixture.stateRoot, "LFI-7");
     assert.equal(record?.commit, head);
     assert.equal(record?.baseRef, "main");
     assert.equal(
@@ -742,7 +757,7 @@ test("an accepted attempt is recorded and reused without running agents again", 
     assert.equal(second.branch, "lfi/lfi-7");
     assert.equal(await fixture.callCount(), callsAfterFirst);
     assert.equal(
-      (await readAcceptedAttempt(fixture.stateRoot, "LFI-7"))?.commit,
+      (await readAttemptCheckpoint(fixture.stateRoot, "LFI-7"))?.commit,
       head,
     );
   } finally {
@@ -788,7 +803,7 @@ test("a moved worktree head invalidates the recorded acceptance and attempts aga
     assert.equal(second.accepted, true, second.summary);
     assert.equal(second.summary, "implemented task");
     assert.equal(await fixture.callCount(), callsAfterFirst + 2);
-    const record = await readAcceptedAttempt(fixture.stateRoot, "LFI-7");
+    const record = await readAttemptCheckpoint(fixture.stateRoot, "LFI-7");
     assert.notEqual(record?.commit, movedHead);
     assert.equal(
       record?.commit,
@@ -1075,8 +1090,8 @@ ${codexCompletionEvent("completed", "implemented")}
     assert.equal(second.validationPending, true);
     assert.equal(await readFile(calls, "utf8"), "called\ncalled\n");
     assert.equal(
-      (await readAcceptedAttempt(stateRoot, "LFI-10"))?.validationPending,
-      true,
+      (await readAttemptCheckpoint(stateRoot, "LFI-10"))?.status,
+      "reviewed",
     );
   } finally {
     process.env.PATH = originalPath;

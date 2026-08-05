@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { forgetAcceptedAttempt } from "./accepted-attempts.js";
+import { forgetAttemptCheckpoint } from "./accepted-attempts.js";
 import { attemptWork } from "./attempt-work.js";
 import { mapConcurrent } from "./concurrency.js";
 import {
@@ -116,6 +116,7 @@ export const runLfi = async (
   const currentStatePath = join(stateRoot, "current-run.json");
   const completed = new Set<string>();
   const attempted = new Map<string, string>();
+  const validationPending = new Set<string>();
   const warnedMissingTier = new Set<string>();
   const unavailableModels = new Set<string>();
   const reportedUnavailableTasks = new Set<string>();
@@ -207,7 +208,7 @@ export const runLfi = async (
       const attempts = await mapConcurrent(
         runnable,
         config.MAX_PARALLEL,
-        async (task) => {
+        async (task): Promise<Attempt> => {
           const target = resolveWorkerModel(config, task.executionTier ?? "standard");
           if (target.model && unavailableModels.has(agentModelKey(target))) {
             const summary = reportUnavailableModelSkip(
@@ -255,6 +256,7 @@ export const runLfi = async (
       );
       for (const attempt of attempts) {
         attempted.set(attempt.task.id, attempt.summary);
+        if (attempt.validationPending) validationPending.add(attempt.task.id);
         printWorkFinished(
           output,
           language,
@@ -301,7 +303,7 @@ export const runLfi = async (
           completed.add(attempt.task.id);
           // The acceptance has been delivered, so the record that guarded it
           // against a redundant re-attempt has nothing left to protect.
-          await forgetAcceptedAttempt(stateRoot, attempt.task.id);
+          await forgetAttemptCheckpoint(stateRoot, attempt.task.id);
           if (attempt.dirtyWorktree) {
             printWorktreePreserved(
               output,
@@ -368,6 +370,7 @@ export const runLfi = async (
       [...completed],
       unresolved,
       logsRoot,
+      validationPending,
     );
     await rm(currentStatePath, { force: true });
     await loadReconciledLocalTracker(join(cwd, ".scratch"));
