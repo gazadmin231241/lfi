@@ -40,6 +40,7 @@ import { mergeWithAgent } from "./runner-support.js";
 import {
   recoverValidation,
   type ValidationDiagnostic,
+  type ValidationRunContext,
 } from "./validation-recovery.js";
 import { evaluateWorkerResult } from "./worker-result.js";
 import {
@@ -79,7 +80,7 @@ const validateAttempt = async (options: {
 }): Promise<string | undefined> => {
   if (!options.config.VALIDATE_COMMAND) return undefined;
   let validationRun = 0;
-  const runValidation = async () => {
+  const runValidation = async (context: ValidationRunContext) => {
     validationRun += 1;
     const validation = await runProjectCommand({
       command: options.config.VALIDATE_COMMAND,
@@ -92,7 +93,14 @@ const validateAttempt = async (options: {
       options.log,
       `${options.logName}-validation`,
       [
-        `validation-run=${validationRun}`,
+        [
+          `validation-run=${validationRun}`,
+          `validation-step=${context.step}`,
+          ...(context.step === "retry" ? [`retry=${context.retry}`] : []),
+          ...(context.step !== "initial" && context.repairAttempt !== undefined
+            ? [`repair-attempt=${context.repairAttempt}`]
+            : []),
+        ].join("; "),
         "$ " + options.config.VALIDATE_COMMAND,
         validation.stdout,
         validation.stderr,
@@ -108,6 +116,11 @@ const validateAttempt = async (options: {
     run: runValidation,
     ...(options.repair ? { repair: options.repair } : {}),
   });
+  await appendRunLog(
+    options.log,
+    `${options.logName}-validation`,
+    [`validation-final=${diagnostic ? "failed" : "passed"}`],
+  );
   if (!diagnostic) return undefined;
   const output = [diagnostic.stdout, diagnostic.stderr]
     .filter(Boolean)

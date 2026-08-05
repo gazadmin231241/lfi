@@ -22,6 +22,7 @@ import type { IsolationSession } from "./isolation-provider.js";
 import {
   recoverValidation,
   type ValidationDiagnostic,
+  type ValidationRunContext,
 } from "./validation-recovery.js";
 
 export type { ValidationDiagnostic } from "./validation-recovery.js";
@@ -230,7 +231,7 @@ export const validateIntegration = async (options: {
     }
   }
   let validationRun = 0;
-  const runValidation = async () => {
+  const runValidation = async (context: ValidationRunContext) => {
     validationRun += 1;
     const validation = await runProjectCommand({
       command: options.config.VALIDATE_COMMAND,
@@ -243,7 +244,15 @@ export const validateIntegration = async (options: {
       options.log,
       "integration",
       [
-        `phase=${options.phase}; validation-run=${validationRun}`,
+        [
+          `phase=${options.phase}`,
+          `validation-run=${validationRun}`,
+          `validation-step=${context.step}`,
+          ...(context.step === "retry" ? [`retry=${context.retry}`] : []),
+          ...(context.step !== "initial" && context.repairAttempt !== undefined
+            ? [`repair-attempt=${context.repairAttempt}`]
+            : []),
+        ].join("; "),
         `$ ${options.config.VALIDATE_COMMAND}`,
         validation.stdout,
         validation.stderr,
@@ -264,6 +273,9 @@ export const validateIntegration = async (options: {
       : {}),
     ...(options.phase === "combined" ? { repair: options.repair } : {}),
   });
+  await appendRunLog(options.log, "integration", [
+    `phase=${options.phase}; validation-final=${diagnostic ? "failed" : "passed"}`,
+  ]);
   if (diagnostic) {
     throw new ValidationFailure(
       localize(

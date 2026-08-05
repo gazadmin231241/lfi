@@ -76,6 +76,10 @@ test("combined validation retries a transient failure before invoking repair", a
 
   assert.equal(await readFile(calls, "utf8"), "called\ncalled\n");
   assert.equal(repairCalls, 0);
+  const log = await readFile(join(logs, "integration.log"), "utf8");
+  assert.match(log, /validation-step=initial/u);
+  assert.match(log, /validation-step=retry; retry=1/u);
+  assert.match(log, /validation-final=passed/u);
 });
 
 test("combined validation still diagnoses a persistent failure when repair is disabled", async () => {
@@ -147,11 +151,11 @@ test("combined validation bounds repair rounds and validates after each one", as
   });
 
   assert.deepEqual(repairRounds, [1, 2]);
-  assert.equal(
-    (await readFile(join(logs, "integration.log"), "utf8"))
-      .match(/exit=/gu)?.length,
-    3,
-  );
+  const log = await readFile(join(logs, "integration.log"), "utf8");
+  assert.equal(log.match(/exit=/gu)?.length, 3);
+  assert.match(log, /validation-step=post-repair; repair-attempt=1/u);
+  assert.match(log, /validation-step=post-repair; repair-attempt=2/u);
+  assert.match(log, /validation-final=passed/u);
 });
 
 test("combined validation repair receives exact redacted diagnostics", async () => {

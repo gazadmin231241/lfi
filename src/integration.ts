@@ -46,6 +46,7 @@ const formatValidationDiagnostic = (
     options.wide
       ? "Diagnose both the validation output and the integrated changes. Change only the confirmed cause; full worktree access is available because narrow repair is insufficient or the base is also red."
       : "Repair only the regression introduced by the integrated task branches and stay within the listed paths.",
+    "First reproduce the specific reported failure when possible, then make the smallest necessary correction.",
     "LFI will rerun the configured full validation command after this repair.",
     `Integrated tasks: ${options.taskIds.join(", ")}`,
     "Integrated changed paths:",
@@ -252,7 +253,7 @@ export const integrateAttempts = async (options: {
               config: options.config,
               gitDirectory: options.gitDirectory,
               log: options.log,
-              logName: "integration",
+              logName: `integration-validation-repair-${repairAttempt}`,
               language: options.language,
               ...(!wide ? { allowedPaths: integratedPaths } : {}),
               ...(options.promptTemplates

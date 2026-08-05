@@ -870,6 +870,8 @@ ${codexCompletionEvent("completed", "implemented")}
     assert.match(log, /\$ test -f implemented\.txt/u);
     assert.match(log, /attempt validation output/u);
     assert.match(log, /exit=0/u);
+    assert.match(log, /validation-step=initial/u);
+    assert.match(log, /validation-final=passed/u);
   } finally {
     process.env.PATH = originalPath;
   }
@@ -936,6 +938,9 @@ ${codexCompletionEvent("completed", "implemented")}
     assert.equal(log.match(/exit=/gu)?.length, 2);
     assert.match(log, /exit=1/u);
     assert.match(log, /exit=0/u);
+    assert.match(log, /validation-step=initial/u);
+    assert.match(log, /validation-step=retry; retry=1/u);
+    assert.match(log, /validation-final=passed/u);
   } finally {
     process.env.PATH = originalPath;
   }
@@ -1014,11 +1019,17 @@ ${codexCompletionEvent("completed", "phase completed")}
     assert.match(prompt, /SupportView failed \[REDACTED\]/u);
     assert.match(prompt, /Create implemented\.txt without changing unrelated behavior/u);
     assert.doesNotMatch(prompt, /github_pat_EXAMPLE_SECRET_123456/u);
-    assert.equal(
-      (await readFile(join(logs, "LFI-9-validation.log"), "utf8"))
-        .match(/exit=/gu)?.length,
-      3,
+    const validationLog = await readFile(
+      join(logs, "LFI-9-validation.log"),
+      "utf8",
     );
+    assert.equal(validationLog.match(/exit=/gu)?.length, 3);
+    assert.match(validationLog, /validation-step=retry; retry=1/u);
+    assert.match(
+      validationLog,
+      /validation-step=post-repair; repair-attempt=1/u,
+    );
+    assert.match(validationLog, /validation-final=passed/u);
   } finally {
     process.env.PATH = originalPath;
   }

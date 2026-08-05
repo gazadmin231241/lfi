@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,6 +8,8 @@ import { printRunSummary } from "../src/run-display.js";
 
 test("run summary distinguishes pending validation repair from incomplete work", async () => {
   const messages: string[] = [];
+  const logs = await mkdtemp(join(tmpdir(), "lfi-run-summary-"));
+  await writeFile(join(logs, "LFI-2-validation.log"), "diagnostic\n");
   await printRunSummary(
     {
       log: (message) => messages.push(message),
@@ -20,7 +22,7 @@ test("run summary distinguishes pending validation repair from incomplete work",
       ["LFI-2", "validation remains red"],
       ["LFI-3", "worker failed"],
     ],
-    await mkdtemp(join(tmpdir(), "lfi-run-summary-")),
+    logs,
     new Set(["LFI-2"]),
   );
 
@@ -28,4 +30,5 @@ test("run summary distinguishes pending validation repair from incomplete work",
   assert.match(summary, /Validation repair pending: LFI-2/u);
   assert.match(summary, /Incomplete: LFI-3/u);
   assert.doesNotMatch(summary, /Incomplete: LFI-2/u);
+  assert.match(summary, /Log: \.lfi\/logs\/LFI-2-validation\.log/u);
 });

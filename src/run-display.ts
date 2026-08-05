@@ -311,7 +311,9 @@ export const printRunSummary = async (
       const firstLine = reason.split("\n").find((line) => line.trim()) ?? reason;
       lines.push(`    ${id}: ${firstLine}`);
       const name = taskLogName(id);
-      const taskLog = `${name}.log`;
+      const taskLog = validationPending.has(id)
+        ? `${name}-validation.log`
+        : `${name}.log`;
       if (await access(join(logsRoot, taskLog)).then(() => true).catch(() => false)) {
         lines.push(
           `      ${localize(language, "Log", "Лог")}: .lfi/logs/${taskLog}`,

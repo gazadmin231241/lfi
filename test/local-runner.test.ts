@@ -556,7 +556,10 @@ ${codexCompletionEvent("completed", "implemented")}
     validationOutput,
     /LFI-5: Implementation and review completed, but validation recovery failed:/u,
   );
-  assert.match(validationOutput, /Log: \.lfi\/logs\/LFI-5\.log/u);
+  assert.match(
+    validationOutput,
+    /Log: \.lfi\/logs\/LFI-5-validation\.log/u,
+  );
   assert.ok(
     (await readdir(join(lfiRoot, "worktrees"))).includes("lfi-5"),
   );
