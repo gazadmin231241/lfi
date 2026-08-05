@@ -151,7 +151,7 @@ const rememberAttemptCheckpoint = async (options: {
   });
 };
 
-type ResumedAttempt =
+type ResumedCheckpoint =
   | { kind: "accepted"; attempt: Attempt }
   | { kind: "validation-pending"; summary: string };
 
@@ -163,7 +163,7 @@ type ResumedAttempt =
  * and would make every record look stale. Divergence from the base is not a
  * reason to redo the work — integration merges the attempt itself.
  */
-const resumeAcceptedAttempt = async (options: {
+const resumeAttemptCheckpoint = async (options: {
   stateRoot?: string;
   task: WorkItem;
   worktreePath: string;
@@ -171,7 +171,7 @@ const resumeAcceptedAttempt = async (options: {
   clean: boolean;
   language: Language;
   logName: string;
-}): Promise<ResumedAttempt | undefined> => {
+}): Promise<ResumedCheckpoint | undefined> => {
   if (!options.stateRoot) return undefined;
   const record = await readAttemptCheckpoint(options.stateRoot, options.task.id);
   if (!record) return undefined;
@@ -420,7 +420,7 @@ export const attemptWork = async (options: {
           }
         }
         if (!worktree.created) {
-          const resumed = await resumeAcceptedAttempt({
+          const resumed = await resumeAttemptCheckpoint({
             ...(options.stateRoot ? { stateRoot: options.stateRoot } : {}),
             task: options.task,
             worktreePath: worktree.path,
