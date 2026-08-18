@@ -223,6 +223,14 @@ export const formatBindingLine = (
   return `${prefix}${paddedKey}${resolved.resolved}`;
 };
 
+export const DSH_ROUTES: readonly string[] = [
+  "deepseek-official",
+  "opencode-go",
+] as const;
+
+export const getCuratedRoutes = (agent: AgentProvider): readonly string[] =>
+  agent === "dsh" ? DSH_ROUTES : [];
+
 const curatedModelsByAgent: Record<AgentProvider, readonly string[]> = {
   codex: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
   claude: [
@@ -235,13 +243,28 @@ const curatedModelsByAgent: Record<AgentProvider, readonly string[]> = {
   dsh: [],
 };
 
+const dshCuratedModelsByRoute: Record<string, readonly string[]> = {
+  "deepseek-official": ["deepseek-v4-pro", "deepseek-v4-flash"],
+  "opencode-go": ["deepseek-v4-pro", "deepseek-v4-flash"],
+};
+
 export const getCuratedModels = (
   agent: AgentProvider | undefined,
+  routeOrModels?: string | Partial<Record<AgentProvider, readonly string[]>>,
   modelsByAgent?: Partial<Record<AgentProvider, readonly string[]>>,
 ): readonly string[] => {
   if (!agent) return [];
-  if (modelsByAgent?.[agent]) {
-    return modelsByAgent[agent]!;
+  const models = typeof routeOrModels === "object" ? routeOrModels : modelsByAgent;
+  const route = typeof routeOrModels === "string" ? routeOrModels : undefined;
+
+  if (agent === "dsh") {
+    if (route && dshCuratedModelsByRoute[route]) {
+      return dshCuratedModelsByRoute[route];
+    }
+    return [];
+  }
+  if (models?.[agent]) {
+    return models[agent]!;
   }
   return curatedModelsByAgent[agent] ?? [];
 };
@@ -263,6 +286,8 @@ export const getAvailableReasoning = (
 export type PickerView =
   | "main"
   | "agent"
+  | "route"
+  | "manual_route"
   | "model"
   | "manual_model"
   | "reasoning";
@@ -281,6 +306,7 @@ export interface PickerState {
   language: Language;
   editingBinding?: BindingKey | undefined;
   selectedAgent?: AgentProvider | undefined;
+  selectedRoute?: string | undefined;
   selectedModel?: string | undefined;
   inputBuffer?: string | undefined;
   errorMessage?: string | undefined;
@@ -393,6 +419,7 @@ export const handlePickerKey = (
             cursor: 0,
             editingBinding,
             selectedAgent: undefined,
+            selectedRoute: undefined,
             selectedModel: undefined,
             inputBuffer: undefined,
             errorMessage: undefined,
@@ -446,7 +473,19 @@ export const handlePickerKey = (
           };
         }
         const selectedAgent = AGENTS[state.cursor - 1];
-        const models = getCuratedModels(selectedAgent, state.modelsByAgent);
+        if (selectedAgent === "dsh") {
+          return {
+            type: "continue",
+            state: {
+              ...state,
+              view: "route",
+              cursor: 0,
+              selectedAgent,
+              selectedRoute: undefined,
+            },
+          };
+        }
+        const models = getCuratedModels(selectedAgent, undefined, state.modelsByAgent);
         if (selectedAgent === "pi" && models.length === 0) {
           return {
             type: "continue",
@@ -455,6 +494,7 @@ export const handlePickerKey = (
               view: "manual_model",
               cursor: 0,
               selectedAgent,
+              selectedRoute: undefined,
               inputBuffer: "",
               errorMessage:
                 state.errorMessage ??
@@ -473,6 +513,7 @@ export const handlePickerKey = (
             view: "model",
             cursor: 0,
             selectedAgent,
+            selectedRoute: undefined,
             errorMessage: undefined,
           },
         };
@@ -486,6 +527,140 @@ export const handlePickerKey = (
             view: "main",
             cursor: bindingIndex >= 0 ? bindingIndex : 0,
             editingBinding: undefined,
+            selectedAgent: undefined,
+            selectedRoute: undefined,
+          },
+        };
+      }
+      return { type: "continue", state };
+    }
+
+    case "route": {
+      const editingKey = state.editingBinding ?? "DEFAULT";
+      const maxIndex = DSH_ROUTES.length; // 0..DSH_ROUTES.length - 1: routes, DSH_ROUTES.length: custom
+      if (key.name === "up") {
+        return {
+          type: "continue",
+          state: {
+            ...state,
+            cursor: state.cursor > 0 ? state.cursor - 1 : maxIndex,
+          },
+        };
+      }
+      if (key.name === "down") {
+        return {
+          type: "continue",
+          state: {
+            ...state,
+            cursor: state.cursor < maxIndex ? state.cursor + 1 : 0,
+          },
+        };
+      }
+      if (key.name === "return" || key.name === "enter") {
+        if (state.cursor === DSH_ROUTES.length) {
+          // Custom route
+          return {
+            type: "continue",
+            state: {
+              ...state,
+              view: "manual_route",
+              cursor: 0,
+              inputBuffer: "",
+              errorMessage: undefined,
+            },
+          };
+        }
+        const selectedRoute = DSH_ROUTES[state.cursor];
+        return {
+          type: "continue",
+          state: {
+            ...state,
+            view: "model",
+            cursor: 0,
+            selectedRoute,
+          },
+        };
+      }
+      if (key.name === "escape") {
+        const bindingIndex = BINDING_KEYS.indexOf(editingKey);
+        return {
+          type: "continue",
+          state: {
+            ...state,
+            view: "main",
+            cursor: bindingIndex >= 0 ? bindingIndex : 0,
+            editingBinding: undefined,
+            selectedAgent: undefined,
+            selectedRoute: undefined,
+          },
+        };
+      }
+      return { type: "continue", state };
+    }
+
+    case "manual_route": {
+      const editingKey = state.editingBinding ?? "DEFAULT";
+      if (key.name === "escape") {
+        const bindingIndex = BINDING_KEYS.indexOf(editingKey);
+        return {
+          type: "continue",
+          state: {
+            ...state,
+            view: "main",
+            cursor: bindingIndex >= 0 ? bindingIndex : 0,
+            editingBinding: undefined,
+            selectedAgent: undefined,
+            selectedRoute: undefined,
+            inputBuffer: undefined,
+            errorMessage: undefined,
+          },
+        };
+      }
+      if (key.name === "backspace") {
+        const current = state.inputBuffer ?? "";
+        return {
+          type: "continue",
+          state: {
+            ...state,
+            inputBuffer: current.slice(0, -1),
+            errorMessage: undefined,
+          },
+        };
+      }
+      if (key.name === "return" || key.name === "enter") {
+        const input = (state.inputBuffer ?? "").trim();
+        if (!input) {
+          return {
+            type: "continue",
+            state: {
+              ...state,
+              errorMessage: localize(
+                state.language,
+                "Route cannot be empty.",
+                "Маршрут не может быть пустым.",
+              ),
+            },
+          };
+        }
+        return {
+          type: "continue",
+          state: {
+            ...state,
+            view: "model",
+            cursor: 0,
+            selectedRoute: input,
+            inputBuffer: undefined,
+            errorMessage: undefined,
+          },
+        };
+      }
+      if (key.sequence && key.sequence.length === 1 && !key.ctrl) {
+        return {
+          type: "continue",
+          state: {
+            ...state,
+            inputBuffer: (state.inputBuffer ?? "") + key.sequence,
+            errorMessage: undefined,
           },
         };
       }
@@ -495,7 +670,11 @@ export const handlePickerKey = (
     case "model": {
       const agent = state.selectedAgent ?? "codex";
       const editingKey = state.editingBinding ?? "DEFAULT";
-      const curated = getCuratedModels(agent, state.modelsByAgent);
+      const curated = getCuratedModels(
+        agent,
+        state.selectedRoute,
+        state.modelsByAgent,
+      );
       const maxIndex = curated.length; // 0..curated.length - 1: curated, curated.length: custom
       if (key.name === "up") {
         return {
@@ -529,7 +708,11 @@ export const handlePickerKey = (
             },
           };
         }
-        const selectedModel = curated[state.cursor] ?? "";
+        const modelName = curated[state.cursor] ?? "";
+        const selectedModel =
+          agent === "dsh" && state.selectedRoute
+            ? `${state.selectedRoute}/${modelName}`
+            : modelName;
         return {
           type: "continue",
           state: {
@@ -549,6 +732,8 @@ export const handlePickerKey = (
             view: "main",
             cursor: bindingIndex >= 0 ? bindingIndex : 0,
             editingBinding: undefined,
+            selectedAgent: undefined,
+            selectedRoute: undefined,
           },
         };
       }
@@ -556,6 +741,7 @@ export const handlePickerKey = (
     }
 
     case "manual_model": {
+      const agent = state.selectedAgent ?? "codex";
       const editingKey = state.editingBinding ?? "DEFAULT";
       if (key.name === "escape") {
         const bindingIndex = BINDING_KEYS.indexOf(editingKey);
@@ -566,6 +752,8 @@ export const handlePickerKey = (
             view: "main",
             cursor: bindingIndex >= 0 ? bindingIndex : 0,
             editingBinding: undefined,
+            selectedAgent: undefined,
+            selectedRoute: undefined,
             inputBuffer: undefined,
             errorMessage: undefined,
           },
@@ -598,14 +786,28 @@ export const handlePickerKey = (
           };
         }
         try {
-          const candidate =
+          let candidate: string;
+          if (agent === "dsh") {
+            if (input.startsWith("dsh:")) {
+              candidate = input;
+            } else if (input.includes("/")) {
+              candidate = `dsh:${input}`;
+            } else if (state.selectedRoute) {
+              candidate = `dsh:${state.selectedRoute}/${input}`;
+            } else {
+              candidate = `dsh:${input}`;
+            }
+          } else if (
             input.includes(":") &&
             (input.startsWith("codex:") ||
               input.startsWith("claude:") ||
               input.startsWith("pi:") ||
               input.startsWith("dsh:"))
-              ? input
-              : `${state.selectedAgent ?? "codex"}:${input}`;
+          ) {
+            candidate = input;
+          } else {
+            candidate = `${agent}:${input}`;
+          }
           const parsed = parseAgentModel(candidate);
           if (!supportsReasoningEffort(parsed.agent, parsed.reasoning)) {
             return {
@@ -636,6 +838,8 @@ export const handlePickerKey = (
                   [editingKey]: `${parsed.agent}:${parsed.model}:${parsed.reasoning}`,
                 },
                 editingBinding: undefined,
+                selectedAgent: undefined,
+                selectedRoute: undefined,
                 inputBuffer: undefined,
                 errorMessage: undefined,
               },
@@ -715,6 +919,7 @@ export const handlePickerKey = (
             },
             editingBinding: undefined,
             selectedAgent: undefined,
+            selectedRoute: undefined,
             selectedModel: undefined,
           },
         };
@@ -729,6 +934,7 @@ export const handlePickerKey = (
             cursor: bindingIndex >= 0 ? bindingIndex : 0,
             editingBinding: undefined,
             selectedAgent: undefined,
+            selectedRoute: undefined,
             selectedModel: undefined,
           },
         };
@@ -790,6 +996,43 @@ export const renderPickerView = (state: PickerState): string => {
       break;
     }
 
+    case "route": {
+      lines.push(
+        localize(
+          lang,
+          `Select dsh route for ${state.editingBinding} (Enter to select, Esc to go back):`,
+          `Выберите маршрут dsh для ${state.editingBinding} (Enter — выбрать, Esc — назад):`,
+        ),
+      );
+      lines.push("");
+      DSH_ROUTES.forEach((route, index) => {
+        const isSelected = state.cursor === index;
+        const prefix = isSelected ? "> " : "  ";
+        lines.push(`${prefix}${route}`);
+      });
+      const customPrefix = state.cursor === DSH_ROUTES.length ? "> " : "  ";
+      lines.push(
+        `${customPrefix}${localize(lang, "custom…", "свой…")}`,
+      );
+      break;
+    }
+
+    case "manual_route": {
+      lines.push(
+        localize(
+          lang,
+          `Enter harness route for dsh (${state.editingBinding}):`,
+          `Введите маршрут для dsh (${state.editingBinding}):`,
+        ),
+      );
+      lines.push("");
+      lines.push(`> ${state.inputBuffer ?? ""}`);
+      if (state.errorMessage) {
+        lines.push(`  ${state.errorMessage}`);
+      }
+      break;
+    }
+
     case "model": {
       const agent = state.selectedAgent ?? "codex";
       lines.push(
@@ -800,7 +1043,11 @@ export const renderPickerView = (state: PickerState): string => {
         ),
       );
       lines.push("");
-      const curated = getCuratedModels(agent, state.modelsByAgent);
+      const curated = getCuratedModels(
+        agent,
+        state.selectedRoute,
+        state.modelsByAgent,
+      );
       curated.forEach((model, index) => {
         const isSelected = state.cursor === index;
         const prefix = isSelected ? "> " : "  ";
