@@ -21,7 +21,7 @@ import {
   type RunLogContext,
 } from "./logs.js";
 
-export type AgentProvider = "codex" | "pi";
+export type AgentProvider = "codex" | "claude" | "pi" | "dsh";
 export const defaultAgentProvider: AgentProvider = "codex";
 
 // How long an agent may stay quiet after its completion block before LFI ends
@@ -29,7 +29,12 @@ export const defaultAgentProvider: AgentProvider = "codex";
 // stuck agent costs seconds instead of the whole idle timeout.
 const completionGraceMs = 20_000;
 
-const agentProviders: ReadonlySet<string> = new Set([defaultAgentProvider, "pi"]);
+const agentProviders: ReadonlySet<string> = new Set([
+  defaultAgentProvider,
+  "claude",
+  "pi",
+  "dsh",
+]);
 
 export const isAgentProvider = (value: string): value is AgentProvider =>
   agentProviders.has(value);
@@ -48,7 +53,9 @@ const stateDirectoryByAgent: Record<
 > = {
   codex: (homeDirectory, environment) =>
     environment.CODEX_HOME?.trim() || join(homeDirectory, ".codex"),
+  claude: (homeDirectory) => join(homeDirectory, ".claude"),
   pi: (homeDirectory) => join(homeDirectory, ".pi", "agent"),
+  dsh: (homeDirectory) => join(homeDirectory, ".dsh"),
 };
 
 const profilePathsByAgent: Record<AgentProvider, (stateDirectory: string) => readonly string[]> = {
@@ -59,12 +66,22 @@ const profilePathsByAgent: Record<AgentProvider, (stateDirectory: string) => rea
     join(stateDirectory, "AGENTS.md"),
     join(stateDirectory, "auth.json"),
   ],
+  claude: (stateDirectory) => [
+    join(stateDirectory, "config.json"),
+    join(stateDirectory, "agents"),
+    join(stateDirectory, "AGENTS.md"),
+    join(stateDirectory, "auth.json"),
+  ],
   pi: (stateDirectory) => [
     join(stateDirectory, "settings.json"),
     join(stateDirectory, "extensions"),
     join(stateDirectory, "agents"),
     join(stateDirectory, "subagents.json"),
     join(stateDirectory, "AGENTS.md"),
+    join(stateDirectory, "auth.json"),
+  ],
+  dsh: (stateDirectory) => [
+    join(stateDirectory, "config.json"),
     join(stateDirectory, "auth.json"),
   ],
 };
@@ -95,7 +112,9 @@ export const expandSkillPlaceholders = (
     switch (agent) {
       case "codex":
         return `$${skill}`;
+      case "claude":
       case "pi":
+      case "dsh":
         return `/skill:${skill}`;
     }
   });
@@ -104,11 +123,13 @@ export const supportsReasoningEffort = (
   agent: AgentProvider,
   reasoning: ReasoningEffort,
 ): boolean => {
-    switch (agent) {
-      case "codex":
-        return true;
-      case "pi":
-        return reasoning !== "ultra";
+  switch (agent) {
+    case "codex":
+      return true;
+    case "claude":
+    case "pi":
+    case "dsh":
+      return reasoning !== "ultra";
   }
 };
 
@@ -122,8 +143,12 @@ export interface AgentRunResult {
 const unavailableModelErrorByAgent: Record<AgentProvider, RegExp> = {
   codex:
     /model_not_found|unsupported model|model\b[^\n]*(?:not (?:available|found|supported)|does not exist|do not have access)/iu,
+  claude:
+    /model\b[^\n]*(?:not (?:available|found|supported)|does not exist|do not have access)/iu,
   pi:
     /(?:no model found matching|model\b[^\n]*(?:not (?:available|found|supported)|does not exist|do not have access))/iu,
+  dsh:
+    /model\b[^\n]*(?:not (?:available|found|supported)|does not exist|do not have access)/iu,
 };
 
 export const isUnavailableModelError = (

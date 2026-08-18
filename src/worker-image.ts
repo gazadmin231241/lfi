@@ -43,7 +43,9 @@ export const deriveWorkerImageTag = (projectRoot: string): string => {
 
 const agentPackage: Record<AgentProvider, string> = {
   codex: "@openai/codex",
+  claude: "@anthropic-ai/claude-code",
   pi: "@mariozechner/pi-coding-agent",
+  dsh: "deepseek-harness",
 };
 
 export const generateWorkerImageLayer = (

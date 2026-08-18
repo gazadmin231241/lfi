@@ -10,7 +10,6 @@ import { createInterface } from "node:readline/promises";
 import {
   DEFAULT_CONFIG,
   isIsolationProvider,
-  isReasoningEffort,
   loadConfig,
   saveConfig,
   serializeEnvConfig,
@@ -21,6 +20,11 @@ import {
 import { detectCommands } from "./detect.js";
 import { repoInfo } from "./github.js";
 import type { Language } from "./i18n.js";
+import {
+  applyBindingsToConfig,
+  runModelBindingPicker,
+  type ModelBindings,
+} from "./model-binding-picker.js";
 import {
   defaultMergePrompt,
   defaultRemediationPrompt,
@@ -43,11 +47,14 @@ export interface InitOptions {
   advanced?: boolean;
 }
 
-const OPENAI_56_PRESET = {
-  LIGHT_MODEL: "codex:gpt-5.6-luna:medium",
-  STANDARD_MODEL: "codex:gpt-5.6-terra:medium",
-  DEEP_MODEL: "codex:gpt-5.6-sol:medium",
-} as const;
+const DEFAULT_PRESET_BINDINGS: ModelBindings = {
+  DEFAULT: "codex:gpt-5.6-terra:medium",
+  light: "codex:gpt-5.6-luna:medium",
+  standard: "codex:gpt-5.6-terra:medium",
+  deep: "codex:gpt-5.6-sol:medium",
+  merger: "",
+  reviewer: "",
+};
 
 const exists = async (path: string) =>
   access(path).then(
@@ -148,19 +155,6 @@ const askRetention = async (language: Language): Promise<number> => {
   return Number.isFinite(value) && value >= 0 ? value : 3;
 };
 
-const askRecommendedModelPreset = async (
-  language: Language,
-): Promise<boolean> => {
-  const input = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await input.question(
-    language === "ru"
-      ? "Использовать рекомендуемый набор моделей Luna/Terra/Sol? [Y/n] "
-      : "Use the recommended Luna/Terra/Sol model preset? [Y/n] ",
-  );
-  input.close();
-  return !/^n/iu.test(answer.trim());
-};
-
 const askAdvanced = async (
   config: LfiConfig,
   language: Language,
@@ -169,37 +163,35 @@ const askAdvanced = async (
   const label = (english: string, russian: string) =>
     language === "ru" ? russian : english;
   const ask = async (name: string, current: string | number) =>
-    (await input.question(`${name} [${current || label("Codex default", "по умолчанию Codex")}] `)).trim() ||
+    (await input.question(`${name} [${current || label("not set", "не определена")}] `)).trim() ||
     String(current);
-  const codexReasoning = await ask(
-    label("Codex reasoning", "Уровень рассуждений Codex"),
-    config.REASONING_EFFORT,
+
+  const baseBranch = await ask(label("Base branch", "Основная ветка"), config.BASE_BRANCH);
+  const validateCommand = await ask(
+    label("Validation command", "Команда проверки"),
+    config.VALIDATE_COMMAND,
   );
-  const mergerReasoning = await ask(
-    label("Merger reasoning", "Уровень рассуждений при слиянии"),
-    config.MERGER_REASONING_EFFORT,
+  const worktreeSetupCommand = await ask(
+    label("Worktree setup command", "Команда подготовки worktree"),
+    config.WORKTREE_SETUP_COMMAND,
   );
-  const reviewerReasoning = await ask(
-    label("Reviewer reasoning", "Уровень рассуждений при ревью"),
-    config.REVIEWER_REASONING_EFFORT,
+  const maxParallel = Number(
+    await ask(label("Parallel workers", "Параллельных задач"), config.MAX_PARALLEL),
+  );
+  const maxStages = Number(
+    await ask(label("Maximum stages", "Максимум этапов"), config.MAX_STAGES),
+  );
+  const idleTimeout = Number(
+    await ask(
+      label("Idle timeout (minutes)", "Тайм-аут бездействия (минуты)"),
+      config.IDLE_TIMEOUT_MINUTES,
+    ),
   );
   const isolationProvider = await ask(
     label("Isolation provider", "Провайдер изоляции"),
     config.ISOLATION_PROVIDER,
   );
-  if (
-    !isReasoningEffort(codexReasoning) ||
-    !isReasoningEffort(mergerReasoning) ||
-    !isReasoningEffort(reviewerReasoning)
-  ) {
-    input.close();
-    throw new Error(
-      label(
-        "Unsupported reasoning effort.",
-        "Указан неподдерживаемый уровень рассуждений.",
-      ),
-    );
-  }
+
   if (!isIsolationProvider(isolationProvider)) {
     input.close();
     throw new Error(
@@ -209,56 +201,15 @@ const askAdvanced = async (
       ),
     );
   }
+
   const result: LfiConfig = {
     ...config,
-    DEFAULT_MODEL: await ask(
-      label("Fallback model", "Резервная модель"),
-      config.DEFAULT_MODEL,
-    ),
-    LIGHT_MODEL: await ask(
-      label("Model for light tier mapping", "Модель для маршрутизации light"),
-      config.LIGHT_MODEL,
-    ),
-    STANDARD_MODEL: await ask(
-      label("Model for standard tier mapping", "Модель для маршрутизации standard"),
-      config.STANDARD_MODEL,
-    ),
-    DEEP_MODEL: await ask(
-      label("Model for deep tier mapping", "Модель для маршрутизации deep"),
-      config.DEEP_MODEL,
-    ),
-    REASONING_EFFORT: codexReasoning,
-    MERGER_MODEL: await ask(
-      label("Merger model", "Модель для слияния"),
-      config.MERGER_MODEL,
-    ),
-    MERGER_REASONING_EFFORT: mergerReasoning,
-    REVIEWER_MODEL: await ask(
-      label("Reviewer model", "Модель для ревью"),
-      config.REVIEWER_MODEL,
-    ),
-    REVIEWER_REASONING_EFFORT: reviewerReasoning,
-    MAX_PARALLEL: Number(
-      await ask(label("Parallel workers", "Параллельных задач"), config.MAX_PARALLEL),
-    ),
-    MAX_STAGES: Number(
-      await ask(label("Maximum stages", "Максимум этапов"), config.MAX_STAGES),
-    ),
-    IDLE_TIMEOUT_MINUTES: Number(
-      await ask(
-        label("Idle timeout (minutes)", "Тайм-аут бездействия (минуты)"),
-        config.IDLE_TIMEOUT_MINUTES,
-      ),
-    ),
-    BASE_BRANCH: await ask(label("Base branch", "Основная ветка"), config.BASE_BRANCH),
-    VALIDATE_COMMAND: await ask(
-      label("Validation command", "Команда проверки"),
-      config.VALIDATE_COMMAND,
-    ),
-    WORKTREE_SETUP_COMMAND: await ask(
-      label("Worktree setup command", "Команда подготовки worktree"),
-      config.WORKTREE_SETUP_COMMAND,
-    ),
+    BASE_BRANCH: baseBranch,
+    VALIDATE_COMMAND: validateCommand,
+    WORKTREE_SETUP_COMMAND: worktreeSetupCommand,
+    MAX_PARALLEL: maxParallel,
+    MAX_STAGES: maxStages,
+    IDLE_TIMEOUT_MINUTES: idleTimeout,
     ISOLATION_PROVIDER: isolationProvider,
   };
   input.close();
@@ -271,6 +222,39 @@ export const initializeProject = async (
   const lfiRoot = join(options.cwd, ".lfi");
   const configPath = join(lfiRoot, "config.env");
   if (await exists(configPath)) {
+    const showPicker = process.stdin.isTTY && !options.yes && options.model === undefined;
+    if (showPicker) {
+      const existing = await loadConfig(configPath);
+      const initialBindings: Partial<ModelBindings> = {
+        DEFAULT: existing.DEFAULT_MODEL,
+        light: existing.LIGHT_MODEL,
+        standard: existing.STANDARD_MODEL,
+        deep: existing.DEEP_MODEL,
+        merger: existing.MERGER_MODEL,
+        reviewer: existing.REVIEWER_MODEL,
+      };
+      const chosen = await runModelBindingPicker({
+        initialBindings,
+        language: options.language,
+      });
+      if (chosen === null) {
+        return "exists";
+      }
+      let config = applyBindingsToConfig(existing, chosen);
+      if (options.retentionDays !== undefined) {
+        config.LOG_RETENTION_DAYS = options.retentionDays;
+      }
+      if (options.advanced) {
+        config = await askAdvanced(config, options.language);
+      }
+      await updateConfig(configPath, config, options.language);
+      await Promise.all([
+        writeDefaultPromptTemplates(lfiRoot, options.language),
+      ]);
+      await configureLocalTracker(options.cwd, options.language);
+      return "exists";
+    }
+
     const reconfigure = options.model !== undefined ||
       options.reasoning !== undefined ||
       options.retentionDays !== undefined ||
@@ -320,40 +304,56 @@ export const initializeProject = async (
     (process.stdin.isTTY && !options.yes
       ? await askRetention(options.language)
       : DEFAULT_CONFIG.LOG_RETENTION_DAYS);
-  const useRecommendedPreset =
-    options.model === undefined &&
-    process.stdin.isTTY &&
-    !options.yes &&
-    (await askRecommendedModelPreset(options.language));
-  let config: LfiConfig = {
-    ...DEFAULT_CONFIG,
-    DEFAULT_MODEL: options.model ?? DEFAULT_CONFIG.DEFAULT_MODEL,
-    LIGHT_MODEL:
-      options.model ??
-      (useRecommendedPreset
-        ? OPENAI_56_PRESET.LIGHT_MODEL
-        : DEFAULT_CONFIG.LIGHT_MODEL),
-    STANDARD_MODEL:
-      options.model ??
-      (useRecommendedPreset
-        ? OPENAI_56_PRESET.STANDARD_MODEL
-        : DEFAULT_CONFIG.STANDARD_MODEL),
-    DEEP_MODEL:
-      options.model ??
-      (useRecommendedPreset
-        ? OPENAI_56_PRESET.DEEP_MODEL
-        : DEFAULT_CONFIG.DEEP_MODEL),
-    REASONING_EFFORT:
-      options.reasoning ?? DEFAULT_CONFIG.REASONING_EFFORT,
-    MERGER_REASONING_EFFORT:
-      options.reasoning ?? DEFAULT_CONFIG.MERGER_REASONING_EFFORT,
-    LOG_RETENTION_DAYS: retentionDays,
-    BASE_BRANCH: repo.defaultBranch,
-    VALIDATE_COMMAND: commands.validate,
-    WORKTREE_SETUP_COMMAND: commands.setup,
-  };
-  if (options.advanced && process.stdin.isTTY && !options.yes) {
-    config = await askAdvanced(config, options.language);
+  const showPicker =
+    process.stdin.isTTY && !options.yes && options.model === undefined;
+
+  let config: LfiConfig;
+  if (showPicker) {
+    const chosen = await runModelBindingPicker({
+      initialBindings: DEFAULT_PRESET_BINDINGS,
+      language: options.language,
+    });
+    if (chosen === null) {
+      throw new Error(
+        options.language === "ru"
+          ? "Инициализация отменена."
+          : "Initialization cancelled.",
+      );
+    }
+    config = applyBindingsToConfig(
+      {
+        ...DEFAULT_CONFIG,
+        LOG_RETENTION_DAYS: retentionDays,
+        BASE_BRANCH: repo.defaultBranch,
+        VALIDATE_COMMAND: commands.validate,
+        WORKTREE_SETUP_COMMAND: commands.setup,
+      },
+      chosen,
+    );
+    if (options.advanced) {
+      config = await askAdvanced(config, options.language);
+    }
+  } else {
+    config = {
+      ...DEFAULT_CONFIG,
+      DEFAULT_MODEL: options.model ?? DEFAULT_CONFIG.DEFAULT_MODEL,
+      LIGHT_MODEL: options.model ?? DEFAULT_CONFIG.LIGHT_MODEL,
+      STANDARD_MODEL: options.model ?? DEFAULT_CONFIG.STANDARD_MODEL,
+      DEEP_MODEL: options.model ?? DEFAULT_CONFIG.DEEP_MODEL,
+      REASONING_EFFORT:
+        options.reasoning ?? DEFAULT_CONFIG.REASONING_EFFORT,
+      MERGER_REASONING_EFFORT:
+        options.reasoning ?? DEFAULT_CONFIG.MERGER_REASONING_EFFORT,
+      REVIEWER_REASONING_EFFORT:
+        options.reasoning ?? DEFAULT_CONFIG.REVIEWER_REASONING_EFFORT,
+      LOG_RETENTION_DAYS: retentionDays,
+      BASE_BRANCH: repo.defaultBranch,
+      VALIDATE_COMMAND: commands.validate,
+      WORKTREE_SETUP_COMMAND: commands.setup,
+    };
+    if (options.advanced && process.stdin.isTTY && !options.yes) {
+      config = await askAdvanced(config, options.language);
+    }
   }
 
   console.log(
