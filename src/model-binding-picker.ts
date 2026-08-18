@@ -11,7 +11,145 @@ import {
   type ReasoningEffort,
 } from "./config.js";
 import { type Language, localize } from "./i18n.js";
-import { runCommand } from "./process.js";
+import { runCommand, type CommandOptions, type CommandResult } from "./process.js";
+
+export const DEFAULT_PI_MODELS_TIMEOUT_MS = 5_000;
+
+export const parsePiModelList = (output: string): string[] => {
+  const clean = output.replace(/\u001b\[[0-9;]*[a-zA-Z]/gu, "");
+  const lines = clean.split(/\r?\n/);
+  const headerIndex = lines.findIndex((line) => {
+    const tokens = line.trim().split(/\s+/);
+    return (
+      tokens.length >= 2 &&
+      tokens[0]?.toLowerCase() === "provider" &&
+      tokens[1]?.toLowerCase() === "model"
+    );
+  });
+
+  if (headerIndex === -1) {
+    return [];
+  }
+
+  const models: string[] = [];
+  for (let i = headerIndex + 1; i < lines.length; i++) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
+    if (line.startsWith("-") || line.startsWith("=")) continue;
+    const tokens = line.split(/\s+/);
+    if (tokens.length >= 2) {
+      const provider = tokens[0];
+      const model = tokens[1];
+      if (provider && model) {
+        models.push(`${provider}/${model}`);
+      }
+    }
+  }
+
+  return Array.from(new Set(models));
+};
+
+export interface FetchPiModelsOptions {
+  timeoutMs?: number | undefined;
+  runner?: (
+    (
+      command: string,
+      args: readonly string[],
+      options?: CommandOptions,
+    ) => Promise<CommandResult>
+  ) | undefined;
+  language?: Language | undefined;
+}
+
+export interface FetchPiModelsResult {
+  ok: boolean;
+  models: string[];
+  error?: string;
+}
+
+export const fetchPiModels = async (
+  options: FetchPiModelsOptions = {},
+): Promise<FetchPiModelsResult> => {
+  const runner = options.runner ?? runCommand;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_PI_MODELS_TIMEOUT_MS;
+  const language = options.language ?? "en";
+
+  try {
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), timeoutMs);
+    let result: CommandResult;
+    try {
+      result = await runner("pi", ["--list-models"], {
+        signal: abortController.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (abortController.signal.aborted) {
+      return {
+        ok: false,
+        models: [],
+        error: localize(
+          language,
+          "pi --list-models timed out; enter model manually.",
+          "Превышен тайм-аут pi --list-models; введите модель вручную.",
+        ),
+      };
+    }
+
+    if (result.exitCode !== 0) {
+      return {
+        ok: false,
+        models: [],
+        error: localize(
+          language,
+          `pi --list-models exited with code ${result.exitCode}; enter model manually.`,
+          `Команда pi --list-models завершилась с кодом ${result.exitCode}; введите модель вручную.`,
+        ),
+      };
+    }
+
+    const models = parsePiModelList(result.stdout);
+    if (models.length === 0) {
+      return {
+        ok: false,
+        models: [],
+        error: localize(
+          language,
+          "No models found in pi output; enter model manually.",
+          "Каталог моделей pi пуст или не распознан; введите модель вручную.",
+        ),
+      };
+    }
+
+    return {
+      ok: true,
+      models,
+    };
+  } catch (err: any) {
+    if (err?.name === "AbortError" || err?.code === "ABORT_ERR") {
+      return {
+        ok: false,
+        models: [],
+        error: localize(
+          language,
+          "pi --list-models timed out; enter model manually.",
+          "Превышен тайм-аут pi --list-models; введите модель вручную.",
+        ),
+      };
+    }
+    return {
+      ok: false,
+      models: [],
+      error: localize(
+        language,
+        "pi CLI is not found on host; enter model manually.",
+        "CLI pi не найден на хосте; введите модель вручную.",
+      ),
+    };
+  }
+};
 
 export type BindingKey =
   | "DEFAULT"
@@ -97,8 +235,16 @@ const curatedModelsByAgent: Record<AgentProvider, readonly string[]> = {
   dsh: [],
 };
 
-export const getCuratedModels = (agent: AgentProvider): readonly string[] =>
-  curatedModelsByAgent[agent] ?? [];
+export const getCuratedModels = (
+  agent: AgentProvider | undefined,
+  modelsByAgent?: Partial<Record<AgentProvider, readonly string[]>>,
+): readonly string[] => {
+  if (!agent) return [];
+  if (modelsByAgent?.[agent]) {
+    return modelsByAgent[agent]!;
+  }
+  return curatedModelsByAgent[agent] ?? [];
+};
 
 const allReasoningEfforts: readonly ReasoningEffort[] = [
   "low",
@@ -138,6 +284,7 @@ export interface PickerState {
   selectedModel?: string | undefined;
   inputBuffer?: string | undefined;
   errorMessage?: string | undefined;
+  modelsByAgent?: Partial<Record<AgentProvider, readonly string[]>> | undefined;
 }
 
 export type PickerKeyResult =
@@ -299,6 +446,26 @@ export const handlePickerKey = (
           };
         }
         const selectedAgent = AGENTS[state.cursor - 1];
+        const models = getCuratedModels(selectedAgent, state.modelsByAgent);
+        if (selectedAgent === "pi" && models.length === 0) {
+          return {
+            type: "continue",
+            state: {
+              ...state,
+              view: "manual_model",
+              cursor: 0,
+              selectedAgent,
+              inputBuffer: "",
+              errorMessage:
+                state.errorMessage ??
+                localize(
+                  state.language,
+                  "pi CLI is not found on host; enter model manually.",
+                  "CLI pi не найден на хосте; введите модель вручную.",
+                ),
+            },
+          };
+        }
         return {
           type: "continue",
           state: {
@@ -306,6 +473,7 @@ export const handlePickerKey = (
             view: "model",
             cursor: 0,
             selectedAgent,
+            errorMessage: undefined,
           },
         };
       }
@@ -327,7 +495,7 @@ export const handlePickerKey = (
     case "model": {
       const agent = state.selectedAgent ?? "codex";
       const editingKey = state.editingBinding ?? "DEFAULT";
-      const curated = getCuratedModels(agent);
+      const curated = getCuratedModels(agent, state.modelsByAgent);
       const maxIndex = curated.length; // 0..curated.length - 1: curated, curated.length: custom
       if (key.name === "up") {
         return {
@@ -632,7 +800,7 @@ export const renderPickerView = (state: PickerState): string => {
         ),
       );
       lines.push("");
-      const curated = getCuratedModels(agent);
+      const curated = getCuratedModels(agent, state.modelsByAgent);
       curated.forEach((model, index) => {
         const isSelected = state.cursor === index;
         const prefix = isSelected ? "> " : "  ";
@@ -703,9 +871,17 @@ export const checkHostAgentAvailability = async (): Promise<
 export interface RunPickerOptions {
   initialBindings: Partial<ModelBindings>;
   language: Language;
-  availability?: Record<AgentProvider, boolean>;
-  input?: NodeJS.ReadStream;
-  output?: NodeJS.WriteStream;
+  availability?: Record<AgentProvider, boolean> | undefined;
+  commandRunner?: (
+    (
+      command: string,
+      args: readonly string[],
+      options?: CommandOptions,
+    ) => Promise<CommandResult>
+  ) | undefined;
+  piTimeoutMs?: number | undefined;
+  input?: NodeJS.ReadStream | undefined;
+  output?: NodeJS.WriteStream | undefined;
 }
 
 export const runModelBindingPicker = async (
@@ -745,7 +921,41 @@ export const runModelBindingPicker = async (
       }
     };
 
-    const onKeypress = (_ch: string | undefined, key: readline.Key) => {
+    const onKeypress = async (_ch: string | undefined, key: readline.Key) => {
+      if (
+        state.view === "agent" &&
+        (key.name === "return" || key.name === "enter") &&
+        state.cursor > 0
+      ) {
+        const agent = AGENTS[state.cursor - 1];
+        if (agent === "pi" && state.modelsByAgent?.pi === undefined) {
+          const fetchResult = await fetchPiModels({
+            runner: options.commandRunner,
+            timeoutMs: options.piTimeoutMs,
+            language: state.language,
+          });
+          if (fetchResult.ok) {
+            state = {
+              ...state,
+              modelsByAgent: {
+                ...state.modelsByAgent,
+                pi: fetchResult.models,
+              },
+              errorMessage: undefined,
+            };
+          } else {
+            state = {
+              ...state,
+              modelsByAgent: {
+                ...state.modelsByAgent,
+                pi: [],
+              },
+              errorMessage: fetchResult.error,
+            };
+          }
+        }
+      }
+
       const result = handlePickerKey(state, {
         name: key.name,
         sequence: key.sequence,

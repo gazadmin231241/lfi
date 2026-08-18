@@ -2,17 +2,21 @@ import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import {
   applyBindingsToConfig,
   createInitialPickerState,
+  fetchPiModels,
   formatBindingLine,
   getAvailableReasoning,
   getCuratedModels,
   handlePickerKey,
+  parsePiModelList,
   renderPickerView,
   resolveBindingInheritance,
+  runModelBindingPicker,
   type ModelBindings,
   type PickerKeyInput,
   type PickerState,
@@ -128,7 +132,188 @@ test("formatBindingLine formats resolved and inherited strings matching specific
   );
 });
 
-test("curated models are provided for codex and claude, while pi and dsh are empty in this slice", () => {
+test("parsePiModelList parses a normal table output into provider/model format", () => {
+  const tableOutput = `
+provider      model                    context  max-out  thinking  images
+antigravity   claude-opus-4-6          250K     64K      yes       yes   
+antigravity   claude-sonnet-4-6        200K     64K      yes       yes   
+ollama        deepseek-v4-flash:cloud  128K     16.4K    yes       no    
+openai-codex  gpt-5.6-terra            272K     128K     yes       yes   
+opencode-go   deepseek-v4-flash        1M       384K     yes       no    
+`;
+
+  const parsed = parsePiModelList(tableOutput);
+  assert.deepEqual(parsed, [
+    "antigravity/claude-opus-4-6",
+    "antigravity/claude-sonnet-4-6",
+    "ollama/deepseek-v4-flash:cloud",
+    "openai-codex/gpt-5.6-terra",
+    "opencode-go/deepseek-v4-flash",
+  ]);
+});
+
+test("parsePiModelList handles ANSI escapes, empty lines, and table separators", () => {
+  const tableOutput = `
+\u001b[1mprovider      model                    context  max-out  thinking  images\u001b[0m
+--------------------------------------------------------------------------------
+antigravity   claude-sonnet-4-6        200K     64K      yes       yes   
+
+openai-codex  gpt-5.6-terra            272K     128K     yes       yes   
+`;
+
+  const parsed = parsePiModelList(tableOutput);
+  assert.deepEqual(parsed, [
+    "antigravity/claude-sonnet-4-6",
+    "openai-codex/gpt-5.6-terra",
+  ]);
+});
+
+test("parsePiModelList returns an empty array for empty output, garbage text, and header-only output", () => {
+  assert.deepEqual(parsePiModelList(""), []);
+  assert.deepEqual(parsePiModelList("   \n\n\t  "), []);
+  assert.deepEqual(parsePiModelList("Error: command failed to connect to daemon\n"), []);
+  assert.deepEqual(parsePiModelList("random unstructured output with no columns\nfoo bar"), []);
+  assert.deepEqual(parsePiModelList('{"json":"output","models":["foo"]}'), []);
+  assert.deepEqual(parsePiModelList("provider      model                    context  max-out  thinking  images\n"), []);
+});
+
+test("fetchPiModels resolves parsed models on successful runCommand execution", async () => {
+  const fakeRunner = async (_cmd: string, _args: readonly string[]) => ({
+    exitCode: 0,
+    stdout: `
+provider      model                    context  max-out  thinking  images
+antigravity   claude-sonnet-4-6        200K     64K      yes       yes   
+openai-codex  gpt-5.6-terra            272K     128K     yes       yes   
+`,
+    stderr: "",
+  });
+
+  const result = await fetchPiModels({ runner: fakeRunner as any, language: "en" });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.models, [
+    "antigravity/claude-sonnet-4-6",
+    "openai-codex/gpt-5.6-terra",
+  ]);
+});
+
+test("fetchPiModels returns localized explanation on non-zero exit code, timeout, missing command, or empty catalog", async () => {
+  // Non-zero exit code
+  const nonZeroRunner = async () => ({
+    exitCode: 127,
+    stdout: "",
+    stderr: "error",
+  });
+  const resNonZeroEn = await fetchPiModels({ runner: nonZeroRunner as any, language: "en" });
+  assert.equal(resNonZeroEn.ok, false);
+  assert.match(resNonZeroEn.error ?? "", /exited with code 127/u);
+
+  const resNonZeroRu = await fetchPiModels({ runner: nonZeroRunner as any, language: "ru" });
+  assert.equal(resNonZeroRu.ok, false);
+  assert.match(resNonZeroRu.error ?? "", /завершилась с кодом 127/u);
+
+  // Missing command / thrown error
+  const failingRunner = async () => {
+    const err = new Error("spawn pi ENOENT");
+    (err as any).code = "ENOENT";
+    throw err;
+  };
+  const resMissingEn = await fetchPiModels({ runner: failingRunner as any, language: "en" });
+  assert.equal(resMissingEn.ok, false);
+  assert.match(resMissingEn.error ?? "", /not found|not available/iu);
+
+  const resMissingRu = await fetchPiModels({ runner: failingRunner as any, language: "ru" });
+  assert.equal(resMissingRu.ok, false);
+  assert.match(resMissingRu.error ?? "", /не найден|недоступен/iu);
+
+  // Timeout / AbortError
+  const timeoutRunner = async () => {
+    const err = new Error("aborted");
+    err.name = "AbortError";
+    throw err;
+  };
+  const resTimeoutEn = await fetchPiModels({ runner: timeoutRunner as any, language: "en" });
+  assert.equal(resTimeoutEn.ok, false);
+  assert.match(resTimeoutEn.error ?? "", /timed out/iu);
+
+  const resTimeoutRu = await fetchPiModels({ runner: timeoutRunner as any, language: "ru" });
+  assert.equal(resTimeoutRu.ok, false);
+  assert.match(resTimeoutRu.error ?? "", /тайм-аут/iu);
+
+  // Empty / unrecognized output
+  const garbageRunner = async () => ({
+    exitCode: 0,
+    stdout: "unexpected greeting\n",
+    stderr: "",
+  });
+  const resGarbageEn = await fetchPiModels({ runner: garbageRunner as any, language: "en" });
+  assert.equal(resGarbageEn.ok, false);
+  assert.match(resGarbageEn.error ?? "", /No models found|enter model manually/iu);
+});
+
+test("selecting pi with loaded models displays pi models and allows selection with reasoning", () => {
+  const availability = { codex: true, claude: true, pi: true, dsh: true };
+  let state = createInitialPickerState({}, availability, "en");
+  state.modelsByAgent = {
+    pi: ["antigravity/claude-sonnet-4-6", "openai-codex/gpt-5.6-terra"],
+  };
+
+  // Select DEFAULT -> open agent view
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "agent");
+
+  // Select pi (cursor 3)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "model");
+  assert.equal(state.selectedAgent, "pi");
+
+  // Model view shows pi models: 0: antigravity/claude-sonnet-4-6, 1: openai-codex/gpt-5.6-terra, 2: custom model…
+  const rendered = renderPickerView(state);
+  assert.match(rendered, /> antigravity\/claude-sonnet-4-6/u);
+  assert.match(rendered, /openai-codex\/gpt-5\.6-terra/u);
+  assert.match(rendered, /custom model…/u);
+
+  // Select first model (antigravity/claude-sonnet-4-6) -> reasoning
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "reasoning");
+  assert.equal(state.selectedModel, "antigravity/claude-sonnet-4-6");
+
+  // Choose medium reasoning (cursor 1 in reasoning: low, medium, high, xhigh, max)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "main");
+  assert.equal(state.bindings.DEFAULT, "pi:antigravity/claude-sonnet-4-6:medium");
+});
+
+test("selecting pi with empty/failed models transitions directly to manual_model with explanation", () => {
+  const availability = { codex: true, claude: true, pi: true, dsh: true };
+  let state = createInitialPickerState({}, availability, "ru");
+  state.modelsByAgent = { pi: [] };
+  state.errorMessage = "CLI pi не найден на хосте; введите модель вручную.";
+
+  // Select DEFAULT -> open agent view
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "agent");
+
+  // Select pi (cursor 3)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+
+  assert.equal(state.view, "manual_model");
+  assert.equal(state.selectedAgent, "pi");
+  assert.equal(state.inputBuffer, "");
+  assert.match(state.errorMessage ?? "", /CLI pi не найден на хосте/u);
+
+  const rendered = renderPickerView(state);
+  assert.match(rendered, /Введите модель для pi/u);
+  assert.match(rendered, /CLI pi не найден на хосте/u);
+});
+
+test("curated models are provided for codex and claude, while pi and dsh are empty by default", () => {
   assert.deepEqual(getCuratedModels("codex"), [
     "gpt-5.6-luna",
     "gpt-5.6-terra",
@@ -260,12 +445,9 @@ test("manual model input validates reasoning and shows error without exiting on 
   state = nextState(state, { name: "down" });
   state = nextState(state, { name: "down" });
   state = nextState(state, { name: "return" });
-  assert.equal(state.view, "model");
-  assert.equal(state.selectedAgent, "pi");
-
-  // For pi, curated list is empty, item 0 is 'custom model…'
-  state = nextState(state, { name: "return" });
+  // For pi without preloaded models, it transitions directly to manual_model with explanation
   assert.equal(state.view, "manual_model");
+  assert.equal(state.selectedAgent, "pi");
   assert.equal(state.inputBuffer, "");
 
   // Type empty and submit
@@ -473,17 +655,122 @@ test("all six bindings can be edited including merger and reviewer", () => {
   assert.equal(state.bindings.reviewer, "codex:gpt-5.6-sol:max");
 });
 
-test("agents marked as not found on host can still be selected", () => {
-  const availability = { codex: false, claude: false, pi: false, dsh: false };
-  let state = createInitialPickerState({}, availability, "en");
+test("runModelBindingPicker fetches pi models lazily only when pi is selected", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  (input as any).isTTY = true;
+  (input as any).setRawMode = () => {};
 
-  // Select DEFAULT -> codex (even though not found)
-  state = nextState(state, { name: "return" });
-  state = nextState(state, { name: "down" }); // cursor 1 (codex)
-  state = nextState(state, { name: "return" });
-  assert.equal(state.view, "model");
-  assert.equal(state.selectedAgent, "codex");
+  let piFetchCount = 0;
+  const mockRunner = async (cmd: string, args: readonly string[]) => {
+    if (cmd === "pi" && args[0] === "--list-models") {
+      piFetchCount++;
+      return {
+        exitCode: 0,
+        stdout: "provider model context max-out thinking images\nantigravity test-model 100K 10K yes yes\n",
+        stderr: "",
+      };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const promise = runModelBindingPicker({
+    initialBindings: {},
+    language: "en",
+    availability: { codex: true, claude: true, pi: true, dsh: true },
+    commandRunner: mockRunner as any,
+    input: input as any,
+    output: output as any,
+  });
+
+  // Main screen: at cursor 0 (DEFAULT), press Enter to edit
+  input.emit("keypress", "", { name: "return" });
+
+  // Agent screen: cursor 0 is inherit. Pi fetch count should still be 0!
+  assert.equal(piFetchCount, 0);
+
+  // Move down to codex (cursor 1). Pi fetch count should still be 0!
+  input.emit("keypress", "", { name: "down" });
+  assert.equal(piFetchCount, 0);
+
+  // Move down to claude (cursor 2). Pi fetch count should still be 0!
+  input.emit("keypress", "", { name: "down" });
+  assert.equal(piFetchCount, 0);
+
+  // Move down to pi (cursor 3).
+  input.emit("keypress", "", { name: "down" });
+  assert.equal(piFetchCount, 0);
+
+  // Press enter on pi -> triggers lazy fetch!
+  input.emit("keypress", "", { name: "return" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(piFetchCount, 1);
+
+  // Model view: cursor 0 is antigravity/test-model. Select it!
+  input.emit("keypress", "", { name: "return" });
+
+  // Reasoning view: cursor 0 is low. Select it!
+  input.emit("keypress", "", { name: "return" });
+
+  // Back on main screen: cursor is 0 (DEFAULT).
+  // Move to Done (cursor 6) and press return.
+  for (let i = 0; i < 6; i++) {
+    input.emit("keypress", "", { name: "down" });
+  }
+  input.emit("keypress", "", { name: "return" });
+
+  const result = await promise;
+  assert.ok(result);
+  assert.equal(result.DEFAULT, "pi:antigravity/test-model:low");
 });
+
+test("runModelBindingPicker falls back to manual model input with explanation when pi command fails", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  (input as any).isTTY = true;
+  (input as any).setRawMode = () => {};
+
+  const mockRunner = async () => {
+    throw new Error("pi not found");
+  };
+
+  const promise = runModelBindingPicker({
+    initialBindings: {},
+    language: "en",
+    availability: { codex: true, claude: true, pi: false, dsh: false },
+    commandRunner: mockRunner as any,
+    input: input as any,
+    output: output as any,
+  });
+
+  // Edit DEFAULT
+  input.emit("keypress", "", { name: "return" });
+
+  // Move to pi (cursor 3) and press enter
+  input.emit("keypress", "", { name: "down" });
+  input.emit("keypress", "", { name: "down" });
+  input.emit("keypress", "", { name: "down" });
+  input.emit("keypress", "", { name: "return" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  // Now on manual_model screen with error explanation!
+  // Type custom model "openai/custom-gpt:high"
+  for (const ch of "openai/custom-gpt:high") {
+    input.emit("keypress", ch, { sequence: ch });
+  }
+  input.emit("keypress", "", { name: "return" });
+
+  // Done
+  for (let i = 0; i < 6; i++) {
+    input.emit("keypress", "", { name: "down" });
+  }
+  input.emit("keypress", "", { name: "return" });
+
+  const result = await promise;
+  assert.ok(result);
+  assert.equal(result.DEFAULT, "pi:openai/custom-gpt:high");
+});
+
 
 test("initializeProject with yes=true bypasses screen and does not ask preset question", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-init-yes-"));
