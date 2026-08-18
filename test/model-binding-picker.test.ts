@@ -7,9 +7,11 @@ import test from "node:test";
 import {
   applyBindingsToConfig,
   createInitialPickerState,
+  DSH_ROUTES,
   formatBindingLine,
   getAvailableReasoning,
   getCuratedModels,
+  getCuratedRoutes,
   handlePickerKey,
   renderPickerView,
   resolveBindingInheritance,
@@ -128,7 +130,15 @@ test("formatBindingLine formats resolved and inherited strings matching specific
   );
 });
 
-test("curated models are provided for codex and claude, while pi and dsh are empty in this slice", () => {
+test("curated routes are provided for dsh and empty for other agents", () => {
+  assert.deepEqual(DSH_ROUTES, ["deepseek-official", "opencode-go"]);
+  assert.deepEqual(getCuratedRoutes("dsh"), ["deepseek-official", "opencode-go"]);
+  assert.deepEqual(getCuratedRoutes("codex"), []);
+  assert.deepEqual(getCuratedRoutes("claude"), []);
+  assert.deepEqual(getCuratedRoutes("pi"), []);
+});
+
+test("curated models are indexed by route for dsh, while pi is empty", () => {
   assert.deepEqual(getCuratedModels("codex"), [
     "gpt-5.6-luna",
     "gpt-5.6-terra",
@@ -142,6 +152,15 @@ test("curated models are provided for codex and claude, while pi and dsh are emp
   ]);
   assert.deepEqual(getCuratedModels("pi"), []);
   assert.deepEqual(getCuratedModels("dsh"), []);
+  assert.deepEqual(getCuratedModels("dsh", "deepseek-official"), [
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+  ]);
+  assert.deepEqual(getCuratedModels("dsh", "opencode-go"), [
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+  ]);
+  assert.deepEqual(getCuratedModels("dsh", "custom-route"), []);
 });
 
 test("available reasoning offers all levels for codex and excludes ultra for claude, pi, and dsh", () => {
@@ -473,16 +492,241 @@ test("all six bindings can be edited including merger and reviewer", () => {
   assert.equal(state.bindings.reviewer, "codex:gpt-5.6-sol:max");
 });
 
-test("agents marked as not found on host can still be selected", () => {
-  const availability = { codex: false, claude: false, pi: false, dsh: false };
+test("state machine navigates dsh -> route -> curated model -> reasoning -> main", () => {
+  const availability = { codex: true, claude: true, pi: true, dsh: true };
   let state = createInitialPickerState({}, availability, "en");
 
-  // Select DEFAULT -> codex (even though not found)
+  // Enter DEFAULT binding
   state = nextState(state, { name: "return" });
-  state = nextState(state, { name: "down" }); // cursor 1 (codex)
+  assert.equal(state.view, "agent");
+
+  // Select dsh (cursor 4 in agent menu: 0: inherit, 1: codex, 2: claude, 3: pi, 4: dsh)
+  for (let i = 0; i < 4; i++) {
+    state = nextState(state, { name: "down" });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "route");
+  assert.equal(state.selectedAgent, "dsh");
+
+  // In route list: 0: deepseek-official, 1: opencode-go, 2: custom…
+  // Select deepseek-official (cursor 0)
   state = nextState(state, { name: "return" });
   assert.equal(state.view, "model");
-  assert.equal(state.selectedAgent, "codex");
+  assert.equal(state.selectedRoute, "deepseek-official");
+
+  // In dsh model list for deepseek-official: 0: deepseek-v4-pro, 1: deepseek-v4-flash, 2: custom model…
+  // Select deepseek-v4-pro (cursor 0)
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "reasoning");
+  assert.equal(state.selectedModel, "deepseek-official/deepseek-v4-pro");
+
+  // In reasoning list: 0: low, 1: medium, 2: high, 3: xhigh, 4: max
+  state = nextState(state, { name: "down" }); // medium
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "main");
+  assert.equal(
+    state.bindings.DEFAULT,
+    "dsh:deepseek-official/deepseek-v4-pro:medium",
+  );
+});
+
+test("state machine supports opencode-go route and does not restrict reasoning effort based on route", () => {
+  const availability = { codex: true, claude: true, pi: true, dsh: true };
+  let state = createInitialPickerState({}, availability, "ru");
+
+  // Enter standard binding (cursor 2)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "agent");
+
+  // Select dsh (cursor 4)
+  for (let i = 0; i < 4; i++) {
+    state = nextState(state, { name: "down" });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "route");
+
+  // Select opencode-go (cursor 1 in route menu)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "model");
+  assert.equal(state.selectedRoute, "opencode-go");
+
+  // Select deepseek-v4-pro (cursor 0)
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "reasoning");
+  assert.equal(state.selectedModel, "opencode-go/deepseek-v4-pro");
+
+  // Screen offers all 5 reasoning levels and allows selecting 'low'
+  state = nextState(state, { name: "return" }); // cursor 0: low
+  assert.equal(state.view, "main");
+  assert.equal(state.bindings.standard, "dsh:opencode-go/deepseek-v4-pro:low");
+});
+
+test("state machine supports custom route and custom model with manual input", () => {
+  const availability = { codex: true, claude: true, pi: true, dsh: true };
+  let state = createInitialPickerState({}, availability, "en");
+
+  // Enter deep binding (cursor 3)
+  for (let i = 0; i < 3; i++) {
+    state = nextState(state, { name: "down" });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "agent");
+
+  // Select dsh
+  for (let i = 0; i < 4; i++) {
+    state = nextState(state, { name: "down" });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "route");
+
+  // Move to custom route (cursor 2: 0: deepseek-official, 1: opencode-go, 2: custom…)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "manual_route");
+
+  // Submit empty -> error
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "manual_route");
+  assert.ok(state.errorMessage);
+
+  // Type custom route: 'custom-zen'
+  for (const ch of "custom-zen") {
+    state = nextState(state, { sequence: ch });
+  }
+  assert.equal(state.inputBuffer, "custom-zen");
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "model");
+  assert.equal(state.selectedRoute, "custom-zen");
+
+  // For custom route, curated model list is empty, item 0 is 'custom model…'
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "manual_model");
+
+  // Type model name 'deepseek-chat:high'
+  for (const ch of "deepseek-chat:high") {
+    state = nextState(state, { sequence: ch });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "main");
+  assert.equal(state.bindings.deep, "dsh:custom-zen/deepseek-chat:high");
+});
+
+test("custom model input under dsh with selected route prepends route when omitted", () => {
+  const availability = { codex: true, claude: true, pi: true, dsh: true };
+  let state = createInitialPickerState({}, availability, "en");
+
+  // Edit light (cursor 1)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+
+  // Select dsh -> deepseek-official
+  for (let i = 0; i < 4; i++) {
+    state = nextState(state, { name: "down" });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "route");
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "model");
+
+  // Select custom model… (cursor 2)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "manual_model");
+
+  // Type 'my-custom-v4' without route or reasoning
+  for (const ch of "my-custom-v4") {
+    state = nextState(state, { sequence: ch });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "reasoning");
+  assert.equal(state.selectedModel, "deepseek-official/my-custom-v4");
+
+  // Select high (cursor 2: low, medium, high)
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "main");
+  assert.equal(state.bindings.light, "dsh:deepseek-official/my-custom-v4:high");
+});
+
+test("Esc in route and manual_route returns to main without modifying bindings", () => {
+  const availability = { codex: true, claude: true, pi: true, dsh: true };
+  let state = createInitialPickerState(
+    { DEFAULT: "dsh:deepseek-v4-pro:medium" },
+    availability,
+    "en",
+  );
+
+  // Enter agent -> dsh -> route view
+  state = nextState(state, { name: "return" });
+  for (let i = 0; i < 4; i++) {
+    state = nextState(state, { name: "down" });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "route");
+
+  // Esc from route view
+  state = nextState(state, { name: "escape" });
+  assert.equal(state.view, "main");
+  assert.equal(state.bindings.DEFAULT, "dsh:deepseek-v4-pro:medium");
+
+  // Enter agent -> dsh -> custom route -> manual_route view
+  state = nextState(state, { name: "return" });
+  for (let i = 0; i < 4; i++) {
+    state = nextState(state, { name: "down" });
+  }
+  state = nextState(state, { name: "return" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "manual_route");
+
+  // Esc from manual_route view
+  state = nextState(state, { name: "escape" });
+  assert.equal(state.view, "main");
+  assert.equal(state.bindings.DEFAULT, "dsh:deepseek-v4-pro:medium");
+});
+
+test("renderPickerView renders dsh route and manual_route views in English and Russian", () => {
+  const availability = { codex: true, claude: true, pi: true, dsh: true };
+  let state = createInitialPickerState({}, availability, "en");
+
+  // Enter agent -> dsh -> route view
+  state = nextState(state, { name: "return" });
+  for (let i = 0; i < 4; i++) {
+    state = nextState(state, { name: "down" });
+  }
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "route");
+
+  const routeEn = renderPickerView(state);
+  assert.match(routeEn, /Select dsh route for DEFAULT/u);
+  assert.match(routeEn, /> deepseek-official/u);
+  assert.match(routeEn, /  opencode-go/u);
+  assert.match(routeEn, /  custom…/u);
+
+  state.language = "ru";
+  const routeRu = renderPickerView(state);
+  assert.match(routeRu, /Выберите маршрут dsh для DEFAULT/u);
+  assert.match(routeRu, /свой…/u);
+
+  // Move to custom… -> manual_route view
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "down" });
+  state = nextState(state, { name: "return" });
+  assert.equal(state.view, "manual_route");
+
+  const manualRouteRu = renderPickerView(state);
+  assert.match(manualRouteRu, /Введите маршрут для dsh \(DEFAULT\):/u);
+
+  state.language = "en";
+  const manualRouteEn = renderPickerView(state);
+  assert.match(manualRouteEn, /Enter harness route for dsh \(DEFAULT\):/u);
 });
 
 test("initializeProject with yes=true bypasses screen and does not ask preset question", async () => {
