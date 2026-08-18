@@ -8,6 +8,7 @@
   },
   "files": [
     "dist",
+    "dsh-plugin",
     "README.md",
     "README.ru.md",
     "LICENSE"

@@ -39,6 +39,7 @@ export interface LfiConfig {
   VALIDATE_COMMAND: string;
   WORKTREE_SETUP_COMMAND: string;
   ISOLATION_PROVIDER: IsolationProvider;
+  EXCLUDED_TOOLS: readonly string[];
 }
 
 export const DEFAULT_CONFIG: LfiConfig = {
@@ -63,7 +64,13 @@ export const DEFAULT_CONFIG: LfiConfig = {
   VALIDATE_COMMAND: "",
   WORKTREE_SETUP_COMMAND: "",
   ISOLATION_PROVIDER: "local",
+  EXCLUDED_TOOLS: [],
 };
+
+/** Reads a comma-separated tool denylist, dropping blanks and duplicates. */
+export const parseExcludedTools = (value: string): readonly string[] => [
+  ...new Set(value.split(",").map((tool) => tool.trim()).filter(Boolean)),
+];
 
 const configComments = {
   en: {
@@ -90,6 +97,7 @@ const configComments = {
       MAX_STAGES: "maximum stages per run",
       LOG_RETENTION_DAYS: "days to keep logs",
       IDLE_TIMEOUT_MINUTES: "silent minutes before an agent is treated as stuck",
+      EXCLUDED_TOOLS: "comma-separated tools withheld from agents; honoured by pi, claude and dsh only",
       ISOLATION_PROVIDER: "local sandboxes execution; none requires a disposable environment",
     },
   },
@@ -117,6 +125,7 @@ const configComments = {
       MAX_STAGES: "максимум этапов за запуск",
       LOG_RETENTION_DAYS: "число дней хранения журналов",
       IDLE_TIMEOUT_MINUTES: "минуты молчания до признания агента зависшим",
+      EXCLUDED_TOOLS: "инструменты через запятую, недоступные агентам; учитывают только pi, claude и dsh",
       ISOLATION_PROVIDER: "local изолирует выполнение; none требует одноразовой среды",
     },
   },
@@ -169,6 +178,7 @@ export const serializeEnvConfig = (
       "VALIDATION_REPAIR_ATTEMPTS",
       "LOG_RETENTION_DAYS",
       "IDLE_TIMEOUT_MINUTES",
+      "EXCLUDED_TOOLS",
     ]),
     "",
     `# ${comments.isolation}`,
@@ -215,6 +225,10 @@ export const parseEnvConfig = (source: string): LfiConfig => {
       case "VALIDATE_COMMAND":
       case "WORKTREE_SETUP_COMMAND":
         result[key] = value;
+        canonicalKeys.add(key);
+        break;
+      case "EXCLUDED_TOOLS":
+        result.EXCLUDED_TOOLS = parseExcludedTools(value);
         canonicalKeys.add(key);
         break;
       case "REVIEW_ENABLED":

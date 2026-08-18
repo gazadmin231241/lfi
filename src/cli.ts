@@ -3,7 +3,14 @@ import { access, readFile, readdir, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 
 import { DEFAULT_CONFIG, isReasoningEffort, loadConfig } from "./config.js";
+import { dshProfileName } from "./agent-provider.js";
 import { runDoctor } from "./doctor.js";
+import {
+  DSH_VERSION,
+  dshProfileStatus,
+  dshVersion,
+  installDshProfile,
+} from "./dsh-profile.js";
 import { initializeProject } from "./init.js";
 import { localize, resolveLanguage, saveLanguage, t, type Language } from "./i18n.js";
 import { pruneExpiredRunLogs } from "./logs.js";
@@ -59,6 +66,7 @@ const printHelp = (language: Language) => {
   lfi logs [LFI-ID]
   lfi logs prune [--all]
   lfi skills install|list|doctor|update
+  lfi dsh install|status
   lfi config language [ru|en]`
       : `LFI — Let's Fucking Implement
 
@@ -70,6 +78,7 @@ Usage:
   lfi logs [LFI-ID]
   lfi logs prune [--all]
   lfi skills install|list|doctor|update
+  lfi dsh install|status
   lfi config language [ru|en]`,
   );
 };
@@ -267,6 +276,26 @@ const main = async (): Promise<number> => {
       statuses.some((status) => !status.installed || !status.hasOpenAiMetadata)
       ? 1
       : 0;
+  }
+  if (command === "dsh") {
+    const subcommand = positional[1] ?? "status";
+    if (subcommand === "install") {
+      const bundles = await installDshProfile({ language });
+      console.log(
+        localize(
+          language,
+          `Profile ${dshProfileName} mounts: ${bundles.join(", ")}`,
+          `Профиль ${dshProfileName} подключает: ${bundles.join(", ")}`,
+        ),
+      );
+      return 0;
+    }
+    const [version, status] = await Promise.all([dshVersion(), dshProfileStatus()]);
+    console.log(`dsh ${version ?? localize(language, "not found", "не найден")} (pin ${DSH_VERSION})`);
+    console.log(
+      `${status.installed ? "✓" : "✗"} ${dshProfileName}: ${status.bundles.join(", ") || localize(language, "not installed", "не установлен")}`,
+    );
+    return status.installed && version === DSH_VERSION ? 0 : 1;
   }
   if (command === "run") {
     await requireConfig(language);

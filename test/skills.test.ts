@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
@@ -52,9 +61,10 @@ test("skill installation copies every upstream skill byte-for-byte", async () =>
   const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
   const sourceRoot = join(root, "source");
   const destinationRoot = join(root, "installed");
+  const claudeSkillRoot = join(root, "claude-skills");
   await writeBundle(sourceRoot);
 
-  const installed = await installSkills({ sourceRoot, destinationRoot });
+  const installed = await installSkills({ sourceRoot, destinationRoot, claudeSkillRoot });
 
   assert.deepEqual(installed, SKILL_PATHS.map(skillName));
   for (const path of SKILL_PATHS) {
@@ -86,8 +96,9 @@ test("skill update accepts upstream rewording and installs it verbatim", async (
   const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
   const sourceRoot = join(root, "source");
   const destinationRoot = join(root, "installed");
+  const claudeSkillRoot = join(root, "claude-skills");
   await writeBundle(sourceRoot);
-  await installSkills({ sourceRoot, destinationRoot });
+  await installSkills({ sourceRoot, destinationRoot, claudeSkillRoot });
 
   const changedSource = join(sourceRoot, "skills/engineering/to-spec/SKILL.md");
   const reworded = "Upstream has reworded this instruction.\n";
@@ -96,6 +107,7 @@ test("skill update accepts upstream rewording and installs it verbatim", async (
   const changed = await installSkills({
     sourceRoot,
     destinationRoot,
+    claudeSkillRoot,
     update: true,
     yes: true,
   });
@@ -111,6 +123,7 @@ test("skill installation replaces an earlier adapted skill", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
   const sourceRoot = join(root, "source");
   const destinationRoot = join(root, "installed");
+  const claudeSkillRoot = join(root, "claude-skills");
   await writeBundle(sourceRoot);
   const destination = join(destinationRoot, "to-spec");
   await mkdir(join(destination, "agents"), { recursive: true });
@@ -120,7 +133,7 @@ test("skill installation replaces an earlier adapted skill", async () => {
   );
   await writeFile(join(destination, "agents", "openai.yaml"), "interface:\n");
 
-  await installSkills({ sourceRoot, destinationRoot });
+  await installSkills({ sourceRoot, destinationRoot, claudeSkillRoot });
 
   assert.equal(
     await readFile(join(destination, "SKILL.md"), "utf8"),
@@ -128,17 +141,51 @@ test("skill installation replaces an earlier adapted skill", async () => {
   );
 });
 
+test("skill installation links installed skills into the Claude skill root", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
+  const sourceRoot = join(root, "source");
+  const destinationRoot = join(root, "installed");
+  const claudeSkillRoot = join(root, "claude-skills");
+  await writeBundle(sourceRoot);
+  // A skill the user maintains themselves must survive installation untouched.
+  await mkdir(join(claudeSkillRoot, "implement"), { recursive: true });
+  await writeFile(join(claudeSkillRoot, "implement", "SKILL.md"), "mine\n");
+
+  await installSkills({ sourceRoot, destinationRoot, claudeSkillRoot });
+
+  assert.equal(
+    await readlink(join(claudeSkillRoot, "to-spec")),
+    join(destinationRoot, "to-spec"),
+  );
+  assert.equal(
+    (await lstat(join(claudeSkillRoot, "implement"))).isSymbolicLink(),
+    false,
+  );
+  assert.equal(
+    await readFile(join(claudeSkillRoot, "implement", "SKILL.md"), "utf8"),
+    "mine\n",
+  );
+
+  // Re-installing must be idempotent rather than fail on the existing link.
+  await installSkills({ sourceRoot, destinationRoot, claudeSkillRoot });
+  assert.equal(
+    await readlink(join(claudeSkillRoot, "to-spec")),
+    join(destinationRoot, "to-spec"),
+  );
+});
+
 test("skill installation fails when bundle metadata is missing", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
   const sourceRoot = join(root, "source");
   const destinationRoot = join(root, "installed");
+  const claudeSkillRoot = join(root, "claude-skills");
   await writeBundle(sourceRoot);
   await rm(
     join(sourceRoot, "skills/engineering/to-spec/agents/openai.yaml"),
   );
 
   await assert.rejects(
-    installSkills({ sourceRoot, destinationRoot }),
+    installSkills({ sourceRoot, destinationRoot, claudeSkillRoot }),
     /to-spec is missing agents\/openai\.yaml at pinned commit/u,
   );
 });
@@ -147,12 +194,13 @@ test("skill installation rejects missing metadata even for installed skills", as
   const root = await mkdtemp(join(tmpdir(), "lfi-skills-test-"));
   const sourceRoot = join(root, "source");
   const destinationRoot = join(root, "installed");
+  const claudeSkillRoot = join(root, "claude-skills");
   await writeBundle(sourceRoot);
-  await installSkills({ sourceRoot, destinationRoot });
+  await installSkills({ sourceRoot, destinationRoot, claudeSkillRoot });
   await rm(join(sourceRoot, "skills/engineering/to-spec/agents/openai.yaml"));
 
   await assert.rejects(
-    installSkills({ sourceRoot, destinationRoot }),
+    installSkills({ sourceRoot, destinationRoot, claudeSkillRoot }),
     /to-spec is missing agents\/openai\.yaml at pinned commit/u,
   );
 });

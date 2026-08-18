@@ -13,6 +13,13 @@ export interface IsolatedCommand {
   onStdoutLine: (line: string) => void;
   onStderrLine: (line: string) => void;
   environment: NodeJS.ProcessEnv;
+  /**
+   * Variables this invocation contributes on top of the sanitized environment.
+   * They survive sanitization because the caller, not the ambient shell, owns
+   * them — an agent whose per-run settings are composition rows rather than
+   * flags has no other way to receive them.
+   */
+  agentEnvironment?: Readonly<Record<string, string>>;
   writableDirectories?: readonly string[];
   captureStdout?: boolean;
   signal?: AbortSignal;
@@ -35,7 +42,7 @@ export interface IsolationDeclaration {
   codeHostCredentialDirectories: readonly string[];
   codeHostCredentialFiles: readonly string[];
   agentProfilePaths: readonly string[];
-  agentStateDirectory: string;
+  agentWritablePaths: readonly string[];
   skillsDirectory: string;
   gitConfigFiles: readonly string[];
   sanitizedGitConfig: string;
@@ -65,6 +72,11 @@ const runPrepared = async (command: IsolatedCommand, cwd: string): Promise<Comma
 const inheritedEnvironmentNames = new Set([
   "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM",
   "COLORTERM", "TZ", "CODEX_HOME", "CODEX_API_KEY", "OPENAI_API_KEY",
+  "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "DSH_HOME", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "DSH_TOOLS_MODE",
+  // dsh routed to opencode-go bills an OpenCode Zen subscription instead.
+  "OPENCODE_API_KEY",
   "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy",
   "https_proxy", "all_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR",
   "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS",
@@ -152,7 +164,7 @@ export const resolveIsolationDeclaration = async (
     codeHostCredentialDirectories,
     codeHostCredentialFiles,
     agentProfilePaths: profile.paths,
-    agentStateDirectory: profile.stateDirectory,
+    agentWritablePaths: profile.writablePaths,
     skillsDirectory: profile.skillsDirectory,
     gitConfigFiles,
     sanitizedGitConfig,
@@ -164,9 +176,14 @@ export const openIsolationSession = async (
   options: IsolationSessionOptions,
 ): Promise<IsolationSession> => {
   if (options.provider === "none") {
+    const withAgentEnvironment = <Command extends IsolatedCommand>(
+      command: Command,
+    ): Command => command.agentEnvironment
+      ? { ...command, environment: { ...command.environment, ...command.agentEnvironment } }
+      : command;
     return {
-      prepare: <Command extends IsolatedCommand>(command: Command) => command,
-      run: async (command) => runPrepared(command, options.worktree),
+      prepare: withAgentEnvironment,
+      run: async (command) => runPrepared(withAgentEnvironment(command), options.worktree),
       close: async () => undefined,
     };
   }
@@ -195,11 +212,18 @@ export const openIsolationSession = async (
       for (const path of declaration.codeHostCredentialDirectories) args.push("--tmpfs", path);
       for (const path of declaration.codeHostCredentialFiles) args.push("--ro-bind", "/dev/null", path);
       // The agent CLI needs its state home writable (sqlite state, logs,
-      // app-server socket) and fails on startup without it, so the state
-      // directory stays writable and shared, exactly as outside the sandbox.
-      args.push("--bind-try", declaration.agentStateDirectory, declaration.agentStateDirectory);
+      // app-server socket) and fails on startup without it, so its state stays
+      // writable and shared, exactly as outside the sandbox.
+      for (const path of declaration.agentWritablePaths) {
+        args.push("--bind-try", path, path);
+      }
       args.push("--chdir", declaration.worktree, "--", command.command, ...command.args);
-      return { ...command, command: "bwrap", args, environment: declaration.environment };
+      return {
+        ...command,
+        command: "bwrap",
+        args,
+        environment: { ...declaration.environment, ...command.agentEnvironment },
+      };
   };
   return {
     prepare,

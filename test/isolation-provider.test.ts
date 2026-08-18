@@ -179,12 +179,12 @@ test("local isolation derives credential exclusions and package caches on open",
   await rm(root, { recursive: true, force: true });
 });
 
-test("local isolation keeps the agent state directory writable inside the sandbox", async () => {
+test("local isolation keeps every declared agent state path writable inside the sandbox", async () => {
   const root = await mkdtemp(join(tmpdir(), "lfi-isolation-session-"));
   const gitDirectory = join(root, "repository", ".git");
   const homeDirectory = join(root, "home", "agent");
   await mkdir(gitDirectory, { recursive: true });
-  for (const agent of ["codex", "pi"] as const) {
+  for (const agent of ["codex", "pi", "claude", "dsh"] as const) {
     const session = await openIsolationSession({
       provider: "local",
       agent,
@@ -196,15 +196,41 @@ test("local isolation keeps the agent state directory writable inside the sandbo
     const wrapped = session.prepare(command);
 
     const profile = resolveAgentProfile(agent, homeDirectory, command.environment);
-    assert.ok(
-      wrapped.args.some(
-        (value, index) =>
-          value === "--bind-try" &&
-          wrapped.args[index + 1] === profile.stateDirectory &&
-          wrapped.args[index + 2] === profile.stateDirectory,
-      ),
-      `${agent} state directory must be bound writable`,
-    );
+    for (const path of profile.writablePaths) {
+      assert.ok(
+        wrapped.args.some(
+          (value, index) =>
+            value === "--bind-try" &&
+            wrapped.args[index + 1] === path &&
+            wrapped.args[index + 2] === path,
+        ),
+        `${agent} must keep ${path} writable`,
+      );
+    }
+    await session.close();
+  }
+  await rm(root, { recursive: true, force: true });
+});
+
+test("an invocation's own variables survive environment sanitization", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-isolation-agent-env-"));
+  const gitDirectory = join(root, "repository", ".git");
+  await mkdir(gitDirectory, { recursive: true });
+  const agentEnvironment = { LFI_DSH_MODEL: "deepseek-v4-pro" };
+  for (const provider of ["local", "none"] as const) {
+    const session = await openIsolationSession({
+      provider,
+      agent: "dsh",
+      worktree: "/workspace/task",
+      gitDirectory,
+      homeDirectory: join(root, "home"),
+      environment: command.environment,
+    });
+    const wrapped = session.prepare({ ...command, agentEnvironment });
+
+    assert.equal(wrapped.environment.LFI_DSH_MODEL, "deepseek-v4-pro");
+    // The ambient environment is still scrubbed around it.
+    if (provider === "local") assert.equal(wrapped.environment.GH_TOKEN, undefined);
     await session.close();
   }
   await rm(root, { recursive: true, force: true });
@@ -271,7 +297,13 @@ test("boundary declarations contain the selected agent profile and shared skills
     writeFile(join(homeDirectory, ".git-credentials"), "code-host credential"),
     writeFile(join(homeDirectory, ".netrc"), "code-host credential"),
   ]);
-  for (const agent of ["codex", "pi"] as const) {
+  const stateSubdirectoryByAgent = {
+    codex: ".codex",
+    pi: ".pi/agent",
+    claude: ".claude",
+    dsh: ".dsh",
+  } as const;
+  for (const agent of ["codex", "pi", "claude", "dsh"] as const) {
     const declaration = await resolveIsolationDeclaration({
       agent,
       worktree: "/workspace/task",
@@ -287,12 +319,13 @@ test("boundary declarations contain the selected agent profile and shared skills
       ...declaration.agentProfilePaths,
       declaration.skillsDirectory,
     ];
+    const stateSubdirectory = stateSubdirectoryByAgent[agent];
     for (const excluded of [
-      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/history.jsonl`),
-      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/sessions`),
-      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/attachments`),
-      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/browser`),
-      join(homeDirectory, `.${agent === "codex" ? "codex" : "pi/agent"}/cache`),
+      join(homeDirectory, `${stateSubdirectory}/history.jsonl`),
+      join(homeDirectory, `${stateSubdirectory}/sessions`),
+      join(homeDirectory, `${stateSubdirectory}/attachments`),
+      join(homeDirectory, `${stateSubdirectory}/browser`),
+      join(homeDirectory, `${stateSubdirectory}/cache`),
       join(homeDirectory, ".config/gh"),
       join(homeDirectory, ".ssh"),
       join(homeDirectory, ".git-credentials"),

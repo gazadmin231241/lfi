@@ -2,7 +2,9 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
+import { dshProfileName } from "./agent-provider.js";
 import { configuredAgents, DEFAULT_CONFIG, type LfiConfig } from "./config.js";
+import { DSH_VERSION, dshProfileStatus, dshVersion } from "./dsh-profile.js";
 import { runCommand } from "./process.js";
 import { localize, type Language } from "./i18n.js";
 
@@ -75,6 +77,8 @@ export const runDoctor = async (
       ? [["codex", ["login", "status"], "codex"] as const]
       : []),
     ...(agents.has("pi") ? [["which", ["pi"], "pi"] as const] : []),
+    ...(agents.has("claude") ? [["which", ["claude"], "claude"] as const] : []),
+    ...(agents.has("dsh") ? [["which", ["dsh"], "dsh"] as const] : []),
     ...(config.ISOLATION_PROVIDER === "local"
       ? [["bwrap", ["--version"]] as const]
       : []),
@@ -107,12 +111,49 @@ export const runDoctor = async (
         }),
       )
     : [];
+  // The harness is a developer preview whose composition rows LFI's bundle
+  // addresses by id, so a different version is a broken run, not a warning.
+  const dshChecks = agents.has("dsh")
+    ? await (async (): Promise<DoctorCheck[]> => {
+        const [version, profile] = await Promise.all([
+          dshVersion(environment),
+          dshProfileStatus(environment),
+        ]);
+        return [
+          {
+            name: "dsh version",
+            ok: version === DSH_VERSION,
+            detail: version === DSH_VERSION
+              ? `${DSH_VERSION}`
+              : localize(
+                  language,
+                  `LFI pins dsh ${DSH_VERSION}, found ${version ?? "nothing"}; run npm install -g @deepseek-ai/dsh@${DSH_VERSION}`,
+                  `LFI закрепляет dsh ${DSH_VERSION}, найдено ${version ?? "ничего"}; выполните npm install -g @deepseek-ai/dsh@${DSH_VERSION}`,
+                ),
+            required: true,
+          },
+          {
+            name: `dsh profile ${dshProfileName}`,
+            ok: profile.installed,
+            detail: profile.installed
+              ? profile.bundles.join(", ")
+              : localize(
+                  language,
+                  "the profile is missing a bundle; run lfi dsh install",
+                  "в профиле не хватает слоя; выполните lfi dsh install",
+                ),
+            required: true,
+          },
+        ];
+      })()
+    : [];
   const setupConfigured = await exists(
     join(cwd, "docs", "agents", "issue-tracker.md"),
   );
   return [
     ...commandChecks,
     ...skillChecks,
+    ...dshChecks,
     {
       name: "$setup-matt-pocock-skills",
       ok: setupConfigured,

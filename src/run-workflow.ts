@@ -244,11 +244,17 @@ export const runLfi = async (
           if (attempt.unavailableModel) {
             unavailableModels.add(agentModelKey(attempt.unavailableModel));
             output.error(
-              localize(
-                language,
-                `${task.id}: model ${attempt.unavailableModel.model} for agent ${attempt.unavailableModel.agent}, configured through the ${task.executionTier ?? "standard"} tier mapping, is unavailable; LFI will not fall back and will skip other tasks using this agent and model for this run.`,
-                `${task.id}: модель ${attempt.unavailableModel.model} для агента ${attempt.unavailableModel.agent}, настроенная маршрутизацией уровня ${task.executionTier ?? "standard"}, недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этим агентом и моделью в текущем запуске.`,
-              ),
+              attempt.unsupportedReasoning
+                ? localize(
+                    language,
+                    `${task.id}: model ${attempt.unavailableModel.model} for agent ${attempt.unavailableModel.agent} does not offer the reasoning level configured through the ${task.executionTier ?? "standard"} tier mapping; LFI will not substitute another level and will skip other tasks using this agent and model for this run.`,
+                    `${task.id}: модель ${attempt.unavailableModel.model} агента ${attempt.unavailableModel.agent} не предлагает уровень рассуждений, настроенный маршрутизацией уровня ${task.executionTier ?? "standard"}; LFI не подменит его другим и пропустит остальные задачи с этим агентом и моделью в текущем запуске.`,
+                  )
+                : localize(
+                    language,
+                    `${task.id}: model ${attempt.unavailableModel.model} for agent ${attempt.unavailableModel.agent}, configured through the ${task.executionTier ?? "standard"} tier mapping, is unavailable; LFI will not fall back and will skip other tasks using this agent and model for this run.`,
+                    `${task.id}: модель ${attempt.unavailableModel.model} для агента ${attempt.unavailableModel.agent}, настроенная маршрутизацией уровня ${task.executionTier ?? "standard"}, недоступна; LFI не будет использовать fallback и пропустит остальные задачи с этим агентом и моделью в текущем запуске.`,
+                  ),
             );
           }
           return attempt;

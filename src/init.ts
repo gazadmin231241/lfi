@@ -18,6 +18,7 @@ import {
   type ReasoningEffort,
 } from "./config.js";
 import { detectCommands } from "./detect.js";
+import { gitResult, localRepoInfo } from "./git.js";
 import { repoInfo } from "./github.js";
 import type { Language } from "./i18n.js";
 import {
@@ -46,6 +47,15 @@ export interface InitOptions {
   yes?: boolean;
   advanced?: boolean;
 }
+
+const detectRepoInfo = async (
+  cwd: string,
+): Promise<{ nameWithOwner: string; defaultBranch: string }> => {
+  const remotes = await gitResult(cwd, ["remote"]);
+  return remotes.exitCode === 0 && remotes.stdout.trim()
+    ? repoInfo(cwd)
+    : localRepoInfo(cwd);
+};
 
 const DEFAULT_PRESET_BINDINGS: ModelBindings = {
   DEFAULT: "codex:gpt-5.6-terra:medium",
@@ -296,7 +306,7 @@ export const initializeProject = async (
   }
 
   const [repo, commands] = await Promise.all([
-    repoInfo(options.cwd),
+    detectRepoInfo(options.cwd),
     detectCommands(options.cwd),
   ]);
   const retentionDays =

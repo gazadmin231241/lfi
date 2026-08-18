@@ -98,6 +98,7 @@ export const mergeWithAgent = async (options: {
     logName: options.logName,
     idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
     isolationProvider: options.config.ISOLATION_PROVIDER,
+    excludedTools: options.config.EXCLUDED_TOOLS,
     prefix: "merge",
     language: options.language,
   });

@@ -4,6 +4,7 @@ import { basename, join, resolve } from "node:path";
 
 import type { AgentProvider } from "./agent-provider.js";
 import { configuredAgents, type LfiConfig } from "./config.js";
+import { DSH_VERSION } from "./dsh-profile.js";
 import { requireCommand, runCommand } from "./process.js";
 import { LFI_VERSION } from "./version.js";
 
@@ -43,9 +44,10 @@ export const deriveWorkerImageTag = (projectRoot: string): string => {
 
 const agentPackage: Record<AgentProvider, string> = {
   codex: "@openai/codex",
-  claude: "@anthropic-ai/claude-code",
   pi: "@mariozechner/pi-coding-agent",
-  dsh: "deepseek-harness",
+  claude: "@anthropic-ai/claude-code",
+  // Pinned exactly: LFI's bundle addresses this release's composition rows.
+  dsh: `@deepseek-ai/dsh@${DSH_VERSION}`,
 };
 
 export const generateWorkerImageLayer = (

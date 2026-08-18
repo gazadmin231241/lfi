@@ -19,7 +19,10 @@ interface AttemptResult {
   logName?: string;
   /** The agent left uncommitted changes behind; the worktree is preserved. */
   dirtyWorktree?: boolean;
+  /** The configured agent and model could not serve this run. */
   unavailableModel?: AgentModel;
+  /** That refusal was the tier's reasoning level, not the model itself. */
+  unsupportedReasoning?: true;
 }
 
 /** A task attempt with mutually exclusive delivery and recovery outcomes. */

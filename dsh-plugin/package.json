@@ -1,0 +1,28 @@
+{
+  "name": "dsh-lfi-stream",
+  "version": "0.1.0",
+  "description": "A DeepSeek Harness bundle that streams a headless run's session events to stdout as newline-delimited JSON for LFI",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "private": true,
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

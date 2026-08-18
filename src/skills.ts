@@ -1,8 +1,20 @@
-import { access, cp, mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import {
+  access,
+  cp,
+  lstat,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  symlink,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
+import { resolveAgentProfile } from "./agent-provider.js";
 import { requireCommand, runCommand } from "./process.js";
 import { localize, type Language } from "./i18n.js";
 
@@ -100,6 +112,44 @@ export const installedSkillNames = async (
   return new Set(installed.filter((name): name is string => name !== undefined));
 };
 
+const defaultClaudeSkillRoot = (): string =>
+  join(resolveAgentProfile("claude", homedir()).stateDirectory, "skills");
+
+// Claude Code reads skills from its own state directory rather than the shared
+// ~/.agents/skills tree, so the installed skills are linked into it. Anything
+// already sitting at the link path belongs to the user and is left alone.
+export const linkSkillsForClaude = async (
+  names: readonly string[],
+  installedRoot: string,
+  claudeSkillRoot: string,
+  language: Language,
+): Promise<string[]> => {
+  const linked: string[] = [];
+  await mkdir(claudeSkillRoot, { recursive: true });
+  for (const name of names) {
+    const link = join(claudeSkillRoot, name);
+    const target = join(installedRoot, name);
+    const entry = await lstat(link).then((stats) => stats, () => undefined);
+    if (entry) {
+      const current = entry.isSymbolicLink()
+        ? await readlink(link).catch(() => undefined)
+        : undefined;
+      if (current === target) continue;
+      console.log(
+        localize(
+          language,
+          `Left ${link} untouched: it is not the LFI skill link.`,
+          `Оставлен без изменений ${link}: это не ссылка на навык LFI.`,
+        ),
+      );
+      continue;
+    }
+    await symlink(target, link);
+    linked.push(name);
+  }
+  return linked;
+};
+
 export const installSkills = async (
   options: {
     update?: boolean;
@@ -107,6 +157,7 @@ export const installSkills = async (
     language?: Language;
     sourceRoot?: string;
     destinationRoot?: string;
+    claudeSkillRoot?: string;
   } = {},
 ): Promise<string[]> => {
   const language = options.language ?? "en";
@@ -182,6 +233,12 @@ export const installSkills = async (
   } finally {
     if (ownsBundle) await rm(bundle, { recursive: true, force: true });
   }
+  await linkSkillsForClaude(
+    SKILL_PATHS.map((path) => basename(path)),
+    destinationRoot,
+    options.claudeSkillRoot ?? defaultClaudeSkillRoot(),
+    language,
+  );
   return changed;
 };
 

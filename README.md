@@ -96,6 +96,7 @@ lfi skills install
 lfi skills list
 lfi skills doctor
 lfi skills update
+lfi dsh install|status
 lfi config language en|ru
 ```
 
@@ -182,6 +183,15 @@ The following settings are in `.lfi/config.env`:
 - `VALIDATION_REPAIR_ATTEMPTS=2` bounds model-driven validation repair. After
   every repair LFI reruns the full command itself; zero disables model repair,
   never the validation gate.
+- `EXCLUDED_TOOLS` defaults to empty. It is a comma-separated denylist of tool
+  names withheld from every agent LFI starts - workers, merger, reviewer, and
+  remediation alike - covering built-in and extension-registered tools. It keeps
+  interactive-only or unwanted tools out of unattended runs without changing the
+  agent's own configuration, so the same tools stay available when you run the
+  agent yourself. `pi` and `claude` honour it by hiding the tool; `dsh` honours
+  it as a refusal at call time - the model still sees the tool and learns it is
+  withheld only when it tries to use it. `codex` has no equivalent flag and
+  ignores the list.
 
 `REVIEW_ENABLED` must be exactly `true` or `false`. Invalid values, negative or
 fractional remediation rounds, and other invalid configuration values are
@@ -220,13 +230,61 @@ its branch and path for recovery.
 At execution time, `LIGHT_MODEL`, `STANDARD_MODEL`, and `DEEP_MODEL` map the
 task tier to an agent, model, and reasoning level, falling back to
 `DEFAULT_MODEL` when a tier mapping is empty. Use
-`<cli>:<model>:<reasoning>` (for example, `codex:gpt-5.6-sol:medium` or
-`pi:openai/gpt-5.6:high`). `MERGER_MODEL` is independent and falls
+`<cli>:<model>:<reasoning>` (for example, `codex:gpt-5.6-sol:medium`,
+`pi:openai/gpt-5.6:high`, `claude:sonnet:high`, or `dsh:deepseek-v4-pro:high`).
+The supported CLIs are `codex`, `pi`, `claude`, and `dsh`; the model part is
+passed to the CLI verbatim, so `claude` takes either an alias (`sonnet`,
+`opus`, `fable`) or a full model name (`claude-opus-5`), and `dsh` takes
+whatever model name the DeepSeek Harness accepts without LFI validating it
+against a catalog. `claude` and `dsh` support every reasoning level except
+`ultra`; `dsh` maps LFI's scale onto the harness's own `low`, `high`, and
+`max`. `claude` runs with `--dangerously-skip-permissions`, which Claude Code
+refuses under root — keep `ISOLATION_PROVIDER=local`, or run the container as
+a non-root user. `MERGER_MODEL` is independent and falls
 back through `STANDARD_MODEL`, then `DEFAULT_MODEL`. `REVIEWER_MODEL` is
 independent and falls back to the worker resolution when unset. If an agent rejects an
 explicitly configured worker model, LFI logs it, does not silently substitute
 another model, skips remaining tasks using that agent-model pair for that run,
 and continues other tiers.
+
+### DeepSeek Harness (`dsh`)
+
+Routing an agent-model pair to `dsh` runs it through the
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), a developer preview.
+Install it globally at LFI's exact pin, then create the `lfi` profile it
+boots:
+
+```bash
+npm install -g @deepseek-ai/dsh@0.1.0-rc.7
+lfi dsh install
+```
+
+`lfi dsh status` reports whether the pinned version and profile are in place;
+`lfi doctor` checks both automatically once a model is routed to `dsh`. The
+version is pinned exactly, not by range, because the preview promises
+compatibility-breaking changes and LFI's bundle addresses the harness's
+composition rows by id. Authentication is `DEEPSEEK_API_KEY` from the
+environment.
+
+A model may name the harness provider route in front of it, as
+`dsh:<route>/<model>:<reasoning>`; without one it goes to `deepseek-official`,
+the native DeepSeek API. The route LFI configures beyond that is
+`opencode-go`, which bills through an [OpenCode Zen](https://opencode.ai/docs/zen/)
+Go subscription rather than a DeepSeek key: set `OPENCODE_API_KEY` instead of
+`DEEPSEEK_API_KEY` and route a tier to, for example,
+`dsh:opencode-go/deepseek-v4-pro:high`. Nothing else changes — the models,
+endpoint, and wire protocols come from the harness's own catalog. Which
+thinking levels a model offers is part of that catalog and differs per model —
+the DeepSeek models on this route publish only `off`, `high`, and `max`, so
+LFI's `low` and `medium` tiers are refused there. LFI substitutes no
+neighbouring level: the run fails before any provider request, names the tier,
+and skips further tasks on that agent and model until you configure a level the
+model offers.
+
+The harness confines writes to a single workspace root with no
+`--add-dir` equivalent, so LFI runs it with
+`DSH_PERMISSION_MODE=danger-full-access` and relies on its own sandbox as the
+only write boundary.
 
 Worker prompts pre-approve required local code, migration, dependency, lockfile,
 and configuration work. They explicitly forbid production deploys, SSH,

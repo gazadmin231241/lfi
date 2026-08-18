@@ -9,10 +9,12 @@ import {
 } from "./accepted-attempts.js";
 import {
   runAgent,
+  type AgentRunResult,
 } from "./agent-provider.js";
 import {
   resolveReviewerModel,
   resolveWorkerModel,
+  type AgentModel,
   type LfiConfig,
 } from "./config.js";
 import {
@@ -55,6 +57,25 @@ import {
   type ReviewFinding,
   type VerificationVerdict,
 } from "./review-findings.js";
+
+/**
+ * The part of an attempt result that records a selection this run cannot use.
+ * A non-zero exit whose output names the model or the reasoning level as the
+ * reason is a configuration error, so LFI reports it and stops using the pair
+ * rather than retrying it or quietly asking for an adjacent level instead.
+ */
+const unusableSelection = (
+  result: AgentRunResult,
+  target: AgentModel,
+): { unavailableModel?: AgentModel; unsupportedReasoning?: true } =>
+  result.exitCode !== 0 &&
+  target.model &&
+  (result.unavailableModel || result.unsupportedReasoning)
+    ? {
+        unavailableModel: target,
+        ...(result.unsupportedReasoning ? { unsupportedReasoning: true as const } : {}),
+      }
+    : {};
 
 const pathIsInside = (parent: string, candidate: string): boolean => {
   const path = relative(resolve(parent), resolve(candidate));
@@ -551,6 +572,7 @@ export const attemptWork = async (options: {
           logName,
           idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
           isolationProvider: options.config.ISOLATION_PROVIDER,
+          excludedTools: options.config.EXCLUDED_TOOLS,
           prefix: `${key}:task`,
           language: options.language,
           session,
@@ -576,9 +598,7 @@ export const attemptWork = async (options: {
             branch: worktree.branch,
             logName,
             ...(dirtyWorktree ? { dirtyWorktree: true } : {}),
-            ...(agent.exitCode !== 0 && target.model && agent.unavailableModel
-              ? { unavailableModel: target }
-              : {}),
+            ...unusableSelection(agent, target),
           };
         }
 
@@ -634,6 +654,7 @@ export const attemptWork = async (options: {
           logName: reviewLogName,
           idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
           isolationProvider: options.config.ISOLATION_PROVIDER,
+          excludedTools: options.config.EXCLUDED_TOOLS,
           prefix: `${key}:review`,
           language: options.language,
           session,
@@ -651,9 +672,7 @@ export const attemptWork = async (options: {
             worktreePath: worktree.path,
             branch: worktree.branch,
             logName: reviewLogName,
-            ...(review.exitCode !== 0 && reviewer.model && review.unavailableModel
-              ? { unavailableModel: reviewer }
-              : {}),
+            ...unusableSelection(review, reviewer),
           };
         }
         let findings: ReviewFinding[];
@@ -727,6 +746,7 @@ export const attemptWork = async (options: {
               logName: remediationLogName,
               idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
               isolationProvider: options.config.ISOLATION_PROVIDER,
+              excludedTools: options.config.EXCLUDED_TOOLS,
               prefix: `${key}:remediation`,
               language: options.language,
               session,
@@ -743,9 +763,7 @@ export const attemptWork = async (options: {
                 worktreePath: worktree.path,
                 branch: worktree.branch,
                 logName: remediationLogName,
-                ...(remediation.exitCode !== 0 && target.model && remediation.unavailableModel
-                  ? { unavailableModel: target }
-                  : {}),
+                ...unusableSelection(remediation, target),
               };
             }
             const remediationEnd = (await git(
@@ -794,6 +812,7 @@ export const attemptWork = async (options: {
               logName: verificationLogName,
               idleTimeoutMinutes: options.config.IDLE_TIMEOUT_MINUTES,
               isolationProvider: options.config.ISOLATION_PROVIDER,
+              excludedTools: options.config.EXCLUDED_TOOLS,
               prefix: `${key}:verification`,
               language: options.language,
               session,
@@ -811,9 +830,7 @@ export const attemptWork = async (options: {
                 worktreePath: worktree.path,
                 branch: worktree.branch,
                 logName: verificationLogName,
-                ...(verification.exitCode !== 0 && reviewer.model && verification.unavailableModel
-                  ? { unavailableModel: reviewer }
-                  : {}),
+                ...unusableSelection(verification, reviewer),
               };
             }
             try {

@@ -51,6 +51,23 @@ test("config round-trips defaults", () => {
   assert.match(serialized, /# Format: <cli>:<model>:<reasoning>.*codex:gpt-5\.6-luna:medium/u);
 });
 
+test("an excluded tool denylist round-trips through the serialized configuration", () => {
+  const parsed = parseEnvConfig(
+    serializeEnvConfig({
+      ...DEFAULT_CONFIG,
+      EXCLUDED_TOOLS: ["clarify_prompt", "subagent"],
+    }),
+  );
+
+  assert.deepEqual(parsed.EXCLUDED_TOOLS, ["clarify_prompt", "subagent"]);
+  assert.deepEqual(
+    parseEnvConfig("EXCLUDED_TOOLS= clarify_prompt , , subagent ,clarify_prompt")
+      .EXCLUDED_TOOLS,
+    ["clarify_prompt", "subagent"],
+  );
+  assert.deepEqual(parseEnvConfig("EXCLUDED_TOOLS=").EXCLUDED_TOOLS, []);
+});
+
 test("config comments follow the project language", () => {
   const serialized = serializeEnvConfig(DEFAULT_CONFIG, "ru");
 
@@ -235,6 +252,29 @@ test("configuration reads agent prefixes, preserves model syntax, and rewrites d
     model: "openai/gpt-5.6",
     reasoning: "high",
   });
+  assert.deepEqual(parseAgentModel("claude:sonnet:xhigh"), {
+    agent: "claude",
+    model: "sonnet",
+    reasoning: "xhigh",
+  });
+  // The model reaches the harness verbatim; LFI validates neither its shape
+  // nor its membership in DeepSeek's catalog.
+  assert.deepEqual(parseAgentModel("dsh:deepseek-v4-pro:max"), {
+    agent: "dsh",
+    model: "deepseek-v4-pro",
+    reasoning: "max",
+  });
+  assert.deepEqual(parseAgentModel("dsh:deepseek-v4-flash:xhigh"), {
+    agent: "dsh",
+    model: "deepseek-v4-flash",
+    reasoning: "xhigh",
+  });
+  // The model part reaches the CLI verbatim, aliases and full names alike.
+  assert.deepEqual(parseAgentModel("claude:claude-opus-5:max"), {
+    agent: "claude",
+    model: "claude-opus-5",
+    reasoning: "max",
+  });
   assert.deepEqual(
     resolveWorkerModel(
       parseEnvConfig("LIGHT_MODEL=codex:provider:model:thinking \n"),
@@ -269,6 +309,28 @@ test("configuration rejects reasoning Pi does not accept", () => {
   assert.equal(
     parseEnvConfig("LIGHT_MODEL=pi:openai/gpt-test\nREASONING_EFFORT=xhigh\n").REASONING_EFFORT,
     "xhigh",
+  );
+});
+
+test("configuration rejects reasoning Claude does not accept", () => {
+  assert.throws(
+    () => parseEnvConfig("LIGHT_MODEL=claude:sonnet\nREASONING_EFFORT=ultra\n"),
+    /Agent claude cannot honour reasoning=ultra/u,
+  );
+  assert.equal(
+    parseEnvConfig("LIGHT_MODEL=claude:sonnet:max\n").REASONING_EFFORT,
+    "max",
+  );
+});
+
+test("configuration rejects reasoning DeepSeek does not accept", () => {
+  assert.throws(
+    () => parseEnvConfig("LIGHT_MODEL=dsh:deepseek-v4-pro\nREASONING_EFFORT=ultra\n"),
+    /Agent dsh cannot honour reasoning=ultra/u,
+  );
+  assert.equal(
+    parseEnvConfig("LIGHT_MODEL=dsh:deepseek-v4-pro:max\n").REASONING_EFFORT,
+    "max",
   );
 });
 
@@ -322,6 +384,81 @@ test("doctor checks only configured agents and never reports command output", as
   assert.equal(checks.some((check) => check.name === "$implement"), false);
   assert.equal(checks.some((check) => check.detail.includes("SECRET_TOKEN")), false);
   assert.equal(required.every((check) => check.ok), true);
+});
+
+test("doctor requires the Claude CLI only when an agent is routed to it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-doctor-claude-"));
+  const tools = join(root, "bin");
+  await mkdir(tools);
+  for (const command of ["git", "gh", "claude", "which"]) {
+    const path = join(tools, command);
+    await writeFile(path, "#!/bin/sh\nprintf 'SECRET_TOKEN\n'\n");
+    await chmod(path, 0o755);
+  }
+  const config = {
+    ...DEFAULT_CONFIG,
+    LIGHT_MODEL: "claude:sonnet",
+    STANDARD_MODEL: "claude:sonnet",
+    DEEP_MODEL: "claude:opus",
+    MERGER_MODEL: "claude:sonnet",
+    ISOLATION_PROVIDER: "none" as const,
+  };
+
+  const checks = await runDoctor(process.cwd(), "en", config, {
+    ...process.env,
+    PATH: tools,
+  });
+  const required = checks.filter((check) => check.required);
+
+  assert.deepEqual(required.map((check) => check.name), ["git", "gh", "claude"]);
+  assert.equal(checks.some((check) => check.detail.includes("SECRET_TOKEN")), false);
+  assert.equal(required.every((check) => check.ok), true);
+});
+
+test("doctor requires the DeepSeek Harness only when an agent is routed to dsh", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-doctor-dsh-"));
+  const tools = join(root, "bin");
+  await mkdir(tools);
+  for (const command of ["git", "gh", "which"]) {
+    const path = join(tools, command);
+    await writeFile(path, "#!/bin/sh\nprintf 'SECRET_TOKEN\n'\n");
+    await chmod(path, 0o755);
+  }
+  // `dsh --version` is read directly, unlike the other commands, so its
+  // output belongs in the check detail rather than being a leak.
+  await writeFile(join(tools, "dsh"), "#!/bin/sh\nprintf '0.0.0-fake\n'\n");
+  await chmod(join(tools, "dsh"), 0o755);
+  const config = {
+    ...DEFAULT_CONFIG,
+    LIGHT_MODEL: "dsh:deepseek-v4-pro",
+    STANDARD_MODEL: "dsh:deepseek-v4-pro",
+    DEEP_MODEL: "dsh:deepseek-v4-pro",
+    MERGER_MODEL: "dsh:deepseek-v4-pro",
+    ISOLATION_PROVIDER: "none" as const,
+  };
+
+  const checks = await runDoctor(process.cwd(), "en", config, {
+    ...process.env,
+    PATH: tools,
+  });
+  const commands = checks.filter((check) => !check.name.startsWith("dsh "));
+
+  assert.deepEqual(
+    commands.filter((check) => check.required).map((check) => check.name),
+    ["git", "gh", "dsh"],
+  );
+  assert.equal(checks.some((check) => check.name === "codex"), false);
+  assert.equal(checks.some((check) => check.name === "pi"), false);
+  assert.equal(checks.some((check) => check.name === "claude"), false);
+  // The harness is a developer preview LFI pins exactly, so both checks are
+  // present even though this fake `dsh` cannot satisfy them.
+  assert.equal(checks.some((check) => check.name === "dsh version"), true);
+  assert.equal(checks.some((check) => check.name === "dsh profile lfi"), true);
+  assert.equal(checks.some((check) => check.detail.includes("SECRET_TOKEN")), false);
+  assert.equal(
+    commands.filter((check) => check.required).every((check) => check.ok),
+    true,
+  );
 });
 
 test("doctor checks local isolation and keeps its message actionable", async () => {
@@ -450,6 +587,11 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"trunk
   );
   await chmod(join(bin, "gh"), 0o755);
   await runCommand("git", ["init", "-b", "main"], { cwd: root });
+  await runCommand(
+    "git",
+    ["remote", "add", "origin", "https://github.com/acme/widgets.git"],
+    { cwd: root },
+  );
   await writeFile(join(root, "pnpm-lock.yaml"), "");
   await writeFile(
     join(root, "package.json"),
@@ -644,6 +786,11 @@ printf '%s\n' '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"main"
   );
   await chmod(join(bin, "gh"), 0o755);
   await runCommand("git", ["init", "-b", "main"], { cwd: root });
+  await runCommand(
+    "git",
+    ["remote", "add", "origin", "https://github.com/acme/widgets.git"],
+    { cwd: root },
+  );
   await mkdir(join(root, "docs", "agents"), { recursive: true });
   await writeFile(join(root, ".gitignore"), "# custom\n\nbuild/\n");
   await writeFile(
@@ -723,4 +870,39 @@ build/
   assert.doesNotMatch(localGuide, /ready-for-agent|model:sol/u);
   assert.match(await readFile(join(root, "AGENTS.md"), "utf8"), /Трекер задач/u);
   assert.match(await readFile(ghMarker, "utf8"), /repo view/u);
+});
+
+test("init falls back to local repository metadata when no git remote exists", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lfi-init-without-remote-"));
+  const bin = join(root, "bin");
+  const ghMarker = join(root, "gh-called");
+  await mkdir(bin);
+  await writeFile(
+    join(bin, "gh"),
+    `#!/bin/sh
+printf '%s\n' "$*" > '${ghMarker}'
+exit 1
+`,
+  );
+  await chmod(join(bin, "gh"), 0o755);
+  await runCommand("git", ["init", "-b", "local-main"], { cwd: root });
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${bin}:${previousPath}`;
+  try {
+    await initializeProject({
+      cwd: root,
+      language: "en",
+      retentionDays: 3,
+      yes: true,
+    });
+  } finally {
+    process.env.PATH = previousPath;
+  }
+
+  const config = parseEnvConfig(
+    await readFile(join(root, ".lfi", "config.env"), "utf8"),
+  );
+  assert.equal(config.BASE_BRANCH, "local-main");
+  await assert.rejects(stat(ghMarker));
 });

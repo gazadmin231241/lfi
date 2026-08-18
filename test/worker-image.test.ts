@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import test from "node:test";
 
 import { DEFAULT_CONFIG } from "../src/config.js";
+import { DSH_VERSION } from "../src/dsh-profile.js";
 import {
   buildWorkerImage,
   checkWorkerImageFreshness,
@@ -53,6 +54,14 @@ test("generated layer installs only configured agents and owns startup", () => {
   const pi = generateWorkerImageLayer(new Set(["pi"]));
   assert.match(pi, /npm install --global @mariozechner\/pi-coding-agent/u);
   assert.doesNotMatch(pi, /@openai\/codex/u);
+
+  const claude = generateWorkerImageLayer(new Set(["claude"]));
+  assert.match(claude, /npm install --global @anthropic-ai\/claude-code/u);
+  assert.doesNotMatch(claude, /@openai\/codex|pi-coding-agent/u);
+
+  const dsh = generateWorkerImageLayer(new Set(["dsh"]));
+  assert.match(dsh, new RegExp(`npm install --global @deepseek-ai/dsh@${DSH_VERSION}`, "u"));
+  assert.doesNotMatch(dsh, /@openai\/codex|pi-coding-agent|@anthropic-ai\/claude-code/u);
 });
 
 test("build passes identity and generated layer to a fake runtime", async () => {

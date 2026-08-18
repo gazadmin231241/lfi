@@ -1,0 +1,43 @@
+# The dsh-lfi-stream bundle patch. It rides over @deepseek-ai/dsh-headless and
+# changes three things: the run streams its session events as newline-delimited
+# JSON, the model comes from the invocation, and so does the reasoning effort.
+#
+# A patch replaces a row's whole `config` rather than merging into it, so each
+# row below restates every key it needs. The values are read from the process
+# environment because a bundle patch is static while LFI varies model, effort,
+# and tool denials per attempt; `!!js` expressions are evaluated on every boot.
+
+# LFI writes the model verbatim, so an id the catalog does not advertise still
+# reaches the provider route unchanged. The route is `deepseek-official` (the
+# native DeepSeek adapter) unless a configured model named another one.
+- id: agent-default-model
+  config:
+    provider: !!js process.env.LFI_DSH_PROVIDER ?? 'deepseek-official'
+    model: !!js process.env.LFI_DSH_MODEL ?? 'deepseek-v4-flash'
+
+# off | low | high | max. LFI maps its own six-level scale onto these before
+# setting the variable, and rejects a level with no DeepSeek equivalent.
+- id: llm-deepseek
+  config:
+    reasoningEffort: !!js process.env.LFI_DSH_REASONING ?? 'high'
+
+# The pi-ai adapter mounts dormant in the base composition: it owns no route
+# until a profile supplies one. OpenCode Zen ships in its installed catalog, so
+# billing a run through an OpenCode Go subscription instead of a DeepSeek key is
+# this route plus `OPENCODE_API_KEY` in the environment — no model list, no
+# endpoint, no code. Which efforts a model on this route offers is a catalog
+# fact and they differ per model; nothing here reshapes them, so a level the
+# selected model does not publish fails the request before any network I/O and
+# LFI reports it as the configuration error it is.
+- id: llm-pi-ai
+  config:
+    providers:
+      opencode-go:
+        apiKeyEnv: OPENCODE_API_KEY
+        reasoning: !!js process.env.LFI_DSH_REASONING ?? 'high'
+
+- insert:
+    # Subscribes to session/event and denies LFI_DSH_DENIED_TOOLS. It needs no
+    # services of its own: both are ordinary context events.
+    - id: lfi-stream
+      name: 'dsh-lfi-stream'
