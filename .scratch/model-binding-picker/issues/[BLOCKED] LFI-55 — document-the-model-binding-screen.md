@@ -39,6 +39,6 @@ Tier: light
 
 ## Blocked by
 
-- [LFI-52 — Model binding picker screen](<[READY] LFI-52 — model-binding-picker-screen.md>)
-- [LFI-53 — Live pi model catalog](<[BLOCKED] LFI-53 — live-pi-model-catalog.md>)
-- [LFI-54 — Dsh route selection](<[BLOCKED] LFI-54 — dsh-route-selection.md>)
+- [LFI-52 — Model binding picker screen](<[DONE] LFI-52 — model-binding-picker-screen.md>)
+- [LFI-53 — Live pi model catalog](<[READY] LFI-53 — live-pi-model-catalog.md>)
+- [LFI-54 — Dsh route selection](<[READY] LFI-54 — dsh-route-selection.md>)

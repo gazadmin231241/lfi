@@ -44,4 +44,4 @@ harness, и только потом модель.
 
 ## Blocked by
 
-- [LFI-52 — Model binding picker screen](<[READY] LFI-52 — model-binding-picker-screen.md>)
+- [LFI-52 — Model binding picker screen](<[DONE] LFI-52 — model-binding-picker-screen.md>)
