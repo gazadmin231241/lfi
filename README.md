@@ -102,21 +102,62 @@ lfi config language en|ru
 
 ## Configuration
 
-Normal interactive initialization asks for log retention and whether to use
-the recommended Luna/Terra/Sol mapping. Advanced values remain
-editable in `.lfi/config.env`, including:
+When run interactively in a TTY, `lfi init` asks for log retention and then
+opens an arrow-key model binding screen. In a new project, the screen is
+pre-filled with the recommended Luna/Terra/Sol mapping:
 
-- light, standard, and deep worker models
-- agent, model, and reasoning for each worker tier
-- an independent merger agent, model, and reasoning setting
+```text
+  DEFAULT   codex:gpt-5.6-terra:medium
+  light     (inherits DEFAULT) codex:gpt-5.6-terra:medium
+  standard  codex:gpt-5.6-terra:medium
+  deep      codex:gpt-5.6-sol:high
+  merger    (inherits standard) codex:gpt-5.6-terra:medium
+  reviewer  (inherits standard) codex:gpt-5.6-terra:medium
+```
+
+All six bindings can be edited directly:
+- `DEFAULT` is the root fallback for worker tiers.
+- `light`, `standard`, and `deep` map task execution tiers. When empty, a tier
+  inherits `DEFAULT`.
+- `merger` configures the integration agent. When empty, it inherits `standard`
+  (and through it, `DEFAULT`).
+- `reviewer` configures the review and verification agent. When empty, it
+  inherits `standard` (and through it, `DEFAULT`).
+
+The screen displays the resolved model string for every binding so inherited
+values are always visible. Selecting a binding walks through:
+1. **Agent:** `codex`, `pi`, `claude`, or `dsh`. The first option is
+   `— inherit —`, which clears the binding back to its inherited fallback.
+2. **Route** (only for `dsh`): `deepseek-official`, `opencode-go`, or `custom…`.
+3. **Model:** live catalog from `pi --list-models` when `pi` is selected;
+   curated models for other agents; or `custom model…` for freeform text input.
+4. **Reasoning effort:** only levels supported by the selected agent are offered.
+
+Pressing `Esc` in a sub-menu cancels the selection and returns to the main list;
+`Esc` on the main screen exits without saving changes.
+
+Rerunning `lfi init` on an existing project opens the same model binding screen
+pre-populated with current values from `.lfi/config.env`, providing the standard
+way to change model bindings later. The screen writes directly to
+`.lfi/config.env` without replacing manual editing: the configuration file format
+is unchanged, and both methods lead to the same file.
+
+Non-interactive initialization bypasses the screen:
+- Passing `--model <value>` sets `DEFAULT_MODEL` and skips the screen.
+- Passing `--yes` uses defaults (or existing configuration) without prompts.
+- When run without a TTY, the screen is not shown.
+
+Other settings remain editable in `.lfi/config.env`, or interactively via
+`lfi init --advanced` (which prompts for non-model settings such as branch,
+validation and worktree commands, concurrency, stage count, timeout, and
+isolation provider):
+
 - parallel workers and stage count
 - default branch
 - validation and worktree setup commands
 - whether the review phase runs and the maximum remediation rounds
 - inactivity timeout
 - isolation provider (`local` by default, or explicit `none` for a disposable environment)
-
-Use `lfi init --advanced` to edit those values interactively during setup.
 
 ### Prompt templates
 
