@@ -17,16 +17,23 @@ routing rubric. A user may override it before task execution; LFI does not
 change it during execution or retries.
 _Avoid_: Model selection, automatic routing
 
+**Model binding**:
+One configured place that names an agent provider, a model, and a reasoning
+effort together. A binding may name none of them, in which case it resolves
+through another binding. The six bindings are the fallback, the three execution
+tiers, integration, and review.
+_Avoid_: Slot, model setting, profile
+
 **Tier mapping**:
-The project configuration that resolves each execution tier to a concrete
-model. It does not determine reasoning effort.
+The three model bindings that resolve `light`, `standard`, and `deep` to a
+concrete model.
 _Avoid_: Task model, hard-coded model
 
 **Reasoning policy**:
-The project-level reasoning effort applied to workers independently of their
-execution tiers. LFI preserves the user-configured value across execution and
-retries; integration work may use a separate project-level setting.
-_Avoid_: Task reasoning, tier reasoning
+The reasoning effort a model binding carries, alongside the agent and model it
+names. LFI preserves the user-configured value across execution and retries.
+Every binding carries its own; nothing forces the three tiers to agree.
+_Avoid_: Task reasoning, project reasoning
 
 **Integration model**:
 The project-configured model used for merge-conflict resolution and validation
